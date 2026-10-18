@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// 构建期注入（vite define），与 package.json 版本恒一致
+const APP_VERSION = __APP_VERSION__;
 import { h, ref, Component } from "vue";
 import { useRoute, RouterLink, RouterView } from "vue-router";
 import { NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, darkTheme, zhCN, dateZhCN } from "naive-ui";
@@ -64,7 +66,7 @@ const menuOptions: MenuOption[] = [
         </div>
         <NMenu :collapsed="collapsed" :collapsed-width="64" :options="menuOptions" :value="route.name as string" />
         <div v-if="!collapsed" style="position: absolute; bottom: 12px; left: 16px; color: #5a627a; font-size: 11px">
-          世界引擎工作台 v0.1
+          世界引擎工作台 v{{ APP_VERSION }}
         </div>
       </NLayoutSider>
       <NLayoutContent content-style="height: 100%; overflow-y: auto;">

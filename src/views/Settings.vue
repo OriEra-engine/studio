@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// 构建期注入（vite define），与 package.json 版本恒一致
+const APP_VERSION = __APP_VERSION__;
 import { onMounted, ref } from "vue";
 import { NCard, NSpace, NButton, NTag, NAlert, NModal, useMessage, NSwitch, NInput, NRadioGroup, NRadioButton } from "naive-ui";
 import { api, type ServerInfo, type FeedbackResult } from "../api";
@@ -198,7 +200,7 @@ cargo run -p oriera-pc`;
 
     <NCard title="ℹ️ 关于" size="small">
       <p style="color: #8a93ad; font-size: 12.5px; line-height: 1.8; margin: 0">
-        OriEra Studio v0.1 —— OriEra 世界引擎的开箱即用桌面工作台。<br />
+        OriEra Studio v{{ APP_VERSION }} —— OriEra 世界引擎的开箱即用桌面工作台。<br />
         生成的游戏原型为 Three.js 3D 场景 + AI NPC + 剧情导演系统的「可运行原型」，
         引擎完整渲染内核（L5/wgpu）仍在路线图中，届时原型可平滑升级。
       </p>
