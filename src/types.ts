@@ -1,3 +1,6 @@
+// vite define 注入的构建期常量（见 vite.config.ts）
+declare const __APP_VERSION__: string;
+
 /** 玩法/剧情模板与生成 Spec 的共享类型 */
 
 export interface Mechanic {
