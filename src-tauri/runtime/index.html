@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>__PROJECT_NAME__ · OriEra 原型</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #0d1017; color: #e6e8ef;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #app { display: flex; height: 100%; }
+  #scene { flex: 1; position: relative; min-width: 0; }
+  #scene canvas { display: block; }
+  #hud { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; gap: 10px;
+    align-items: center; pointer-events: none; }
+  .chip { background: rgba(13,16,23,.82); border: 1px solid #2a3a5c; border-radius: 20px;
+    padding: 6px 14px; font-size: 12px; color: #aeb6cc; pointer-events: auto; }
+  #dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #556; margin-right: 6px; }
+  #dot.live { background: #35d07f; box-shadow: 0 0 8px #35d07f; }
+  #panel { width: 400px; background: #12151f; border-left: 1px solid #232a3d; display: flex; flex-direction: column; }
+  #tabs { display: flex; border-bottom: 1px solid #232a3d; }
+  #tabs button { flex: 1; background: none; border: none; color: #7c86a3; padding: 12px 4px;
+    font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; }
+  #tabs button.on { color: #7eb8ff; border-bottom-color: #7eb8ff; }
+  .tab-page { flex: 1; overflow-y: auto; padding: 14px; display: none; }
+  .tab-page.on { display: block; }
+  #chat-log { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .msg { max-width: 92%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+  .msg.npc { background: #1b2336; border: 1px solid #2c3c5e; align-self: flex-start; }
+  .msg.me { background: #1d3a5f; align-self: flex-end; }
+  .msg.sys { color: #7c86a3; font-size: 12px; align-self: center; }
+  .msg b { color: #9fc3ff; }
+  #chat-input { display: flex; gap: 8px; }
+  #chat-input input { flex: 1; background: #0d1017; border: 1px solid #2a3a5c; color: #e6e8ef;
+    border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; }
+  #chat-input button { background: #2d5b9e; border: none; color: #fff; border-radius: 8px;
+    padding: 0 18px; cursor: pointer; font-size: 13px; }
+  #chat-input button:disabled { background: #2a3348; cursor: default; }
+  .beat { border-left: 3px solid #2a3a5c; padding: 8px 12px; margin-bottom: 10px; border-radius: 0 8px 8px 0;
+    background: #161a28; }
+  .beat.now { border-left-color: #7eb8ff; background: #1a2440; }
+  .beat.done { opacity: .45; }
+  .beat .ph { font-size: 11px; color: #7c86a3; }
+  .beat .tt { font-size: 13.5px; font-weight: 700; margin: 2px 0; }
+  .beat .ds { font-size: 12.5px; color: #aeb6cc; line-height: 1.6; }
+  #btn-next { width: 100%; margin: 6px 0 14px; padding: 11px; background: #2d5b9e; color: #fff;
+    border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  #btn-next:disabled { background: #2a3348; }
+  .codex h4 { margin: 14px 0 8px; font-size: 13px; color: #9fc3ff; }
+  .codex h4:first-child { margin-top: 0; }
+  .loop-step { display: flex; gap: 8px; align-items: center; padding: 7px 10px; background: #161a28;
+    border-radius: 8px; margin-bottom: 6px; font-size: 13px; cursor: pointer; }
+  .loop-step.done { color: #5f6b8a; text-decoration: line-through; }
+  .mech { background: #161a28; border-radius: 8px; padding: 9px 12px; margin-bottom: 6px; }
+  .mech b { font-size: 13px; color: #cdd6ec; }
+  .mech div { font-size: 12px; color: #8a93ad; margin-top: 2px; line-height: 1.55; }
+  table.eco { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.eco th { text-align: left; color: #7c86a3; padding: 4px 6px; font-weight: 500; }
+  table.eco td { padding: 5px 6px; border-top: 1px solid #1e2536; color: #b6bfd6; }
+  #npc-list .npc-row { display: flex; gap: 10px; padding: 10px; background: #161a28; border-radius: 10px;
+    margin-bottom: 8px; cursor: pointer; align-items: center; }
+  #npc-list .npc-row:hover, #npc-list .npc-row.sel { background: #1a2440; }
+  .npc-ava { width: 38px; height: 38px; border-radius: 10px; flex: none; }
+  .npc-nm { font-size: 13.5px; font-weight: 700; }
+  .npc-rl { font-size: 11px; color: #7c86a3; }
+  .npc-pf { font-size: 11.5px; color: #8a93ad; margin-top: 3px; line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #fallback { position: fixed; inset: 0; background: #0d1017ee; display: none; align-items: center;
+    justify-content: center; z-index: 99; text-align: center; padding: 40px; line-height: 2; }
+  .hint { font-size: 12px; color: #7c86a3; margin-top: 8px; }
+  .thinking { color: #7c86a3; font-size: 12px; align-self: flex-start; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene">
+    <div id="hud">
+      <div class="chip"><b style="color:#9fc3ff">__PROJECT_NAME__</b> · <span id="tagline"></span></div>
+      <div class="chip">第 <b id="day" style="color:#e8d78a">1</b> 天</div>
+      <div class="chip">💰 <b id="coins" style="color:#ffd88a">0</b></div>
+      <div class="chip"><span id="dot"></span><span id="prov-name">规则引擎（离线）</span></div>
+    </div>
+  </div>
+  <div id="panel">
+    <div id="tabs">
+      <button class="on" data-t="chat">💬 对话</button>
+      <button data-t="story">📖 剧情</button>
+      <button data-t="codex">🎯 玩法</button>
+      <button data-t="npcs">🤖 居民</button>
+    </div>
+    <div id="page-chat" class="tab-page on">
+      <div id="chat-log"></div>
+      <div id="chat-input">
+        <input id="say" placeholder="对 TA 说点什么…" />
+        <button id="buy-hint" style="display:none; background:#7a5b1e" title="花 10 金币向 TA 买一条剧情线索">💡10</button>
+        <button id="send">发送</button>
+      </div>
+      <p class="hint">AI 由 OriEra 引擎 L7 层驱动 · 记忆保存在本浏览器 · F5 刷新</p>
+    </div>
+    <div id="page-story" class="tab-page"></div>
+    <div id="page-codex" class="tab-page codex"></div>
+    <div id="page-npcs" class="tab-page"></div>
+  </div>
+</div>
+<div id="fallback">
+  <div>
+    <div style="font-size:40px">🌌</div>
+    <h2 style="margin:12px 0">请通过 OriEra Studio 打开本项目</h2>
+    <p style="color:#8a93ad">生成的游戏原型依赖 Studio 内置的引擎服务与静态服务器。</p>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "/examples/11-ai-cafe/vendor/three.module.js",
+  "three/addons/": "/examples/11-ai-cafe/vendor/"
+} }
+</script>
+<script type="module">
+/* ============ 游戏数据（由 OriEra Studio 生成时注入） ============ */
+const GAME = __GAME_JSON__;
+const STORY = __STORY_JSON__;
+const AGENTS = __AGENTS_JSON__;
+const VENDOR_BASE = "/examples/11-ai-cafe/vendor/";
+const KERNEL = "/examples/11-ai-cafe/engine/kernel.js";
+
+/* ============ L7 provider 装配（与引擎 café demo 同一机制） ============ */
+let provider = null, providerReady = false;
+const savedCfg = JSON.parse(localStorage.getItem("aicafe.llm.v1") || "null");
+async function boot() {
+  let mod;
+  try {
+    mod = await import(KERNEL);
+  } catch (e) {
+    document.getElementById("fallback").style.display = "flex";
+    return;
+  }
+  if (savedCfg && savedCfg.key && savedCfg.kind !== "rule") {
+    provider = mod.createProvider(savedCfg);
+    providerReady = !!(provider && provider.ready);
+  }
+  if (providerReady) {
+    document.getElementById("prov-name").textContent =
+      (savedCfg.model || "llm") + "（引擎 L7 · AI 已植入）";
+    document.getElementById("dot").classList.add("live");
+  }
+  await startScene(mod);
+}
+
+/* ============ 场景 ============ */
+async function startScene(mod) {
+  const THREE = await import("three");
+  const { OrbitControls } = await import(VENDOR_BASE + "OrbitControls.js");
+  const { GLTFLoader } = await import(VENDOR_BASE + "GLTFLoader.js");
+  const mem = new mod.MemoryStore("game." + GAME.id + ".mem.v1");
+
+  /* ---- 主题（v0.2）：space / cafe / dungeon / snow ---- */
+  const THEMES = {
+    space:   { bg: 0x0d1017, ground: 0x1a2438, ring: 0x2d5b9e, hemiSky: 0x8fb5ff, hemiGnd: 0x22283a, sun: 0xffe9c4 },
+    cafe:    { bg: 0x1a1410, ground: 0x3a2c1e, ring: 0xc98d4e, hemiSky: 0xffd9a0, hemiGnd: 0x2a2018, sun: 0xffc37e },
+    dungeon: { bg: 0x0a0d12, ground: 0x161c26, ring: 0x8a5a2e, hemiSky: 0x5a6b8e, hemiGnd: 0x0e1116, sun: 0xff9a4d },
+    snow:    { bg: 0xd8e2ee, ground: 0xeef3f9, ring: 0x7ea8d8, hemiSky: 0xffffff, hemiGnd: 0xb8c8dd, sun: 0xfff4e0 },
+  };
+  const TH = THEMES[GAME.theme] || THEMES.space;
+
+  const sceneEl = document.getElementById("scene");
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(sceneEl.clientWidth, sceneEl.clientHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  sceneEl.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(TH.bg);
+  scene.fog = new THREE.Fog(TH.bg, 18, 55);
+  const camera = new THREE.PerspectiveCamera(50, sceneEl.clientWidth / sceneEl.clientHeight, 0.1, 200);
+  camera.position.set(0, 6, 14);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 1.2, 0);
+  controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2.05;
+  controls.minDistance = 6; controls.maxDistance = 30;
+
+  scene.add(new THREE.HemisphereLight(TH.hemiSky, TH.hemiGnd, 1.1));
+  const sun = new THREE.DirectionalLight(TH.sun, 1.6);
+  sun.position.set(6, 10, 4); scene.add(sun);
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(16, 48).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: TH.ground, roughness: .95 }));
+  scene.add(ground);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(15.4, 16, 64).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: TH.ring, transparent: true, opacity: .5 }));
+  scene.add(ring);
+
+  /* NPC 实例 */
+  const palette = [0x7eb8ff, 0xffb37e, 0x9f8fff, 0x7effc3, 0xff8fb3, 0xffe37e];
+  const npcs = [];
+  const loader = new GLTFLoader();
+  const gltf = await loader.loadAsync(VENDOR_BASE + "RobotExpressive.glb");
+  AGENTS.forEach((a, i) => {
+    const root = gltf.scene.clone(true);
+    root.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(1); } });
+    const angle = (i / Math.max(AGENTS.length, 1)) * Math.PI * 2;
+    root.position.set(Math.cos(angle) * 5, 0, Math.sin(angle) * 5);
+    root.lookAt(0, 0, 0);
+    root.userData = { index: i };
+    scene.add(root);
+    // 头顶名牌
+    const cv = document.createElement("canvas"); cv.width = 256; cv.height = 72;
+    const cx = cv.getContext("2d");
+    cx.fillStyle = "rgba(13,16,23,.85)"; roundRect(cx, 4, 6, 248, 56, 14); cx.fill();
+    cx.fillStyle = "#" + palette[i % palette.length].toString(16).padStart(6, "0");
+    cx.font = "bold 30px sans-serif"; cx.textAlign = "center";
+    cx.fillText(a.name, 128, 46);
+    const tex = new THREE.CanvasTexture(cv);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    label.scale.set(2.2, 0.62, 1); label.position.set(root.position.x, 3.1, root.position.z);
+    scene.add(label);
+    let mixer = null;
+    try {
+      mixer = new THREE.AnimationMixer(root);
+      const idle = gltf.animations.find(a => /idle/i.test(a.name)) || gltf.animations[0];
+      if (idle) mixer.clipAction(idle).play();
+    } catch (e) {}
+    npcs.push({ agent: a, root, label, mixer, color: palette[i % palette.length] });
+  });
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath(); c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  }
+
+  /* 选择 */
+  const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+  let selected = 0;
+  renderer.domElement.addEventListener("click", e => {
+    const r = renderer.domElement.getBoundingClientRect();
+    ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ptr, camera);
+    const hits = ray.intersectObjects(npcs.map(n => n.root), true);
+    if (hits.length) {
+      let o = hits[0].object;
+      while (o && o.userData.index === undefined) o = o.parent;
+      if (o) select(o.userData.index);
+    }
+  });
+  function select(i) {
+    selected = i;
+    npcs.forEach((n, j) => n.label.material.opacity = j === i ? 1 : 0.45);
+    sys(`${npcs[i].agent.name}（${npcs[i].agent.role}）注意到了你`);
+    renderNpcList();
+    refreshBuyBtn();
+  }
+
+  /* 对话 */
+  const log = document.getElementById("chat-log");
+  const say = document.getElementById("say");
+  function bubble(role, html) {
+    const d = document.createElement("div");
+    d.className = "msg " + role; d.innerHTML = html;
+    log.appendChild(d);
+    while (log.children.length > 60) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+    return d;
+  }
+  const esc = s => (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  function sys(text) { bubble("sys", text); }
+  function npcLine(i, text) { bubble("npc", `<b>${esc(AGENTS[i].name)}</b><br>${esc(text)}`); }
+
+  function systemPrompt(i) {
+    const a = AGENTS[i];
+    const beat = STORY.beats[storyIdx] || {};
+    return `你在一场名为「${GAME.name}」的游戏原型里扮演 NPC。
+角色：${a.name}（${a.role}），人设：${a.persona}，当前情绪基调：${a.mood}。
+世界观前提：${STORY.premise}
+当前剧情：第${day}天 · ${beat.phase || ""}「${beat.title || ""}」——${beat.desc || ""}
+玩法基调：${GAME.tagline}（${GAME.difficulty}）
+要求：始终以 ${a.name} 的身份第一人称说话，2~4 句，符合人设与情绪，可以推进当前剧情但不要跳出世界观。`;
+  }
+
+  async function send() {
+    const text = say.value.trim(); if (!text) return;
+    say.value = ""; bubble("me", esc(text));
+    const i = selected;
+    if (!providerReady) return ruleReply(i, text);
+    const t = bubble("thinking", "……");
+    try {
+      const a = AGENTS[i];
+      // 近期对话（本页内存）+ 长期记忆（引擎 MemoryStore 检索）
+      const recent = (histMap.get(a.name) || []).slice(-6);
+      const recalled = mem.retrieve(a.name, "玩家", text, day, 3)
+        .map(e => `· ${e.text}`);
+      const memLine = recalled.length ? `\n[${a.name}对玩家的长期记忆]\n${recalled.join("\n")}` : "";
+      const msgs = [
+        { role: "system", content: systemPrompt(i) + memLine },
+        ...recent,
+        { role: "user", content: text }
+      ];
+      const out = await provider.complete(msgs, { max: 300 });
+      t.remove(); npcLine(i, out);
+      const h = histMap.get(a.name) || [];
+      h.push({ role: "user", content: text }, { role: "assistant", content: out });
+      histMap.set(a.name, h.slice(-12));
+      mem.record(a.name, { text: `玩家说：${text}`, about: "玩家", imp: 2, turn: day });
+      mem.record(a.name, { text: `我回答：${out.slice(0, 120)}`, about: "玩家", imp: 1, turn: day });
+    } catch (e) {
+      t.remove(); sys(`（模型调用失败：${esc(String(e.message || e))}，已用性格引擎回复）`);
+      ruleReply(i, text);
+    }
+  }
+  const histMap = new Map();
+  document.getElementById("send").onclick = send;
+  say.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+
+  function ruleReply(i, text) {
+    const a = AGENTS[i];
+    const openers = ["（歪头打量你）", "（放下手里的东西）", "（压低声音）", ""];
+    const o = openers[Math.floor(Math.random() * openers.length)];
+    const about = (text || "").slice(0, 24);
+    npcLine(i, `${o}${about ? "关于「" + about + "」……" : ""}（${a.mood}地）${a.persona.split("，")[0]}。${storyIdx < STORY.beats.length ? "眼下这事，你问倒我了——「" + STORY.beats[storyIdx].title + "」之后再说吧。" : ""}`);
+  }
+
+  /* 剧情 */
+  let storyIdx = JSON.parse(localStorage.getItem("game." + GAME.id + ".beat") || "0");
+  let day = JSON.parse(localStorage.getItem("game." + GAME.id + ".day") || "1");
+  function renderStory() {
+    const el = document.getElementById("page-story");
+    let html = `<p class="hint" style="margin-bottom:10px">${esc(STORY.premise)}</p>`;
+    STORY.beats.forEach((b, i) => {
+      const cls = i === storyIdx ? "now" : (i < storyIdx ? "done" : "");
+      html += `<div class="beat ${cls}"><div class="ph">${esc(b.phase)}${i < storyIdx ? " · 已完成" : i === storyIdx ? " · 进行中" : ""}</div><div class="tt">${esc(b.title)}</div><div class="ds">${esc(b.desc)}</div></div>`;
+    });
+    html += `<button id="btn-next" ${storyIdx >= STORY.beats.length ? "disabled" : ""}>${storyIdx >= STORY.beats.length ? "故事已抵达结局" : "推进剧情 → 第 " + (storyIdx + 1) + " 拍"}</button>`;
+    el.innerHTML = html;
+    const btn = document.getElementById("btn-next");
+    if (btn) btn.onclick = advance;
+  }
+  async function advance() {
+    if (storyIdx >= STORY.beats.length) return;
+    const b = STORY.beats[storyIdx];
+    sys(`📖 第 ${day} 天 · 剧情推进：「${b.title}」`);
+    if (providerReady) {
+      const t = bubble("thinking", "导演系统正在运镜……");
+      try {
+        const out = await provider.complete([
+          { role: "system", content: "你是游戏导演系统（DirectorSystem），用 2~3 句有画面感的中文旁白演绎当前剧情节拍，不要解释。" },
+          { role: "user", content: `前提：${STORY.premise}\n节拍：${b.phase}「${b.title}」——${b.desc}\n玩家已进行到第${day}天。` }
+        ], { max: 200 });
+        t.remove(); bubble("npc", `<b>🎬 导演</b><br>${esc(out)}`);
+      } catch (e) { t.remove(); }
+    } else {
+      bubble("npc", `<b>🎬 导演</b><br>${esc(b.desc)}`);
+    }
+    storyIdx++; day++;
+    earn(15, "💰 探索奖励 +15 金币");
+    localStorage.setItem("game." + GAME.id + ".beat", JSON.stringify(storyIdx));
+    localStorage.setItem("game." + GAME.id + ".day", JSON.stringify(day));
+    document.getElementById("day").textContent = day;
+    renderStory();
+  }
+
+  /* ---- 经济系统（v0.2 最小可玩循环）：推进剧情赚金币，向商人买线索 ---- */
+  let coins = JSON.parse(localStorage.getItem("game." + GAME.id + ".coins") || "0");
+  function renderCoins() {
+    const el = document.getElementById("coins");
+    if (el) el.textContent = coins;
+  }
+  function earn(n, why) {
+    coins += n;
+    localStorage.setItem("game." + GAME.id + ".coins", JSON.stringify(coins));
+    renderCoins();
+    if (why) sys(why);
+  }
+
+  const buyBtn = document.getElementById("buy-hint");
+  function refreshBuyBtn() {
+    const a = AGENTS[selected];
+    const can = /商人|向导|情报|守灯|收藏|医师|医生|祭司/.test(a?.role || "") || /商|贩|情报|向导/.test(a?.name || "");
+    buyBtn.style.display = can ? "" : "none";
+  }
+  buyBtn.onclick = async () => {
+    if (coins < 10) { sys(`金币不够（现有 ${coins}，需要 10）——推进剧情可获得更多`); return; }
+    const i = selected, a = AGENTS[i];
+    coins -= 10;
+    localStorage.setItem("game." + GAME.id + ".coins", JSON.stringify(coins));
+    renderCoins();
+    const beat = STORY.beats[Math.min(storyIdx, STORY.beats.length - 1)] || {};
+    if (providerReady) {
+      const t = bubble("thinking", "（TA 环顾四周，压低声音……）");
+      try {
+        const out = await provider.complete([
+          { role: "system", content: `你是${a.name}（${a.role}），玩家刚花10金币向你买了一条剧情线索。按你的人设，用1~2句悄悄透露关于当前剧情「${beat.title || "?"}」的真实有用信息。` },
+          { role: "user", content: "这是金币。说吧，你知道什么？" }
+        ], { max: 120 });
+        t.remove(); npcLine(i, out);
+      } catch (e) { t.remove(); sys("（交易被打断了……）"); }
+    } else {
+      npcLine(i, `（收下金币，压低声音）关于「${beat.title || "眼下的局面"}」——${beat.desc || "风声很紧，自己当心。"}`);
+    }
+  };
+
+  /* ---- 存档导出/导入（v0.2）：打包本游戏全部 localStorage ---- */
+  function exportSave() {
+    const data = {};
+    for (let k = 0; k < localStorage.length; k++) {
+      const key = localStorage.key(k);
+      if (key && key.startsWith("game." + GAME.id + ".")) data[key] = localStorage.getItem(key);
+    }
+    const blob = new Blob([JSON.stringify({ game: GAME.id, saved_at: Date.now(), data }, null, 1)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `oriera-存档-${GAME.id}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  function importSave(file) {
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const j = JSON.parse(r.result);
+        Object.entries(j.data || {}).forEach(([k, v]) => localStorage.setItem(k, v));
+        location.reload();
+      } catch (e) { sys("存档文件无法识别"); }
+    };
+    r.readAsText(file);
+  }
+
+  /* 玩法图鉴 */
+  const doneSteps = new Set(JSON.parse(localStorage.getItem("game." + GAME.id + ".loop") || "[]"));
+  function renderCodex() {
+    let html = "<h4>核心循环</h4>";
+    GAME.core_loop.forEach((s, i) => {
+      html += `<div class="loop-step ${doneSteps.has(i) ? "done" : ""}" data-i="${i}"><span>${doneSteps.has(i) ? "✅" : "▫️"}</span>${esc(s)}</div>`;
+    });
+    html += "<h4>机制系统</h4>";
+    GAME.mechanics.forEach(m => { html += `<div class="mech"><b>${esc(m.name)}</b><div>${esc(m.detail)}</div></div>`; });
+    html += "<h4>经济循环</h4><table class=\"eco\"><tr><th>资源</th><th>来源</th><th>去向</th></tr>";
+    GAME.economy.forEach(r => { html += `<tr><td>${esc(r.name)}</td><td>${esc(r.source)}</td><td>${esc(r.sink)}</td></tr>`; });
+    html += `</table><h4>难度曲线</h4><div class="mech"><div>${esc(GAME.difficulty)}</div></div>`;
+    html += `<h4>存档</h4><div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="btn-export-save" style="background:#2d5b9e;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:12.5px">📤 导出存档</button>
+      <button id="btn-import-save" style="background:#161a28;color:#cdd6ec;border:1px solid #2a3a5c;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:12.5px">📥 导入存档</button>
+      <input type="file" id="save-file" accept="application/json" style="display:none" />
+    </div>
+    <p style="color:#5f6b8a;font-size:11px;margin:8px 0 0">金币与记忆都在浏览器里——换电脑前记得导出。</p>`;
+    const el = document.getElementById("page-codex");
+    el.innerHTML = html;
+    el.querySelector("#btn-export-save").onclick = exportSave;
+    el.querySelector("#btn-import-save").onclick = () => el.querySelector("#save-file").click();
+    el.querySelector("#save-file").onchange = e => { if (e.target.files[0]) importSave(e.target.files[0]); };
+    el.querySelectorAll(".loop-step").forEach(d => d.onclick = () => {
+      const i = +d.dataset.i;
+      doneSteps.has(i) ? doneSteps.delete(i) : doneSteps.add(i);
+      localStorage.setItem("game." + GAME.id + ".loop", JSON.stringify([...doneSteps]));
+      renderCodex();
+    });
+  }
+
+  /* 居民列表 */
+  function renderNpcList() {
+    const el = document.getElementById("page-npcs");
+    el.innerHTML = AGENTS.map((a, i) => `
+      <div class="npc-row ${i === selected ? "sel" : ""}" data-i="${i}">
+        <div class="npc-ava" style="background:#${npcs[i].color.toString(16).padStart(6,"0")}22;border:2px solid #${npcs[i].color.toString(16).padStart(6,"0")}"></div>
+        <div><div class="npc-nm">${esc(a.name)} <span class="npc-rl">· ${esc(a.role)}</span></div>
+        <div class="npc-pf">${esc(a.persona)}</div></div>
+      </div>`).join("");
+    el.querySelectorAll(".npc-row").forEach(d => d.onclick = () => select(+d.dataset.i));
+  }
+
+  /* Tabs */
+  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".tab-page").forEach(p => p.classList.remove("on"));
+    document.getElementById("page-" + b.dataset.t).classList.add("on");
+  });
+
+  /* 开场 */
+  document.getElementById("tagline").textContent = GAME.tagline;
+  document.getElementById("day").textContent = day;
+  renderCoins();
+  renderStory(); renderCodex(); renderNpcList(); select(0);
+  npcs[0] && sys(`欢迎来到「${esc(GAME.name)}」。${esc(AGENTS[0].name)}正在看你——去和 TA 说说第一句话吧。`);
+  // NPC 开场白（顺序错开）
+  AGENTS.forEach((a, i) => setTimeout(() => {
+    if (i === selected) npcLine(i, a.first_line);
+    else sys(`${a.name}（${a.role}）：「${a.first_line}」`);
+  }, 600 + i * 2600));
+
+  /* 自主性：每 45s 一位 NPC 随机开口 */
+  setInterval(async () => {
+    if (!providerReady) return;
+    const i = Math.floor(Math.random() * AGENTS.length);
+    try {
+      // 注意：messages 不能只有 system——智谱/DeepSeek 等端点会直接 400
+      const out = await provider.complete([
+        { role: "system", content: systemPrompt(i) + "\n现在你没有被对话，请自然地自言自语或对世界发表一句感慨，1~2 句。" },
+        { role: "user", content: "（此刻你在做什么？自然地说一句话）" }
+      ], { max: 90 });
+    if (i === selected) npcLine(i, out); else sys(`${AGENTS[i].name}：「${out}」`);
+    } catch (e) { /* 静默 */ }
+  }, 45000);
+
+  /* 主循环 */
+  const clock = new THREE.Clock();
+  (function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    npcs.forEach((n, j) => {
+      n.label.position.y = 3.1 + Math.sin(clock.elapsedTime * 2 + j) * 0.06;
+      if (n.mixer) n.mixer.update(dt);
+      if (j === selected) n.root.rotation.y += 0.004;
+    });
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+  window.addEventListener("resize", () => {
+    camera.aspect = sceneEl.clientWidth / sceneEl.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(sceneEl.clientWidth, sceneEl.clientHeight);
+  });
+}
+boot();
+</script>
+</body>
+</html>

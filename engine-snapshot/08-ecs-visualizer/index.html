@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OriEra ECS Visualizer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; color: #e0e0e0; font-family: 'SF Mono', Menlo, monospace; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+  #sidebar { width: 280px; min-width: 280px; flex-shrink: 0; background: #12121a; padding: 20px; border-right: 1px solid #222; overflow-y: auto; }
+  #canvas-area { flex: 1; min-width: 0; position: relative; overflow: hidden; }
+  h1 { font-size: 16px; margin-bottom: 16px; color: #6ee7ff; }
+  h2 { font-size: 12px; color: #888; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+  .stat .val { color: #6ee7ff; font-weight: bold; }
+  button { width: 100%; padding: 8px; margin: 4px 0; background: #1a1a2e; border: 1px solid #333; color: #e0e0e0; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  button:hover { background: #2a2a4e; border-color: #6ee7ff; }
+  button.primary { background: #6ee7ff; color: #000; font-weight: bold; }
+  .legend { display: flex; align-items: center; margin: 4px 0; font-size: 11px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+  #perf { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>⚙ OriEra ECS</h1>
+    <h2>Stats</h2>
+    <div class="stat"><span>Entities</span><span class="val" id="s-e">0</span></div>
+    <div class="stat"><span>Position</span><span class="val" id="s-p">0</span></div>
+    <div class="stat"><span>Velocity</span><span class="val" id="s-v">0</span></div>
+    <div class="stat"><span>Health</span><span class="val" id="s-h">0</span></div>
+    <div class="stat"><span>Frame ms</span><span class="val" id="s-f">0</span></div>
+
+    <h2>Actions</h2>
+    <button class="primary" onclick="spawn(100)">Spawn 100</button>
+    <button onclick="spawn(1000)">Spawn 1,000</button>
+    <button onclick="spawn(10000)">Spawn 10,000</button>
+    <button onclick="spawn(50000)">Spawn 50,000</button>
+    <button onclick="despawnAll()">Despawn All</button>
+    <button onclick="paused=!paused">Pause/Resume</button>
+
+    <h2>Legend</h2>
+    <div class="legend"><div class="dot" style="background:#6ee7ff"></div>Position only</div>
+    <div class="legend"><div class="dot" style="background:#ff6b9d"></div>Position + Velocity</div>
+    <div class="legend"><div class="dot" style="background:#a8ff6b"></div>Position + Health</div>
+    <div class="legend"><div class="dot" style="background:#ffd93d"></div>All three</div>
+  </div>
+  <div id="canvas-area">
+    <canvas id="c"></canvas>
+    <div id="perf">Flat-column ECS · generation-validated · Canvas 2D</div>
+  </div>
+</div>
+
+<script>
+class World {
+  constructor() {
+    this.next = 0;
+    this.gen = [];
+    this.free = [];
+    this.live = 0;
+    this.cols = new Map();
+  }
+
+  spawn() {
+    let idx = this.free.pop() ?? this.next++;
+    if (idx === this.next - 1) {
+      this.gen.push(0);
+      for (const col of this.cols.values()) while (col.length <= idx) col.push(null);
+    }
+    this.live++;
+    return idx;
+  }
+
+  despawnAll() {
+    for (let i = 0; i < this.gen.length; i++) {
+      if (this.gen[i] === 0 && !this.free.includes(i)) this.gen[i]++;
+    }
+    this.live = 0;
+    for (const col of this.cols.values()) col.fill(null);
+  }
+
+  insert(type, idx, data) {
+    let col = this.cols.get(type);
+    if (!col) { col = new Array(idx + 1).fill(null); this.cols.set(type, col); }
+    while (col.length <= idx) col.push(null);
+    col[idx] = data;
+  }
+
+  count(type) {
+    const col = this.cols.get(type);
+    if (!col) return 0;
+    let n = 0;
+    for (const s of col) if (s !== null) n++;
+    return n;
+  }
+}
+
+const world = new World();
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let paused = false;
+
+function resize() {
+  canvas.width = canvas.parentElement.clientWidth;
+  canvas.height = canvas.parentElement.clientHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function spawn(n) {
+  for (let i = 0; i < n; i++) {
+    const e = world.spawn();
+    world.insert('p', e, { x: Math.random() * canvas.width, y: Math.random() * canvas.height });
+    const r = Math.random();
+    if (r < 0.4) {
+      world.insert('v', e, { vx: (Math.random() - .5) * 2, vy: (Math.random() - .5) * 2 });
+    } else if (r < 0.7) {
+      world.insert('h', e, { hp: Math.random() * 100 });
+    } else {
+      world.insert('v', e, { vx: (Math.random() - .5) * 2, vy: (Math.random() - .5) * 2 });
+      world.insert('h', e, { hp: Math.random() * 100 });
+    }
+  }
+}
+
+function despawnAll() { world.despawnAll(); }
+
+let last = performance.now();
+
+function frame() {
+  const now = performance.now();
+  const dt = now - last;
+  last = now;
+
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const pos = world.cols.get('p');
+  if (pos) {
+    const vel = world.cols.get('v');
+    const hp = world.cols.get('h');
+
+    for (let i = 0; i < pos.length; i++) {
+      if (!pos[i]) continue;
+      if (!paused && vel && vel[i]) {
+        pos[i].x += vel[i].vx;
+        pos[i].y += vel[i].vy;
+        if (pos[i].x < 0 || pos[i].x > canvas.width) vel[i].vx *= -1;
+        if (pos[i].y < 0 || pos[i].y > canvas.height) vel[i].vy *= -1;
+      }
+      const hasV = vel && vel[i];
+      const hasH = hp && hp[i];
+      ctx.fillStyle = hasV && hasH ? '#ffd93d' : hasV ? '#ff6b9d' : hasH ? '#a8ff6b' : '#6ee7ff';
+      ctx.beginPath();
+      ctx.arc(pos[i].x, pos[i].y, 3, 0, 6.283);
+      ctx.fill();
+    }
+  }
+
+  document.getElementById('s-e').textContent = world.live;
+  document.getElementById('s-p').textContent = world.count('p');
+  document.getElementById('s-v').textContent = world.count('v');
+  document.getElementById('s-h').textContent = world.count('h');
+  document.getElementById('s-f').textContent = dt.toFixed(1);
+  requestAnimationFrame(frame);
+}
+
+spawn(500);
+frame();
+</script>
+</body>
+</html>
