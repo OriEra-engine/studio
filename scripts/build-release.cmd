@@ -1,10 +1,10 @@
 @echo off
 rem OriEra Studio 一键打包脚本（Windows）
-rem 前置：node/npm 已装；Rust GNU 工具链 + MinGW-w64（C:\Users\Lenovo\mingw-tools\mingw64\bin 在 PATH）
+rem 前置：node/npm 已装；Rust GNU 工具链 + MinGW-w64（$env:USERPROFILE\mingw-tools\mingw64\bin 在 PATH）
 rem 产物：src-tauri\target\release\bundle\nsis\*.exe（安装包）
 rem       src-tauri\target\release\oriera-studio.exe（裸 exe，配合 engine-snapshot 目录即为便携版）
 
-set PATH=C:\Users\Lenovo\mingw-tools\mingw64\bin;%PATH%
+set PATH=$env:USERPROFILE\mingw-tools\mingw64\bin;%PATH%
 cd /d "%~dp0.."
 
 echo [1/3] 安装前端依赖...

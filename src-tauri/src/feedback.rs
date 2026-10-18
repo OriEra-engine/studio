@@ -117,6 +117,7 @@ pub async fn submit_feedback(
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "OriEraStudio-Feedback")
             .json(&serde_json::json!({ "title": title, "body": full_body }))
+            .timeout(std::time::Duration::from_secs(30))
             .send()
             .await
             .map_err(|e| format!("请求 GitHub 失败（需要能访问 api.github.com）：{e}"))?;

@@ -2,7 +2,7 @@
 // 运行：node scripts/xss-test.mjs
 import fs from "node:fs";
 
-const TPL = "C:/Users/Lenovo/.zcode/workspace/default/oriera-studio/src-tauri/runtime/index.html";
+const TPL = "$PSScriptRoot/../src-tauri/runtime/index.html";
 const OUT = process.env.APPDATA + "/cn.oriera.studio/projects/xss-test";
 
 const tpl = fs.readFileSync(TPL, "utf8");

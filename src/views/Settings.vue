@@ -34,6 +34,7 @@ async function submitFeedback() {
       fbTitle.value = ""; fbBody.value = "";
     } else {
       message.info("已生成反馈存档，请在打开的页面点击 Submit 发布");
+      try { window.open(r.url, "_blank"); } catch { /* anchor fallback below */ }
     }
   } catch (e) {
     message.error(String(e));

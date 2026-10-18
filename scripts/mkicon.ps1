@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
-$inPath = "C:\Users\Lenovo\.zcode\workspace\default\oriera-studio\icon-source.jpg"
-$outPath = "C:\Users\Lenovo\.zcode\workspace\default\oriera-studio\app-icon.png"
+$inPath = "$PSScriptRoot\..\icon-source.jpg"
+$outPath = "$PSScriptRoot\..\app-icon.png"
 $srcImg = [System.Drawing.Image]::FromFile($inPath)
 $w = $srcImg.Width; $h = $srcImg.Height
 $srcBmp = New-Object System.Drawing.Bitmap($srcImg)

@@ -1,5 +1,5 @@
 Add-Type -AssemblyName System.Drawing
-$dir = "C:\Users\Lenovo\.zcode\workspace\default\oriera-studio"
+$dir = "$PSScriptRoot\.."
 $srcImg = [System.Drawing.Image]::FromFile("$dir\icon-source.jpg")
 $srcBmp = New-Object System.Drawing.Bitmap($srcImg)
 

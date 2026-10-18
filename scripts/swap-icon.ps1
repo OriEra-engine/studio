@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Continue"
-$dir = "C:\Users\Lenovo\AppData\Local\OriEra Studio"
-$setup = "C:\Users\Lenovo\.zcode\workspace\default\oriera-studio\src-tauri\target\release\bundle\nsis\OriEra Studio_0.3.0_x64-setup.exe"
+$dir = "$env:LOCALAPPDATA\OriEra Studio"
+$setup = "$PSScriptRoot\..\src-tauri\target\release\bundle\nsis\OriEra Studio_0.3.1_x64-setup.exe"
 
 Stop-Process -Name oriera-studio -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
@@ -23,7 +23,7 @@ Write-Output ("registry: " + $rp.DisplayVersion)
 
 # rewrite desktop shortcut to force icon re-resolution
 $sh = New-Object -ComObject WScript.Shell
-$lnk = $sh.CreateShortcut("C:\Users\Lenovo\Desktop\OriEra Studio.lnk")
+$lnk = $sh.CreateShortcut("$env:USERPROFILE\Desktop\OriEra Studio.lnk")
 $lnk.TargetPath = $exe
 $lnk.WorkingDirectory = $dir
 $lnk.IconLocation = "$exe,0"
@@ -48,7 +48,7 @@ if ($p3) {
 } else { Write-Output "APP NOT RUNNING" }
 
 # sync portable + desktop installer
-$root = "C:\Users\Lenovo\.zcode\workspace\default\oriera-studio"
+$root = "$PSScriptRoot\.."
 $d = Join-Path $root "portable\OriEraStudio"
 if (Test-Path $d) { Remove-Item -Recurse -Force $d }
 New-Item -ItemType Directory -Force $d | Out-Null
@@ -59,5 +59,5 @@ $zip = Join-Path $root "portable\OriEraStudio-portable.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path $d -DestinationPath $zip
 Write-Output ("portable zip: " + [math]::Round((Get-Item $zip).Length / 1MB, 2) + " MB")
-Copy-Item $setup "C:\Users\Lenovo\Desktop\OriEra Studio_0.3.0_x64-setup.exe" -Force
+Copy-Item $setup "$env:USERPROFILE\Desktop\OriEra Studio_0.3.1_x64-setup.exe" -Force
 Write-Output "desktop installer copy refreshed"

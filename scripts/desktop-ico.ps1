@@ -2,9 +2,9 @@ $ErrorActionPreference = "Continue"
 Add-Type -AssemblyName System.Drawing
 
 # 1. ship the black-logo ico next to the app (stable path, fresh cache key)
-$dir = "C:\Users\Lenovo\AppData\Local\OriEra Studio"
+$dir = "$env:LOCALAPPDATA\OriEra Studio"
 $ico = Join-Path $dir "app-icon.ico"
-Copy-Item "C:\Users\Lenovo\.zcode\workspace\default\oriera-studio\src-tauri\icons\icon.ico" $ico -Force
+Copy-Item "$PSScriptRoot\..\src-tauri\icons\icon.ico" $ico -Force
 Write-Output ("ico shipped: " + (Get-Item $ico).Length + " bytes")
 
 # verify the ico really is the black logo (16x16 entry, first entry in file)
@@ -15,8 +15,8 @@ Write-Output ("first ico entry: ${w}x${h}")
 # 2. point both shortcuts at the standalone ico
 $sh = New-Object -ComObject WScript.Shell
 foreach ($p in @(
-  "C:\Users\Lenovo\Desktop\OriEra Studio.lnk",
-  "C:\Users\Lenovo\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OriEra Studio.lnk"
+  "$env:USERPROFILE\Desktop\OriEra Studio.lnk",
+  "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OriEra Studio.lnk"
 )) {
   if (Test-Path $p) {
     $lnk = $sh.CreateShortcut($p)
