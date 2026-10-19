@@ -177,7 +177,7 @@ const canNext = computed(() => {
     case 1: return !!gameplayId.value;
     case 2: return beats.length > 0;
     case 3: return true;
-    case 4: return chosenAgents.length > 0;
+    case 4: return chosenAgents.value.length > 0;
     default: return false;
   }
 });
