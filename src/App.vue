@@ -3,7 +3,7 @@
 const APP_VERSION = __APP_VERSION__;
 import { h, ref, Component } from "vue";
 import { useRoute, RouterLink, RouterView } from "vue-router";
-import { NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, darkTheme, zhCN, dateZhCN } from "naive-ui";
+import { NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, NMessageProvider, NDialogProvider, darkTheme, zhCN, dateZhCN } from "naive-ui";
 import type { MenuOption } from "naive-ui";
 
 const route = useRoute();
@@ -70,7 +70,11 @@ const menuOptions: MenuOption[] = [
         </div>
       </NLayoutSider>
       <NLayoutContent content-style="height: 100%; overflow-y: auto;">
-        <RouterView />
+        <NMessageProvider>
+          <NDialogProvider>
+            <RouterView />
+          </NDialogProvider>
+        </NMessageProvider>
       </NLayoutContent>
     </NLayout>
   </NConfigProvider>
