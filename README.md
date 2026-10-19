@@ -36,6 +36,18 @@ OriEra Studio 把这些全部封装掉：
 
 Tauri 2（Rust 后端）· Vue 3 + Naive UI · axum 内嵌静态服务器 · 引擎 kernel.js（L7 provider / L9 记忆系统复用）
 
+## 引擎快照同步（studio#3 解法）
+
+`engine-snapshot/` 是引擎 examples 的内置快照。**不要手抄**：
+
+```bash
+node scripts/sync-engine-snapshot.mjs --engine ../engine          # 实同步（LF 归一+陈旧清理+VERSION.json）
+node scripts/sync-engine-snapshot.mjs --engine ../engine --check  # 只查漂移，退出码即结论
+```
+
+CI 每周一自动对比引擎 main（`.github/workflows/snapshot-drift.yml`），漂移即开 issue。
+同步后若新增演示目录，需手工在 `src-tauri/src/demos.rs` 补中文元数据条目（脚本会 WARN 提醒）。
+
 ## 开发
 
 ```bash
