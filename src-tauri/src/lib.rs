@@ -142,10 +142,26 @@ async fn generate_story(
     user_idea: String,
     beat_count: usize,
     framework_rhythm: Option<String>,
+    // 玩法模板的经济资源名（v0.3 分支效果提示词用；旧前端不传也能跑）
+    economy: Option<Vec<serde_json::Value>>,
 ) -> Result<llm::GeneratedStory, String> {
     let cfg = settings::load_provider(&app)
         .ok_or_else(|| "AI 定制需要先在模型中心配置模型".to_string())?;
-    llm::generate_story(&cfg, &gameplay_name, &tagline, &user_idea, beat_count, framework_rhythm.as_deref()).await
+    let economy_names: Vec<String> = economy
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|v| v["name"].as_str().map(String::from))
+        .collect();
+    llm::generate_story(
+        &cfg,
+        &gameplay_name,
+        &tagline,
+        &user_idea,
+        beat_count,
+        framework_rhythm.as_deref(),
+        &economy_names,
+    )
+    .await
 }
 
 /// Studio 助手「奥粒」多轮对话（前端 CopilotPanel 调用）。
@@ -157,7 +173,8 @@ async fn copilot_chat(
     user: String,
 ) -> Result<String, String> {
     let cfg = settings::load_provider(&app).ok_or_else(|| {
-        "小奥离线中：先在「模型中心」配置模型（云端或 Ollama 本地），配置好我就能真正对话啦".to_string()
+        "小奥离线中：先在「模型中心」配置模型（云端或 Ollama 本地），配置好我就能真正对话啦"
+            .to_string()
     })?;
     llm::copilot_chat(&cfg, &system, &history, &user).await
 }

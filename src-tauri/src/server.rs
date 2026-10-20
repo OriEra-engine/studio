@@ -38,7 +38,8 @@ pub fn start(snapshot_examples: PathBuf, projects_dir: PathBuf) -> Result<u16, S
         }
     });
 
-    rx.recv().map_err(|e| format!("static server failed to start: {e}"))
+    rx.recv()
+        .map_err(|e| format!("static server failed to start: {e}"))
 }
 
 /// 用户项目目录不存在则创建。

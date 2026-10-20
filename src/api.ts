@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { GameSpec } from "./types";
+import type { GameSpec, StoryBeat } from "./types";
 
 export interface FeedbackResult {
   /** direct = 已直提 issue；manual = 需浏览器/手动投递 */
@@ -90,7 +90,7 @@ export interface ProjectMeta {
 
 export interface GeneratedStory {
   premise: string;
-  beats: { phase: string; title: string; desc: string }[];
+  beats: StoryBeat[];
 }
 
 export interface OllamaModel {
@@ -115,7 +115,7 @@ export interface TemplateLib {
 
 export interface ProjectDetail {
   game: Record<string, unknown>;
-  story: { framework?: string; premise: string; beats: { phase: string; title: string; desc: string }[] };
+  story: { framework?: string; premise: string; beats: StoryBeat[] };
   agents: unknown[];
 }
 
@@ -138,13 +138,14 @@ export const api = {
   testProvider: () => invoke<string>("test_provider"),
 
   // 新建游戏
-  generateStory: (gameplayName: string, tagline: string, userIdea: string, beatCount: number, frameworkRhythm?: string) =>
+  generateStory: (gameplayName: string, tagline: string, userIdea: string, beatCount: number, frameworkRhythm?: string, economyNames?: string[]) =>
     invoke<GeneratedStory>("generate_story", {
       gameplayName,
       tagline,
       userIdea,
       beatCount,
       frameworkRhythm: frameworkRhythm ?? null,
+      economy: (economyNames ?? []).map(n => ({ name: n })),
     }),
   createProject: (spec: GameSpec) => invoke<ProjectMeta>("create_project", { spec }),
 

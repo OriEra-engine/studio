@@ -100,10 +100,11 @@ fn ollama_rec(model: &str, size_note: &str, disk_gb: f32, vram_need_gb: u32) -> 
 
 /// 核心推荐矩阵（v1 规则）。
 pub fn recommend(hw: &HardwareInfo) -> Recommendation {
-    let has_dgpu = hw
-        .gpus
-        .iter()
-        .any(|g| !g.name.to_lowercase().contains("integrated") && !g.name.to_lowercase().contains("amd radeon graphics") && !g.name.to_lowercase().contains("iris"));
+    let has_dgpu = hw.gpus.iter().any(|g| {
+        !g.name.to_lowercase().contains("integrated")
+            && !g.name.to_lowercase().contains("amd radeon graphics")
+            && !g.name.to_lowercase().contains("iris")
+    });
     let vram = hw.max_vram_mb.unwrap_or(0) as f32 / 1024.0;
 
     // ---------- 低配：云端为主 ----------
@@ -125,22 +126,42 @@ pub fn recommend(hw: &HardwareInfo) -> Recommendation {
     // ---------- 有独显：云端 + 本地双轨 ----------
     let (local, headline) = if vram < 8.0 {
         (
-            Some(ollama_rec("qwen3:4b", "4B 参数 · Q4 量化，入门可跑", 2.6, 4)),
+            Some(ollama_rec(
+                "qwen3:4b",
+                "4B 参数 · Q4 量化，入门可跑",
+                2.6,
+                4,
+            )),
             format!("显存约 {:.0}GB：可跑 4B 本地小模型，云端仍是主力", vram),
         )
     } else if vram < 13.0 {
         (
-            Some(ollama_rec("qwen3:8b", "8B 参数 · Q4 量化，对话质量与速度的甜点档", 5.2, 8)),
+            Some(ollama_rec(
+                "qwen3:8b",
+                "8B 参数 · Q4 量化，对话质量与速度的甜点档",
+                5.2,
+                8,
+            )),
             format!("显存约 {:.0}GB：8B 本地模型体验良好，推荐本地为主", vram),
         )
     } else if vram < 20.0 {
         (
-            Some(ollama_rec("qwen3:14b", "14B 参数 · Q4 量化，NPC 表现更立体", 9.3, 13)),
+            Some(ollama_rec(
+                "qwen3:14b",
+                "14B 参数 · Q4 量化，NPC 表现更立体",
+                9.3,
+                13,
+            )),
             format!("显存约 {:.0}GB：可上 14B，本地即有云端级表现", vram),
         )
     } else {
         (
-            Some(ollama_rec("qwen3:32b", "32B 参数 · Q4 量化，旗舰级本地推理", 20.0, 20)),
+            Some(ollama_rec(
+                "qwen3:32b",
+                "32B 参数 · Q4 量化，旗舰级本地推理",
+                20.0,
+                20,
+            )),
             format!("显存约 {:.0}GB：旗舰配置，32B 本地大模型无压力", vram),
         )
     };

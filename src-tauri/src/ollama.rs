@@ -24,7 +24,10 @@ pub struct OllamaModel {
 /// 找 ollama.exe：PATH → 默认安装路径。
 fn find_ollama() -> Option<(String, String)> {
     // 1) PATH
-    if let Ok(out) = std::process::Command::new("ollama").arg("--version").output() {
+    if let Ok(out) = std::process::Command::new("ollama")
+        .arg("--version")
+        .output()
+    {
         if out.status.success() {
             let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
             return Some(("ollama".into(), v));
@@ -179,7 +182,11 @@ pub async fn ollama_pull(app: tauri::AppHandle, model: String) -> Result<(), Str
                 let percent = if v["total"].is_number() && v["completed"].is_number() {
                     let total = v["total"].as_f64().unwrap_or(0.0);
                     let done = v["completed"].as_f64().unwrap_or(0.0);
-                    if total > 0.0 { Some((done / total * 100.0) as u32) } else { None }
+                    if total > 0.0 {
+                        Some((done / total * 100.0) as u32)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
@@ -218,13 +225,20 @@ pub async fn ollama_delete_model(model: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn gpu_vram_usage() -> Option<(u32, u32)> {
     let out = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
         .output()
         .ok()?;
     if !out.status.success() {
         return None;
     }
-    let line = String::from_utf8_lossy(&out.stdout).lines().next()?.trim().to_string();
+    let line = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .to_string();
     let mut it = line.split(',');
     let used: u32 = it.next()?.trim().parse().ok()?;
     let total: u32 = it.next()?.trim().parse().ok()?;

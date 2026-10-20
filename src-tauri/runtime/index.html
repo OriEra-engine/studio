@@ -38,6 +38,14 @@
   .beat { border-left: 3px solid #2a3a5c; padding: 8px 12px; margin-bottom: 10px; border-radius: 0 8px 8px 0;
     background: #161a28; }
   .beat.now { border-left-color: #7eb8ff; background: #1a2440; }
+  .choices { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%;
+    background: #1a2440; color: #cdd6ec; border: 1px solid #2d5b9e; border-radius: 10px;
+    padding: 10px 14px; cursor: pointer; font-size: 13px; text-align: left; }
+  .choice:hover { background: #223055; }
+  .choice i { color: #8fa3c8; font-style: normal; font-size: 11px; flex: none; }
+  .choice.off { opacity: .4; cursor: not-allowed; }
+  .loop-auto { font-size: 10px; color: #6fd3a0; border: 1px solid #2d6a4a; border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
   .beat.done { opacity: .45; }
   .beat .ph { font-size: 11px; color: #7c86a3; }
   .beat .tt { font-size: 13.5px; font-weight: 700; margin: 2px 0; }
@@ -76,7 +84,7 @@
     <div id="hud">
       <div class="chip"><b style="color:#9fc3ff">__PROJECT_NAME__</b> · <span id="tagline"></span></div>
       <div class="chip">第 <b id="day" style="color:#e8d78a">1</b> 天</div>
-      <div class="chip">💰 <b id="coins" style="color:#ffd88a">0</b></div>
+      <span id="res-chips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
       <div class="chip"><span id="dot"></span><span id="prov-name">规则引擎（离线）</span></div>
     </div>
   </div>
@@ -297,6 +305,7 @@ async function startScene(mod) {
       ];
       const out = await provider.complete(msgs, { max: 300 });
       t.remove(); npcLine(i, out);
+      track("talk");
       const h = histMap.get(a.name) || [];
       h.push({ role: "user", content: text }, { role: "assistant", content: out });
       histMap.set(a.name, h.slice(-12));
@@ -312,6 +321,7 @@ async function startScene(mod) {
   say.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
 
   function ruleReply(i, text) {
+    track("talk");
     const a = AGENTS[i];
     const openers = ["（歪头打量你）", "（放下手里的东西）", "（压低声音）", ""];
     const o = openers[Math.floor(Math.random() * openers.length)];
@@ -329,14 +339,46 @@ async function startScene(mod) {
       const cls = i === storyIdx ? "now" : (i < storyIdx ? "done" : "");
       html += `<div class="beat ${cls}"><div class="ph">${esc(b.phase)}${i < storyIdx ? " · 已完成" : i === storyIdx ? " · 进行中" : ""}</div><div class="tt">${esc(b.title)}</div><div class="ds">${esc(b.desc)}</div></div>`;
     });
-    html += `<button id="btn-next" ${storyIdx >= STORY.beats.length ? "disabled" : ""}>${storyIdx >= STORY.beats.length ? "故事已抵达结局" : "推进剧情 → 第 " + (storyIdx + 1) + " 拍"}</button>`;
+    const cur = STORY.beats[storyIdx] || {};
+    const chs = (cur.choices || []).filter(c => c && c.label);
+    if (storyIdx >= STORY.beats.length) {
+      html += `<button disabled>故事已抵达结局</button>`;
+    } else if (chs.length) {
+      html += `<div class="choices">` + chs.map((c, ci) => {
+        const eff = parseEffect(c.effect);
+        const blocked = !!(eff && eff.d < 0 && resAmount(eff.res) < -eff.d);
+        return `<button class="choice ${blocked ? "off" : ""}" data-ci="${ci}" ${blocked ? "disabled" : ""}
+          title="${blocked ? esc(eff.res) + " 不足" : "前往第 " + (nextOf(c) + 1) + " 拍"}">${esc(c.label)}${eff ? `<i>${esc((eff.d > 0 ? "＋" : "－") + Math.abs(eff.d) + " " + eff.res)}</i>` : ""}</button>`;
+      }).join("") + `</div>`;
+    } else {
+      html += `<button id="btn-next">推进剧情 → 第 ${storyIdx + 1} 拍</button>`;
+    }
     el.innerHTML = html;
     const btn = document.getElementById("btn-next");
-    if (btn) btn.onclick = advance;
+    if (btn) btn.onclick = () => advanceTo(storyIdx + 1, null);
+    el.querySelectorAll(".choice").forEach(b2 => b2.onclick = () => {
+      const c = chs[+b2.dataset.ci];
+      advanceTo(nextOf(c), c.effect);
+    });
   }
-  async function advance() {
+  /* 分支数据模型:c.next = 目标拍序号(0 起);省略/-1 = 顺延;effect = "资源±数量" */
+  function parseEffect(s) {
+    if (!s) return null;
+    const m = String(s).trim().match(/^(.+?)([+\-＋－])(\d+)$/);
+    return m ? { res: m[1].trim(), d: (m[2] === "+" || m[2] === "＋" ? 1 : -1) * (+m[3]) } : null;
+  }
+  function nextOf(c) {
+    const n = c && c.next;
+    return (n === null || n === undefined || n < 0) ? storyIdx + 1 : Math.min(Math.max(0, n), STORY.beats.length);
+  }
+  async function advanceTo(target, effectStr) {
     if (storyIdx >= STORY.beats.length) return;
     const b = STORY.beats[storyIdx];
+    const eff = parseEffect(effectStr);
+    if (eff) {
+      if (eff.d < 0 && resAmount(eff.res) < -eff.d) { sys(`${eff.res}不足（需要 ${-eff.d}）`); renderStory(); return; }
+      resAdd(eff.res, eff.d, "分支选择");
+    }
     sys(`📖 第 ${day} 天 · 剧情推进：「${b.title}」`);
     if (providerReady) {
       const t = bubble("thinking", "导演系统正在运镜……");
@@ -350,26 +392,37 @@ async function startScene(mod) {
     } else {
       bubble("npc", `<b>🎬 导演</b><br>${esc(b.desc)}`);
     }
-    storyIdx++; day++;
-    earn(15, "💰 探索奖励 +15 金币");
+    storyIdx = target; day++;
+    track("advance");
+    resAdd(RES[0], 15, "剧情推进奖励");
     localStorage.setItem("game." + GAME.id + ".beat", JSON.stringify(storyIdx));
     localStorage.setItem("game." + GAME.id + ".day", JSON.stringify(day));
     document.getElementById("day").textContent = day;
-    renderStory();
+    renderStory(); renderCodex();
   }
 
-  /* ---- 经济系统（v0.2 最小可玩循环）：推进剧情赚金币，向商人买线索 ---- */
-  let coins = JSON.parse(localStorage.getItem("game." + GAME.id + ".coins") || "0");
-  function renderCoins() {
-    const el = document.getElementById("coins");
-    if (el) el.textContent = coins;
+  /* ---- 经济账本（v0.3 真逻辑）：玩法模板的资源就是真实数值 ---- */
+  const RES_NAMES = ((GAME.economy || []).map(r => (r && r.name) ? r.name : String(r)).filter(Boolean));
+  const RES = RES_NAMES.length ? RES_NAMES : ["金币"];
+  const RES_KEY = "game." + GAME.id + ".res";
+  let resBag = JSON.parse(localStorage.getItem(RES_KEY) || "{}");
+  if (!(RES[0] in resBag)) { // 旧存档的「金币」迁移为模板主资源
+    const legacy = +(localStorage.getItem("game." + GAME.id + ".coins") || 0);
+    if (legacy) resBag[RES[0]] = legacy;
   }
-  function earn(n, why) {
-    coins += n;
-    localStorage.setItem("game." + GAME.id + ".coins", JSON.stringify(coins));
-    renderCoins();
-    if (why) sys(why);
+  function resAmount(n) { return resBag[n] | 0; }
+  function resAdd(n, d, why) {
+    resBag[n] = Math.max(0, (resBag[n] | 0) + d);
+    localStorage.setItem(RES_KEY, JSON.stringify(resBag));
+    renderRes();
+    if (why) sys(`${d > 0 ? "＋" : "－"}${Math.abs(d)} ${n}（${why}）`);
   }
+  function renderRes() {
+    const el = document.getElementById("res-chips");
+    if (el) el.innerHTML = RES.slice(0, 4).map(n =>
+      `<span class="chip">${esc(n)} <b style="color:#ffd88a">${resAmount(n)}</b></span>`).join("");
+  }
+  function earn(n, why) { resAdd(RES[0], n, why); }
 
   const buyBtn = document.getElementById("buy-hint");
   function refreshBuyBtn() {
@@ -378,11 +431,10 @@ async function startScene(mod) {
     buyBtn.style.display = can ? "" : "none";
   }
   buyBtn.onclick = async () => {
-    if (coins < 10) { sys(`金币不够（现有 ${coins}，需要 10）——推进剧情可获得更多`); return; }
+    if (resAmount(RES[0]) < 10) { sys(`${RES[0]}不够（现有 ${resAmount(RES[0])}，需要 10）——推进剧情可获得更多`); return; }
     const i = selected, a = AGENTS[i];
-    coins -= 10;
-    localStorage.setItem("game." + GAME.id + ".coins", JSON.stringify(coins));
-    renderCoins();
+    resAdd(RES[0], -10, "购买线索");
+    track("buy");
     const beat = STORY.beats[Math.min(storyIdx, STORY.beats.length - 1)] || {};
     if (providerReady) {
       const t = bubble("thinking", "（TA 环顾四周，压低声音……）");
@@ -424,12 +476,32 @@ async function startScene(mod) {
     r.readAsText(file);
   }
 
-  /* 玩法图鉴 */
-  const doneSteps = new Set(JSON.parse(localStorage.getItem("game." + GAME.id + ".loop") || "[]"));
-  function renderCodex() {
-    let html = "<h4>核心循环</h4>";
+  /* 玩法图鉴（v0.3 真逻辑）：核心循环按玩家真实行为自动追踪 */
+  const doneManual = new Set(JSON.parse(localStorage.getItem("game." + GAME.id + ".loop") || "[]"));
+  const doneAuto = new Set(JSON.parse(localStorage.getItem("game." + GAME.id + ".loopAuto") || "[]"));
+  const stepDone = i => doneManual.has(i) || doneAuto.has(i);
+  /* 行为→步骤归类：对话类/交易类靠关键词，其余随剧情推进 */
+  function stepKind(s) {
+    if (/对话|社交|询问|聊天|交流|谈判|打听/.test(s)) return "talk";
+    if (/交易|购买|经济|商店|花钱|买/.test(s)) return "buy";
+    return "advance";
+  }
+  function track(kind) {
+    let hit = false;
     GAME.core_loop.forEach((s, i) => {
-      html += `<div class="loop-step ${doneSteps.has(i) ? "done" : ""}" data-i="${i}"><span>${doneSteps.has(i) ? "✅" : "▫️"}</span>${esc(s)}</div>`;
+      if (stepDone(i) || stepKind(s) !== kind) return;
+      doneAuto.add(i); hit = true;
+    });
+    if (!hit) return;
+    localStorage.setItem("game." + GAME.id + ".loopAuto", JSON.stringify([...doneAuto]));
+    renderCodex();
+    sys("🎯 核心循环推进（按真实行为自动点亮）");
+  }
+  function renderCodex() {
+    let html = "<h4>核心循环 <span style='font-size:11px;color:#6fd3a0'>按你的真实行为自动追踪</span></h4>";
+    GAME.core_loop.forEach((s, i) => {
+      const auto = doneAuto.has(i) && !doneManual.has(i);
+      html += `<div class="loop-step ${stepDone(i) ? "done" : ""}" data-i="${i}"><span>${stepDone(i) ? "✅" : "▫️"}</span>${esc(s)}${auto ? "<span class='loop-auto'>自动</span>" : ""}</div>`;
     });
     html += "<h4>机制系统</h4>";
     GAME.mechanics.forEach(m => { html += `<div class="mech"><b>${esc(m.name)}</b><div>${esc(m.detail)}</div></div>`; });
@@ -449,8 +521,8 @@ async function startScene(mod) {
     el.querySelector("#save-file").onchange = e => { if (e.target.files[0]) importSave(e.target.files[0]); };
     el.querySelectorAll(".loop-step").forEach(d => d.onclick = () => {
       const i = +d.dataset.i;
-      doneSteps.has(i) ? doneSteps.delete(i) : doneSteps.add(i);
-      localStorage.setItem("game." + GAME.id + ".loop", JSON.stringify([...doneSteps]));
+      doneManual.has(i) ? doneManual.delete(i) : doneManual.add(i);
+      localStorage.setItem("game." + GAME.id + ".loop", JSON.stringify([...doneManual]));
       renderCodex();
     });
   }
@@ -477,7 +549,7 @@ async function startScene(mod) {
   /* 开场 */
   document.getElementById("tagline").textContent = GAME.tagline;
   document.getElementById("day").textContent = day;
-  renderCoins();
+  renderRes();
   renderStory(); renderCodex(); renderNpcList(); select(0);
   npcs[0] && sys(`欢迎来到「${esc(GAME.name)}」。${esc(AGENTS[0].name)}正在看你——去和 TA 说说第一句话吧。`);
   // NPC 开场白（顺序错开）

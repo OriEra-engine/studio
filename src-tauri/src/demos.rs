@@ -63,7 +63,11 @@ pub fn list_demos() -> Vec<DemoInfo> {
 }
 
 #[tauri::command]
-pub fn open_demo(app: AppHandle, state: State<'_, crate::AppState>, folder: String) -> Result<(), String> {
+pub fn open_demo(
+    app: AppHandle,
+    state: State<'_, crate::AppState>,
+    folder: String,
+) -> Result<(), String> {
     // 目录名白名单校验，杜绝路径穿越
     let valid = catalog().iter().any(|d| d.id == folder);
     if !valid {

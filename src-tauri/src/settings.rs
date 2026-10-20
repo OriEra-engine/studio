@@ -83,7 +83,11 @@ pub fn load_provider(app: &tauri::AppHandle) -> Option<ProviderCfg> {
         base: stored.base,
         key,
     };
-    if cfg.is_usable() { Some(cfg) } else { None }
+    if cfg.is_usable() {
+        Some(cfg)
+    } else {
+        None
+    }
 }
 
 /// 保存 provider：key 进凭据管理器，其余进 settings.json。
@@ -110,7 +114,8 @@ pub fn clear_provider(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 fn keyring_entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_ENTRY).map_err(|e| format!("凭据管理器不可用：{e}"))
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_ENTRY)
+        .map_err(|e| format!("凭据管理器不可用：{e}"))
 }
 
 fn keyring_set(value: &str) -> Result<(), String> {
