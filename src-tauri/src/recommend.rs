@@ -71,6 +71,18 @@ fn moonshot() -> CloudRec {
     }
 }
 
+fn doubao() -> CloudRec {
+    CloudRec {
+        label: "豆包 · 火山方舟".into(),
+        kind: "doubao".into(),
+        model: "doubao-seed-1.6".into(),
+        base: "https://ark.cn-beijing.volces.com/api/v3".into(),
+        note: "字节跳动 · OpenAI 兼容，模型填 ID 或 ep-接入点".into(),
+        free: false,
+        signup_url: "https://www.volcengine.com/product/doubao".into(),
+    }
+}
+
 fn ollama_rec(model: &str, size_note: &str, disk_gb: f32, vram_need_gb: u32) -> LocalRec {
     LocalRec {
         ollama_model: model.into(),
@@ -105,7 +117,7 @@ pub fn recommend(hw: &HardwareInfo) -> Recommendation {
                 hw.ram_gb,
                 if has_dgpu { format!(" / 独显显存约 {:.0}GB", vram) } else { String::new() }
             ),
-            cloud: vec![zhipu(), deepseek()],
+            cloud: vec![zhipu(), deepseek(), doubao()],
             local: None,
         };
     }
@@ -139,7 +151,7 @@ pub fn recommend(hw: &HardwareInfo) -> Recommendation {
         detail: format!(
             "本地模型零 token 费用、数据不出本机，适合长时间挂机游玩；云端免安装、覆盖所有机型。两者都注入引擎，随时在「模型中心」切换。"
         ),
-        cloud: vec![zhipu(), deepseek(), moonshot()],
+        cloud: vec![zhipu(), deepseek(), doubao(), moonshot()],
         local,
     }
 }

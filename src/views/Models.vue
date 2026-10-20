@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import {
   NCard, NGrid, NGi, NTag, NButton, NSpace, NInput, NAlert, NSpin, NProgress,
-  NRadioGroup, NRadio, NPopconfirm, useMessage,
+  NRadioGroup, NRadio, NPopconfirm, NSelect, useMessage,
 } from "naive-ui";
 import { listen } from "@tauri-apps/api/event";
 import { api, type HardwareInfo, type Recommendation, type ProviderCfg, type OllamaStatus } from "../api";
-import { CLOUD_PRESETS } from "../api";
+import { CLOUD_PRESETS, type CloudPreset } from "../api";
 
 const message = useMessage();
 const hw = ref<HardwareInfo | null>(null);
@@ -18,6 +18,52 @@ const saving = ref(false);
 const testing = ref(false);
 const testResult = ref<{ ok: boolean; text: string } | null>(null);
 const configured = ref(false);
+
+// ---- 全部厂商(筛选) ----
+type FilterId = "all" | "free" | "cn" | "vision";
+const FILTERS: { id: FilterId; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "free", label: "免费" },
+  { id: "cn", label: "国内直连" },
+  { id: "vision", label: "带视觉" },
+];
+const filter = ref<FilterId>("all");
+const filteredPresets = computed(() => {
+  switch (filter.value) {
+    case "free": return CLOUD_PRESETS.filter(p => p.free);
+    case "cn": return CLOUD_PRESETS.filter(p => p.cn);
+    case "vision": return CLOUD_PRESETS.filter(p => p.vision);
+    default: return CLOUD_PRESETS;
+  }
+});
+function pickPreset(p: CloudPreset, model?: string) {
+  form.kind = p.kind;
+  form.model = model || p.model;
+  form.base = p.base;
+  testResult.value = null;
+  message.info(`已选择 ${model || p.model},粘贴 API Key 后保存`);
+}
+
+// ---- 任务槽位(RFC 0002 槽位路由 · 数据先行预览) ----
+const SLOTS = [
+  { id: "npc_dialog", name: "NPC 对话", duty: "高频 · 低延迟 · 成本敏感", recKind: "zhipu", recModel: "glm-4-flash", why: "免费 Flash 档,零成本高频对话" },
+  { id: "director", name: "剧情导演", duty: "长上下文 · 世界观一致", recKind: "moonshot", recModel: "kimi-k2.6", why: "256K 装得下整本世界书" },
+  { id: "codegen", name: "行为生成", duty: "代码与推理优先", recKind: "deepseek", recModel: "deepseek-chat", why: "代码性价比" },
+  { id: "reviewer", name: "生成审校", duty: "视觉 + 文本评审", recKind: "zhipu", recModel: "glm-4.6v-flash", why: "免费多模态,截图评审零成本" },
+];
+const ROUTING_KEY = "oriera.routing.v1";
+const routing = ref<Record<string, string>>({});
+try { routing.value = JSON.parse(localStorage.getItem(ROUTING_KEY) || "{}"); } catch { /* 坏数据忽略 */ }
+const slotOptions = CLOUD_PRESETS.map(p => ({ label: p.label, value: p.kind }));
+function onSlotChange(id: string, kind: string) {
+  routing.value[id] = kind;
+  localStorage.setItem(ROUTING_KEY, JSON.stringify(routing.value));
+  const p = CLOUD_PRESETS.find(x => x.kind === kind);
+  message.success(`槽位 ${id} → ${p?.label ?? kind}(已存本机,引擎 v0.5 槽位路由接入后生效)`);
+}
+function slotKindOf(s: { id: string; recKind: string }): string {
+  return routing.value[s.id] || s.recKind;
+}
 
 // Ollama
 const ollama = ref<OllamaStatus | null>(null);
@@ -215,6 +261,74 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       </NGrid>
     </NCard>
 
+    <!-- 全部云厂商 -->
+    <NCard title="☁️ 全部云厂商 · 自由选择" size="small" style="margin-bottom: 14px">
+      <template #header-extra>
+        <NSpace size="small" :wrap="false">
+          <NTag
+            v-for="f in FILTERS" :key="f.id" size="small" round
+            :type="filter === f.id ? 'primary' : 'default'" style="cursor: pointer"
+            @click="filter = f.id"
+          >{{ f.label }}</NTag>
+        </NSpace>
+      </template>
+      <NGrid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
+        <NGi v-for="p in filteredPresets" :key="p.kind" span="3 m:1">
+          <div
+            class="rec-card" :class="{ sel: form.kind === p.kind }"
+            role="button" tabindex="0" :aria-pressed="form.kind === p.kind" :aria-label="`选择厂商 ${p.label}`"
+            @click="pickPreset(p)" @keydown.enter.prevent="pickPreset(p)" @keydown.space.prevent="pickPreset(p)"
+          >
+            <div class="rec-head">
+              <b>{{ p.label }}</b>
+              <span>
+                <NTag v-if="p.badge" size="tiny" round type="success" style="margin-right: 4px">{{ p.badge }}</NTag>
+                <NTag v-if="p.free" type="success" size="tiny" round>免费</NTag>
+              </span>
+            </div>
+            <div class="rec-note">{{ p.note }}</div>
+            <div v-if="p.models" class="model-row">
+              <span
+                v-for="m in p.models" :key="m"
+                class="model-pill-mini" :class="{ on: form.model === m && form.kind === p.kind }"
+                role="button" tabindex="0" :aria-label="`选择模型 ${m}`"
+                @click.stop="pickPreset(p, m)" @keydown.enter.stop.prevent="pickPreset(p, m)" @keydown.space.stop.prevent="pickPreset(p, m)"
+              >{{ m }}</span>
+            </div>
+            <div class="rec-actions">
+              <NButton size="tiny" secondary @click.stop="pickPreset(p)">选择</NButton>
+              <NButton v-if="p.url" size="tiny" quaternary tag="a" :href="p.url" target="_blank">注册入口 ↗</NButton>
+            </div>
+          </div>
+        </NGi>
+      </NGrid>
+      <p style="color: #8a90a6; font-size: 11.5px; margin: 12px 0 0">
+        价格与免费额度以各厂商定价页为准(引擎不背书价格);任何 OpenAI 兼容端点也可在下方「其他 OpenAI 兼容」自由填写。
+      </p>
+    </NCard>
+
+    <!-- 任务槽位(预览) -->
+    <NCard size="small" style="margin-bottom: 14px">
+      <template #header>🧭 任务槽位 <NTag size="tiny" round style="margin-left: 6px" :bordered="false">预览 · 数据先行</NTag></template>
+      <p style="color: #9aa2b8; font-size: 12.5px; line-height: 1.7; margin: 0 0 12px">
+        按「任务」而非全局选模型:对话/剧情/行为/审校各选各家,故障自动走降级链。槽位表已存本机(<code>oriera.routing.v1</code>),
+        引擎 v0.5 槽位路由接入运行时后自动生效;当前游戏运行时仍使用下方全局默认模型。
+      </p>
+      <NGrid :cols="4" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
+        <NGi v-for="s in SLOTS" :key="s.id" span="4 m:1">
+          <div class="slot-card">
+            <div class="slot-head"><b>{{ s.name }}</b><span class="slot-id">{{ s.id }}</span></div>
+            <div class="slot-duty">{{ s.duty }}</div>
+            <NSelect
+              size="small" :value="slotKindOf(s)" :options="slotOptions"
+              @update:value="(v: string) => onSlotChange(s.id, v)"
+            />
+            <div class="slot-why">推荐:{{ CLOUD_PRESETS.find(p => p.kind === s.recKind)?.label }} · {{ s.why }}</div>
+          </div>
+        </NGi>
+      </NGrid>
+    </NCard>
+
     <!-- Ollama 本地管理 -->
     <NCard v-if="rec?.local" title="🏠 本地模型（Ollama）" size="small" style="margin-bottom: 14px">
       <template #header-extra>
@@ -268,10 +382,11 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
         <NGi span="2 m:1">
           <NSpace vertical size="small">
             <div class="fld"><label>服务商 / 端点类型</label>
-              <NRadioGroup v-model:value="form.kind" size="small">
-                <NRadio v-for="p in CLOUD_PRESETS" :key="p.kind" :value="p.kind">{{ p.label }}</NRadio>
-                <NRadio value="openai-compat">其他 OpenAI 兼容</NRadio>
-              </NRadioGroup>
+              <NSelect
+                v-model:value="form.kind" size="small"
+                :options="[...slotOptions, { label: '其他 OpenAI 兼容(自由填写)', value: 'openai-compat' }]"
+                placeholder="选择或已在上方卡片选择"
+              />
             </div>
             <div class="fld"><label>模型名称</label><NInput v-model:value="form.model" placeholder="例如 glm-4-flash" /></div>
             <div class="fld"><label>API Base URL</label><NInput v-model:value="form.base" placeholder="https://..." /></div>
@@ -314,6 +429,16 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .rec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13.5px; }
 .rec-note { font-size: 12px; color: #8a93ad; line-height: 1.6; margin-bottom: 10px; }
 .rec-actions { display: flex; gap: 8px; }
+.rec-card:focus-visible, .model-pill-mini:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 2px; }
+.model-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
+.model-pill-mini { font-size: 11px; color: #aeb6cc; background: #10141f; border: 1px solid #2a3a5c; border-radius: 10px; padding: 1px 8px; cursor: pointer; }
+.model-pill-mini:hover { border-color: #3a5e9e; color: #9fd0ff; }
+.model-pill-mini.on { border-color: #7eb8ff; color: #9fd0ff; background: #17223a; }
+.slot-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 12px; height: 100%; }
+.slot-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-size: 13.5px; }
+.slot-id { font-size: 10.5px; color: #8a90a6; font-family: Consolas, monospace; }
+.slot-duty { font-size: 11.5px; color: #8a93ad; margin-bottom: 8px; }
+.slot-why { font-size: 11px; color: #8a90a6; margin-top: 8px; line-height: 1.55; }
 .fld label { display: block; font-size: 12px; color: #8a93ad; margin-bottom: 6px; }
 .fld { margin-bottom: 10px; }
 </style>
