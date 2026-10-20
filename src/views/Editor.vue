@@ -150,7 +150,7 @@ async function exportZip() {
 
       <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center">
         <NButton type="primary" :loading="saving" @click="save">💾 保存剧情</NButton>
-        <span style="color: #5a627a; font-size: 12px">保存前旧版自动备份；「运行」窗口按 F5 可刷新生效</span>
+        <span style="color: #8a90a6; font-size: 12px">保存前旧版自动备份；「运行」窗口按 F5 可刷新生效</span>
       </div>
     </NSpin>
   </div>

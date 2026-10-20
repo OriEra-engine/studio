@@ -275,7 +275,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
             </div>
             <div class="fld"><label>模型名称</label><NInput v-model:value="form.model" placeholder="例如 glm-4-flash" /></div>
             <div class="fld"><label>API Base URL</label><NInput v-model:value="form.base" placeholder="https://..." /></div>
-            <div class="fld"><label>API Key<span style="color:#5a627a">（存入系统凭据管理器，不落盘）</span></label>
+            <div class="fld"><label>API Key<span style="color:#8a90a6">（存入系统凭据管理器，不落盘）</span></label>
               <NInput v-model:value="form.key" type="password" show-password-on="click" placeholder="粘贴密钥" /></div>
           </NSpace>
         </NGi>

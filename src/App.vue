@@ -80,10 +80,18 @@ const menuOptions: MenuOption[] = [
           <span v-else style="color: #6ea8fe">OE</span>
         </div>
         <NMenu :collapsed="collapsed" :collapsed-width="64" :options="menuOptions" :value="route.name as string" />
-        <div v-if="!collapsed" style="position: absolute; bottom: 12px; left: 16px; color: #5a627a; font-size: 11px">
-          世界引擎工作台 v{{ APP_VERSION }}<br />
-          <span style="color: #6ea8fe; cursor: pointer" @click="palette?.show()">Ctrl+K 命令面板</span> ·
-          <span style="color: #6ea8fe; cursor: pointer" @click="openCopilot()">Ctrl+J 奥粒</span>
+        <div v-if="!collapsed" style="position: absolute; bottom: 12px; left: 12px; right: 12px; color: #8a90a6; font-size: 11px">
+          世界引擎工作台 v{{ APP_VERSION }}
+          <div style="display: flex; gap: 6px; margin-top: 6px">
+            <button
+              style="flex: 1; background: #161b28; border: 1px solid #2c3959; color: #9fd0ff; font-size: 11px; border-radius: 6px; padding: 4px 6px; cursor: pointer; font-family: inherit"
+              title="打开命令面板 (Ctrl+K)" @click="palette?.show()"
+            >⌘K 命令面板</button>
+            <button
+              style="flex: 1; background: #161b28; border: 1px solid #2c3959; color: #9fd0ff; font-size: 11px; border-radius: 6px; padding: 4px 6px; cursor: pointer; font-family: inherit"
+              title="召唤奥粒助手 (Ctrl+J)" @click="openCopilot()"
+            >✦ 奥粒助手</button>
+          </div>
         </div>
       </NLayoutSider>
       <NLayoutContent content-style="height: 100%; overflow-y: auto;">

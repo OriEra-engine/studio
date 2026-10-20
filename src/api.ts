@@ -138,12 +138,13 @@ export const api = {
   testProvider: () => invoke<string>("test_provider"),
 
   // 新建游戏
-  generateStory: (gameplayName: string, tagline: string, userIdea: string, beatCount: number) =>
+  generateStory: (gameplayName: string, tagline: string, userIdea: string, beatCount: number, frameworkRhythm?: string) =>
     invoke<GeneratedStory>("generate_story", {
       gameplayName,
       tagline,
       userIdea,
       beatCount,
+      frameworkRhythm: frameworkRhythm ?? null,
     }),
   createProject: (spec: GameSpec) => invoke<ProjectMeta>("create_project", { spec }),
 
@@ -191,7 +192,7 @@ export const api = {
 export const CLOUD_PRESETS: { kind: string; label: string; base: string; model: string; note: string; free?: boolean; url?: string }[] = [
   { kind: "zhipu", label: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash", note: "国内直连 · glm-4-flash 有免费额度，注册即用", free: true, url: "https://open.bigmodel.cn" },
   { kind: "deepseek", label: "DeepSeek", base: "https://api.deepseek.com/v1", model: "deepseek-chat", note: "国内直连 · 便宜好用", url: "https://platform.deepseek.com" },
-  { kind: "moonshot", label: "Moonshot Kimi", base: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k", note: "国内直连 · 长文本", url: "https://platform.moonshot.cn" },
+  { kind: "moonshot", label: "Moonshot Kimi", base: "https://api.moonshot.cn/v1", model: "kimi-k2.6", note: "国内直连 · 256K 长上下文", url: "https://platform.kimi.com" },
   { kind: "openai", label: "OpenAI", base: "https://api.openai.com/v1", model: "gpt-4o-mini", note: "需海外网络" },
   { kind: "anthropic", label: "Anthropic Claude", base: "https://api.anthropic.com/v1", model: "claude-3-5-haiku-latest", note: "需海外网络" },
   { kind: "openrouter", label: "OpenRouter", base: "https://openrouter.ai/api/v1", model: "openrouter/auto", note: "聚合多家模型" },
