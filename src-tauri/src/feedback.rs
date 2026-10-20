@@ -22,7 +22,8 @@ pub struct FeedbackResult {
 }
 
 fn feedback_entry() -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, "feedback-github-pat").map_err(|e| format!("凭据管理器不可用：{e}"))
+    keyring::Entry::new(KEYRING_SERVICE, "feedback-github-pat")
+        .map_err(|e| format!("凭据管理器不可用：{e}"))
 }
 
 fn pat_get() -> Result<String, String> {
@@ -112,7 +113,9 @@ pub async fn submit_feedback(
         // 直提通道
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("https://api.github.com/repos/{FEEDBACK_REPO}/issues"))
+            .post(format!(
+                "https://api.github.com/repos/{FEEDBACK_REPO}/issues"
+            ))
             .header("Authorization", format!("Bearer {pat}"))
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "OriEraStudio-Feedback")
@@ -128,9 +131,16 @@ pub async fn submit_feedback(
                 .ok()
                 .and_then(|v| v.get("html_url").and_then(|u| u.as_str()).map(String::from))
                 .unwrap_or_default();
-            return Ok(FeedbackResult { mode: "direct".into(), url: html_url, file: String::new() });
+            return Ok(FeedbackResult {
+                mode: "direct".into(),
+                url: html_url,
+                file: String::new(),
+            });
         }
-        return Err(format!("GitHub 返回 {status}：{}", txt.chars().take(300).collect::<String>()));
+        return Err(format!(
+            "GitHub 返回 {status}：{}",
+            txt.chars().take(300).collect::<String>()
+        ));
     }
 
     // 兜底通道：预填 URL + 本地存档

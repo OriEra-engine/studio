@@ -14,10 +14,18 @@ export interface EconomyResource {
   sink: string;
 }
 
+/** 节拍分支选项(v0.3 叙事分支):next 省略/-1/null=顺延;effect 形如「金币+15」「金币-10」 */
+export interface BeatChoice {
+  label: string;
+  next?: number | null;
+  effect?: string | null;
+}
+
 export interface StoryBeat {
   phase: string;
   title: string;
   desc: string;
+  choices?: BeatChoice[] | null;
 }
 
 export interface AgentPreset {

@@ -3,9 +3,10 @@ import { onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton, NCard, NInput, NGi, NGrid, NTag, NSpace, NAlert, NSpin,
-  NPopconfirm, useMessage,
+  NPopconfirm, NSelect, useMessage,
 } from "naive-ui";
 import { api, type ProjectDetail } from "../api";
+import type { BeatChoice } from "../types";
 
 const route = useRoute();
 const router = useRouter();
@@ -17,7 +18,7 @@ const gameName = ref("");
 const theme = ref("");
 const framework = ref("");
 const premise = ref("");
-const beats = reactive<{ phase: string; title: string; desc: string }[]>([]);
+const beats = reactive<{ phase: string; title: string; desc: string; choices?: BeatChoice[] | null }[]>([]);
 const aiBusy = ref(-1);
 const instruction = reactive<Record<number, string>>({});
 const saving = ref(false);
@@ -49,7 +50,14 @@ async function save() {
     await api.updateStory(id, {
       framework: framework.value,
       premise: premise.value,
-      beats: beats.map(b => ({ phase: b.phase, title: b.title, desc: b.desc })),
+      beats: beats.map(b => ({
+        phase: b.phase, title: b.title, desc: b.desc,
+        ...(b.choices?.length ? { choices: b.choices.map(c => ({
+          label: c.label,
+          ...(c.next !== null && c.next !== undefined ? { next: c.next } : {}),
+          ...(c.effect ? { effect: c.effect } : {}),
+        })) } : {}),
+      })),
     });
     message.success("剧情已保存（旧版本自动备份在项目 .history/，保留最近 10 份）");
   } catch (e) {
@@ -75,6 +83,26 @@ async function rewrite(i: number) {
 function addBeat(i: number) {
   beats.splice(i + 1, 0, { phase: beats[i]?.phase ?? "新阶段", title: "新节拍", desc: "描述…" });
 }
+
+/* ---- 分支选项(v0.3 叙事分支) ---- */
+function addChoice(i: number) {
+  const b = beats[i];
+  if (!b.choices) b.choices = [];
+  if (b.choices.length >= 3) return message.warning("一拍最多 3 个选项(别把玩家绕晕)");
+  b.choices.push({ label: "新选项", next: null, effect: null });
+}
+function delChoice(i: number, ci: number) {
+  beats[i].choices?.splice(ci, 1);
+  if (beats[i].choices && beats[i].choices.length === 0) beats[i].choices = null;
+}
+const nextOptions = (i: number) => {
+  const opts = [{ label: `顺延(第 ${i + 2} 拍)`, value: -1 }];
+  beats.forEach((b, j) => {
+    if (j !== i) opts.push({ label: `第 ${j + 1} 拍 · ${b.title}`, value: j });
+  });
+  opts.push({ label: "结局(走完)", value: beats.length });
+  return opts;
+};
 function delBeat(i: number) {
   if (beats.length <= 1) return message.warning("至少保留一个节拍");
   beats.splice(i, 1);
@@ -141,7 +169,17 @@ async function exportZip() {
             </NPopconfirm>
           </div>
           <NInput v-model:value="b.desc" type="textarea" :rows="2" placeholder="剧情描述" />
+          <div v-if="b.choices?.length" class="choice-list">
+            <div v-for="(c, ci) in b.choices" :key="ci" class="choice-row">
+              <NTag size="small" type="info" :bordered="false">分支</NTag>
+              <NInput v-model:value="c.label" size="tiny" style="width: 150px" placeholder="选项(≤12字)" />
+              <NSelect v-model:value="c.next" size="tiny" style="width: 170px" :options="nextOptions(i)" placeholder="跳转到" />
+              <NInput v-model:value="c.effect" size="tiny" style="width: 130px" placeholder="资源±数量(可空)" />
+              <NButton size="tiny" quaternary type="error" @click="delChoice(i, ci)">✕</NButton>
+            </div>
+          </div>
           <div class="ai-row">
+            <NButton size="tiny" dashed @click="addChoice(i)">⑂ 加分支选项</NButton>
             <NInput v-model:value="instruction[i]" size="tiny" style="flex: 1" placeholder="AI 重写要求（留空=自由发挥更精彩）" />
             <NButton size="tiny" type="primary" ghost :loading="aiBusy === i" @click="rewrite(i)">✨ 重写这一拍</NButton>
           </div>
@@ -161,4 +199,6 @@ async function exportZip() {
 .beat-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
 .beat-no { color: #7c86a3; font-size: 12px; width: 20px; text-align: center; flex: none; }
 .ai-row { display: flex; gap: 8px; margin-top: 8px; }
+.choice-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px; background: #131726; border: 1px dashed #2a3a5c; border-radius: 8px; }
+.choice-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 </style>

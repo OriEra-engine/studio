@@ -122,6 +122,7 @@ async function aiGenerate() {
       userIdea.value.trim(),
       6,
       rhythm,
+      pack.value.economy.map(r => r.name),
     );
     premise.value = story.premise;
     beats.splice(0, beats.length, ...story.beats);

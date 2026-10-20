@@ -82,13 +82,23 @@ fn slugify(name: &str) -> String {
     let mut s: String = name
         .trim()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     while s.contains("--") {
         s = s.replace("--", "-");
     }
     let s = s.trim_matches('-').to_string();
-    if s.is_empty() { "my-game".to_string() } else { s.chars().take(40).collect() }
+    if s.is_empty() {
+        "my-game".to_string()
+    } else {
+        s.chars().take(40).collect()
+    }
 }
 
 fn now_compact() -> String {
@@ -166,11 +176,28 @@ pub fn create_project(
         agents = spec.agents.iter().map(|a| a.name.clone()).collect::<Vec<_>>().join("、"),
     );
 
-    std::fs::write(dir.join("index.html"), html).map_err(|e| format!("写入 index.html 失败：{e}"))?;
-    std::fs::write(dir.join("game.json"), serde_json::to_vec_pretty(&game_json).unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("story.json"), serde_json::to_vec_pretty(&story_json).unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("agents.json"), serde_json::to_vec_pretty(&agents_json).unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("provider.json"), serde_json::to_vec_pretty(&provider_json).unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("index.html"), html)
+        .map_err(|e| format!("写入 index.html 失败：{e}"))?;
+    std::fs::write(
+        dir.join("game.json"),
+        serde_json::to_vec_pretty(&game_json).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::write(
+        dir.join("story.json"),
+        serde_json::to_vec_pretty(&story_json).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::write(
+        dir.join("agents.json"),
+        serde_json::to_vec_pretty(&agents_json).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::write(
+        dir.join("provider.json"),
+        serde_json::to_vec_pretty(&provider_json).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
     std::fs::write(dir.join("README.md"), readme).map_err(|e| e.to_string())?;
 
     Ok(ProjectMeta {
@@ -193,7 +220,9 @@ fn chrono_now() -> String {
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// 序列化为可安全注入 HTML <script> 内联上下文的 JSON 文本。
@@ -222,7 +251,8 @@ pub fn list_projects(state: State<'_, crate::AppState>) -> Vec<ProjectMeta> {
             }
             let meta = (|| {
                 let g: serde_json::Value =
-                    serde_json::from_str(&std::fs::read_to_string(dir.join("game.json")).ok()?).ok()?;
+                    serde_json::from_str(&std::fs::read_to_string(dir.join("game.json")).ok()?)
+                        .ok()?;
                 let id = dir.file_name()?.to_string_lossy().into_owned();
                 Some(ProjectMeta {
                     url: format!("/projects/{id}/"),
@@ -230,9 +260,12 @@ pub fn list_projects(state: State<'_, crate::AppState>) -> Vec<ProjectMeta> {
                     name: g["name"].as_str()?.to_string(),
                     tagline: g["tagline"].as_str().unwrap_or("").to_string(),
                     created: entry
-                        .metadata().ok()?
-                        .modified().ok()?
-                        .duration_since(std::time::UNIX_EPOCH).ok()?
+                        .metadata()
+                        .ok()?
+                        .modified()
+                        .ok()?
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()?
                         .as_secs()
                         .to_string(),
                     dir: dir.to_string_lossy().into_owned(),
@@ -248,7 +281,11 @@ pub fn list_projects(state: State<'_, crate::AppState>) -> Vec<ProjectMeta> {
 }
 
 #[tauri::command]
-pub fn open_project(app: AppHandle, state: State<'_, crate::AppState>, id: String) -> Result<(), String> {
+pub fn open_project(
+    app: AppHandle,
+    state: State<'_, crate::AppState>,
+    id: String,
+) -> Result<(), String> {
     if !valid_project_id(&id) {
         return Err(format!("非法项目 id：{id}"));
     }
@@ -314,12 +351,16 @@ pub struct ProjectDetail {
 }
 
 fn read_json_file(dir: &std::path::Path, name: &str) -> Result<serde_json::Value, String> {
-    let text = std::fs::read_to_string(dir.join(name)).map_err(|e| format!("读取 {name} 失败：{e}"))?;
+    let text =
+        std::fs::read_to_string(dir.join(name)).map_err(|e| format!("读取 {name} 失败：{e}"))?;
     serde_json::from_str(&text).map_err(|e| format!("解析 {name} 失败：{e}"))
 }
 
 #[tauri::command]
-pub fn read_project(state: State<'_, crate::AppState>, id: String) -> Result<ProjectDetail, String> {
+pub fn read_project(
+    state: State<'_, crate::AppState>,
+    id: String,
+) -> Result<ProjectDetail, String> {
     if !valid_project_id(&id) {
         return Err(format!("非法项目 id：{id}"));
     }
@@ -348,7 +389,13 @@ pub fn update_story(
     if !dir.join("index.html").is_file() {
         return Err(format!("项目不存在：{id}"));
     }
-    if !story["premise"].is_string() || !story["beats"].is_array() || story["beats"].as_array().map(|a| a.is_empty()).unwrap_or(true) {
+    if !story["premise"].is_string()
+        || !story["beats"].is_array()
+        || story["beats"]
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(true)
+    {
         return Err("剧情需要非空 premise 与至少一个节拍".into());
     }
 
@@ -401,22 +448,34 @@ pub async fn regenerate_beat(
     if beat_index >= beats.len() {
         return Err(format!("节拍序号越界：{beat_index}").into());
     }
+    // serde 宽松解析:choices 字段可缺省(v0.3 分支),缺 phase/title/desc 才算坏
     let parse_beat = |v: &serde_json::Value| -> Option<llm::Beat> {
-        Some(llm::Beat {
-            phase: v["phase"].as_str()?.to_string(),
-            title: v["title"].as_str()?.to_string(),
-            desc: v["desc"].as_str()?.to_string(),
-        })
+        serde_json::from_value::<llm::Beat>(v.clone()).ok()
     };
     let cur = parse_beat(&beats[beat_index]).ok_or("节拍字段不完整")?;
-    let prev = if beat_index > 0 { parse_beat(&beats[beat_index - 1]) } else { None };
-    let next = if beat_index + 1 < beats.len() { parse_beat(&beats[beat_index + 1]) } else { None };
+    let prev = if beat_index > 0 {
+        parse_beat(&beats[beat_index - 1])
+    } else {
+        None
+    };
+    let next = if beat_index + 1 < beats.len() {
+        parse_beat(&beats[beat_index + 1])
+    } else {
+        None
+    };
 
     let name = game["name"].as_str().unwrap_or("未命名游戏");
     let premise = story["premise"].as_str().unwrap_or("");
     let rewritten = llm::regenerate_beat(
-        &cfg, name, premise, beat_index + 1, beats.len(),
-        prev.as_ref(), &cur, next.as_ref(), &instruction,
+        &cfg,
+        name,
+        premise,
+        beat_index + 1,
+        beats.len(),
+        prev.as_ref(),
+        &cur,
+        next.as_ref(),
+        &instruction,
     )
     .await?;
 
@@ -451,7 +510,11 @@ pub fn upgrade_runtime(state: State<'_, crate::AppState>, id: String) -> Result<
 
 /// 导出项目为可分享 zip（对方导入自己的 Studio projects 目录即可玩）。
 #[tauri::command]
-pub async fn export_project_zip(app: AppHandle, state: tauri::State<'_, crate::AppState>, id: String) -> Result<String, String> {
+pub async fn export_project_zip(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    id: String,
+) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
     if !valid_project_id(&id) {
         return Err(format!("非法项目 id：{id}"));
@@ -484,7 +547,10 @@ pub async fn export_project_zip(app: AppHandle, state: tauri::State<'_, crate::A
         if p.file_name().map(|n| n == ".history").unwrap_or(false) {
             continue; // 备份目录不打进分享包
         }
-        for entry in std::fs::read_dir(&p).map_err(|e| e.to_string())?.filter_map(|e| e.ok()) {
+        for entry in std::fs::read_dir(&p)
+            .map_err(|e| e.to_string())?
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
@@ -506,7 +572,10 @@ pub fn delete_project(state: State<'_, crate::AppState>, id: String) -> Result<(
     let dir = state.projects_dir.join(&id);
     // 只允许删除 projects 目录下的直接子目录，防路径穿越
     let canonical = dir.canonicalize().map_err(|_| "项目不存在".to_string())?;
-    let base = state.projects_dir.canonicalize().map_err(|e| e.to_string())?;
+    let base = state
+        .projects_dir
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
     if canonical.parent() != Some(base.as_path()) {
         return Err("非法路径".into());
     }
@@ -514,7 +583,11 @@ pub fn delete_project(state: State<'_, crate::AppState>, id: String) -> Result<(
 }
 
 #[tauri::command]
-pub fn reveal_project_dir(state: State<'_, crate::AppState>, app: AppHandle, id: String) -> Result<(), String> {
+pub fn reveal_project_dir(
+    state: State<'_, crate::AppState>,
+    app: AppHandle,
+    id: String,
+) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     if !valid_project_id(&id) {
         return Err(format!("非法项目 id：{id}"));

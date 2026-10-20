@@ -42,7 +42,10 @@ pub fn list_templates(app: AppHandle) -> TemplateLib {
         for entry in rd.filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.extension().map(|e| e == "json").unwrap_or(false) {
-                let fname = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                let fname = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 match std::fs::read_to_string(&path)
                     .map_err(|e| e.to_string())
                     .and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string()))
@@ -67,8 +70,18 @@ pub fn list_templates(app: AppHandle) -> TemplateLib {
 fn validate_pack(v: &Value) -> Result<(), String> {
     let s = |k: &str| v[k].as_str().map(|s| !s.is_empty()).unwrap_or(false);
     let arr = |k: &str| v[k].as_array().map(|a| !a.is_empty()).unwrap_or(false);
-    if !(s("id") && s("name") && s("tagline") && s("desc") && arr("core_loop") && arr("mechanics") && arr("story_beats") && arr("agents")) {
-        return Err("缺少必要字段：id/name/tagline/desc/core_loop/mechanics/story_beats/agents".into());
+    if !(s("id")
+        && s("name")
+        && s("tagline")
+        && s("desc")
+        && arr("core_loop")
+        && arr("mechanics")
+        && arr("story_beats")
+        && arr("agents"))
+    {
+        return Err(
+            "缺少必要字段：id/name/tagline/desc/core_loop/mechanics/story_beats/agents".into(),
+        );
     }
     if v["story_beats"][0]["title"].is_null() || v["agents"][0]["name"].is_null() {
         return Err("story_beats 或 agents 内部结构不完整".into());
@@ -109,8 +122,11 @@ pub async fn import_gameplay_pack(app: AppHandle) -> Result<String, String> {
         .and_then(|p| p["id"].as_str())
         .map(|id| format!("{id}.json"))
         .unwrap_or_else(|| "imported.json".into());
-    std::fs::write(dir.join(&name), serde_json::to_vec_pretty(&v).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("写入失败：{e}"))?;
+    std::fs::write(
+        dir.join(&name),
+        serde_json::to_vec_pretty(&v).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("写入失败：{e}"))?;
     let label = packs
         .iter()
         .filter_map(|p| p["name"].as_str())

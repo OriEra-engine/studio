@@ -5,11 +5,25 @@ use crate::settings::ProviderCfg;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+/// 节拍分支选项（v0.3 叙事分支）：可选,旧项目/旧模型输出没有也能解析。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BeatChoice {
+    pub label: String,
+    /// 跳转目标节拍（0 起）；省略/null/-1 = 顺延下一拍
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<isize>,
+    /// 资源效果「资源名+数量 / 资源名-数量」；省略 = 无
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneratedBeat {
     pub phase: String,
     pub title: String,
     pub desc: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<BeatChoice>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +42,12 @@ fn chat_endpoint(base: &str) -> String {
 }
 
 /// 调 OpenAI 兼容 chat/completions。anthropic 协议不同，直接返回提示错误。
-pub async fn chat(cfg: &ProviderCfg, system: &str, user: &str, max_tokens: u32) -> Result<String, String> {
+pub async fn chat(
+    cfg: &ProviderCfg,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+) -> Result<String, String> {
     let messages = vec![
         json!({"role": "system", "content": system}),
         json!({"role": "user", "content": user}),
@@ -66,7 +85,10 @@ async fn post_chat(
         .map_err(|e| format!("请求失败：{e}"))?;
 
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("读取响应失败：{e}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
         let short: String = text.chars().take(400).collect();
         return Err(format!("服务返回 {}：{}", status.as_u16(), short));
@@ -109,7 +131,11 @@ pub async fn copilot_chat(
 ) -> Result<String, String> {
     let mut messages = vec![json!({"role": "system", "content": system})];
     for t in history {
-        let role = if t.role == "assistant" { "assistant" } else { "user" };
+        let role = if t.role == "assistant" {
+            "assistant"
+        } else {
+            "user"
+        };
         messages.push(json!({"role": role, "content": t.content}));
     }
     messages.push(json!({"role": "user", "content": user}));
@@ -124,7 +150,10 @@ pub fn extract_json(raw: &str) -> String {
         .or_else(|| trimmed.strip_prefix("```"))
         .map(|s| s.trim())
         .unwrap_or(trimmed);
-    let no_fence = no_fence.strip_suffix("```").map(|s| s.trim()).unwrap_or(no_fence);
+    let no_fence = no_fence
+        .strip_suffix("```")
+        .map(|s| s.trim())
+        .unwrap_or(no_fence);
     no_fence.to_string()
 }
 
@@ -138,13 +167,25 @@ pub async fn generate_story(
     user_idea: &str,
     beat_count: usize,
     framework_rhythm: Option<&str>,
+    economy_names: &[String],
 ) -> Result<GeneratedStory, String> {
     let system = "你是一位资深游戏叙事设计师。用户给你一个玩法类型和自己的想法，你产出原创、克制、有钩子的中文剧情设计。只输出 JSON，不要任何解释文字。";
+    let econ = if economy_names.is_empty() {
+        "金币".to_string()
+    } else {
+        economy_names.join("、")
+    };
     let rhythm = framework_rhythm
         .filter(|s| !s.trim().is_empty())
         .unwrap_or("三幕式（前 1/3 建置、中间对抗升级、最后结局）");
     let user = format!(
-        "玩法类型：{}（{}）\n用户想法：{}\n\n请输出严格 JSON，结构：{{\"premise\":\"一句话世界观前提，60字内\",\"beats\":[{{\"phase\":\"阶段名\",\"title\":\"节拍标题\",\"desc\":\"2-3句剧情描述\"}}]}}\n要求：beats 恰好 {} 条，节奏遵循：{rhythm}。desc 要具体有画面感，避免陈词滥调。",
+        "玩法类型：{}（{}）
+用户想法：{}
+游戏内资源：{econ}
+
+请输出严格 JSON，结构：{{\"premise\":\"一句话世界观前提，60字内\",\"beats\":[{{\"phase\":\"阶段名\",\"title\":\"节拍标题\",\"desc\":\"2-3句剧情描述\",\"choices\":\"可选的分支数组\"}}]}}
+要求：beats 恰好 {} 条，节奏遵循：{rhythm}。desc 要具体有画面感，避免陈词滥调。
+choices 只在 2~3 个关键节拍（非最后一拍）出现，其余节拍省略该字段；每个元素形如 {{\"label\":\"不超过12字的选择\",\"next\":目标节拍序号(0起,顺延填-1),\"effect\":\"资源名+数量 或 资源名-数量(可省略)\"}}，每个 choices 数组给 2 个选项，两条路都要讲得通。",
         gameplay_name,
         tagline,
         if user_idea.trim().is_empty() { "（无特定想法，请自由发挥）" } else { user_idea },
@@ -172,6 +213,8 @@ pub struct Beat {
     pub phase: String,
     pub title: String,
     pub desc: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<BeatChoice>>,
 }
 
 /// 单拍重写：保持前后文连贯地重写一个节拍（v0.2 编辑器核心）。
@@ -187,7 +230,10 @@ pub async fn regenerate_beat(
     next: Option<&Beat>,
     instruction: &str,
 ) -> Result<Beat, String> {
-    let fmt = |b: Option<&Beat>| b.map(|b| format!("「{}」{}", b.title, b.desc)).unwrap_or_default();
+    let fmt = |b: Option<&Beat>| {
+        b.map(|b| format!("「{}」{}", b.title, b.desc))
+            .unwrap_or_default()
+    };
     let system = "你是一位资深游戏叙事设计师，正在修改一部游戏剧情的其中一个节拍。保持世界观、语气和前后衔接，只重写这一个节拍。只输出 JSON，不要任何解释。";
     let user = format!(
         "游戏：{game_name}\n世界观前提：{premise}\n该节拍位置：第 {index}/{total} 拍\n前一拍：{prev}\n当前要重写的节拍：「{ct}」{cd}\n后一拍：{nxt}\n修改要求：{ins}\n\n输出严格 JSON：{{\"phase\":\"阶段名（与原节拍一致或更准确）\",\"title\":\"新节拍标题\",\"desc\":\"2-3句新剧情描述\"}}",
@@ -209,5 +255,9 @@ pub async fn regenerate_beat(
     )
     .await?;
     let json_str = extract_json(&raw);
-    serde_json::from_str::<Beat>(&json_str).map_err(|e| format!("重写结果无法解析（{e}），请重试一次"))
+    let mut beat: Beat = serde_json::from_str(&json_str)
+        .map_err(|e| format!("重写结果无法解析（{e}），请重试一次"))?;
+    // 重写只动文案;已有分支选项原样保留(编辑器可再改)
+    beat.choices = cur.choices.clone();
+    Ok(beat)
 }
