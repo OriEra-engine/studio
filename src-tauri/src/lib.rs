@@ -147,6 +147,20 @@ async fn generate_story(
     llm::generate_story(&cfg, &gameplay_name, &tagline, &user_idea, beat_count).await
 }
 
+/// Studio 助手「奥粒」多轮对话（前端 CopilotPanel 调用）。
+#[tauri::command]
+async fn copilot_chat(
+    app: tauri::AppHandle,
+    system: String,
+    history: Vec<llm::ChatTurn>,
+    user: String,
+) -> Result<String, String> {
+    let cfg = settings::load_provider(&app).ok_or_else(|| {
+        "小奥离线中：先在「模型中心」配置模型（云端或 Ollama 本地），配置好我就能真正对话啦".to_string()
+    })?;
+    llm::copilot_chat(&cfg, &system, &history, &user).await
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -179,6 +193,7 @@ pub fn run() {
             get_recommendations,
             test_provider,
             generate_story,
+            copilot_chat,
             demos::list_demos,
             demos::open_demo,
             ollama::ollama_status,

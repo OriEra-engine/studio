@@ -119,6 +119,12 @@ export interface ProjectDetail {
   agents: unknown[];
 }
 
+export interface CopilotTurn {
+  /** "user" | "assistant" */
+  role: string;
+  content: string;
+}
+
 export const api = {
   getStatus: () => invoke<AppStatus>("get_status"),
   listDemos: () => invoke<DemoInfo[]>("list_demos"),
@@ -140,6 +146,10 @@ export const api = {
       beatCount,
     }),
   createProject: (spec: GameSpec) => invoke<ProjectMeta>("create_project", { spec }),
+
+  // 助手「奥粒」
+  copilotChat: (system: string, history: CopilotTurn[], user: string) =>
+    invoke<string>("copilot_chat", { system, history, user }),
 
   // 我的项目
   listProjects: () => invoke<ProjectMeta[]>("list_projects"),

@@ -29,18 +29,29 @@ fn chat_endpoint(base: &str) -> String {
 
 /// 调 OpenAI 兼容 chat/completions。anthropic 协议不同，直接返回提示错误。
 pub async fn chat(cfg: &ProviderCfg, system: &str, user: &str, max_tokens: u32) -> Result<String, String> {
+    let messages = vec![
+        json!({"role": "system", "content": system}),
+        json!({"role": "user", "content": user}),
+    ];
+    post_chat(cfg, messages, max_tokens, 0.9).await
+}
+
+/// 一次 chat/completions 调用（消息数组由调用方组装）。
+async fn post_chat(
+    cfg: &ProviderCfg,
+    messages: Vec<serde_json::Value>,
+    max_tokens: u32,
+    temperature: f32,
+) -> Result<String, String> {
     if cfg.kind == "anthropic" {
         return Err("AI 定制暂不支持 Anthropic 端点，请在模型中心选择智谱 / DeepSeek / Ollama 等 OpenAI 兼容服务".into());
     }
     let url = chat_endpoint(&cfg.base);
     let body = json!({
         "model": cfg.model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user}
-        ],
+        "messages": messages,
         "max_tokens": max_tokens,
-        "temperature": 0.9,
+        "temperature": temperature,
     });
 
     let client = reqwest::Client::new();
@@ -80,6 +91,29 @@ pub async fn chat(cfg: &ProviderCfg, system: &str, user: &str, max_tokens: u32) 
         .next()
         .map(|c| c.message.content)
         .ok_or_else(|| "模型未返回内容".to_string())
+}
+
+/// Copilot 对话历史中的一轮（"user" | "assistant"）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatTurn {
+    pub role: String,
+    pub content: String,
+}
+
+/// Studio 助手「奥粒」多轮对话：system + 历史 + 本轮输入。
+pub async fn copilot_chat(
+    cfg: &ProviderCfg,
+    system: &str,
+    history: &[ChatTurn],
+    user: &str,
+) -> Result<String, String> {
+    let mut messages = vec![json!({"role": "system", "content": system})];
+    for t in history {
+        let role = if t.role == "assistant" { "assistant" } else { "user" };
+        messages.push(json!({"role": role, "content": t.content}));
+    }
+    messages.push(json!({"role": "user", "content": user}));
+    post_chat(cfg, messages, 1024, 0.7).await
 }
 
 /// 从模型输出中提取第一个 JSON 数组/对象（容忍 ```json 代码块包裹）。
