@@ -1,13 +1,28 @@
 <script setup lang="ts">
 // 构建期注入（vite define），与 package.json 版本恒一致
 const APP_VERSION = __APP_VERSION__;
-import { h, ref, Component } from "vue";
+import { h, ref, onBeforeUnmount, onMounted, Component } from "vue";
 import { useRoute, RouterLink, RouterView } from "vue-router";
 import { NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, NMessageProvider, NDialogProvider, darkTheme, zhCN, dateZhCN } from "naive-ui";
 import type { MenuOption } from "naive-ui";
+import CommandPalette from "./components/CommandPalette.vue";
+import CopilotPanel from "./components/CopilotPanel.vue";
 
 const route = useRoute();
 const collapsed = ref(false);
+const palette = ref<InstanceType<typeof CommandPalette>>();
+
+function onGlobalKey(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") {
+    e.preventDefault();
+    openCopilot();
+  }
+}
+function openCopilot() {
+  window.dispatchEvent(new CustomEvent("oriera:copilot:open"));
+}
+onMounted(() => window.addEventListener("keydown", onGlobalKey));
+onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKey));
 
 function icon(svg: string) {
   return () => h("span", { style: "display:inline-flex;width:18px;height:18px;margin-right:6px;", innerHTML: svg });
@@ -66,7 +81,9 @@ const menuOptions: MenuOption[] = [
         </div>
         <NMenu :collapsed="collapsed" :collapsed-width="64" :options="menuOptions" :value="route.name as string" />
         <div v-if="!collapsed" style="position: absolute; bottom: 12px; left: 16px; color: #5a627a; font-size: 11px">
-          世界引擎工作台 v{{ APP_VERSION }}
+          世界引擎工作台 v{{ APP_VERSION }}<br />
+          <span style="color: #6ea8fe; cursor: pointer" @click="palette?.show()">Ctrl+K 命令面板</span> ·
+          <span style="color: #6ea8fe; cursor: pointer" @click="openCopilot()">Ctrl+J 奥粒</span>
         </div>
       </NLayoutSider>
       <NLayoutContent content-style="height: 100%; overflow-y: auto;">
@@ -77,5 +94,7 @@ const menuOptions: MenuOption[] = [
         </NMessageProvider>
       </NLayoutContent>
     </NLayout>
+    <CommandPalette ref="palette" />
+    <CopilotPanel />
   </NConfigProvider>
 </template>
