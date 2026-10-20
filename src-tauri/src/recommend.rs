@@ -63,11 +63,11 @@ fn moonshot() -> CloudRec {
     CloudRec {
         label: "Moonshot Kimi".into(),
         kind: "moonshot".into(),
-        model: "moonshot-v1-8k".into(),
+        model: "kimi-k2.6".into(),
         base: "https://api.moonshot.cn/v1".into(),
-        note: "国内直连，长文本见长".into(),
+        note: "国内直连，256K 长上下文见长".into(),
         free: false,
-        signup_url: "https://platform.moonshot.cn".into(),
+        signup_url: "https://platform.kimi.com".into(),
     }
 }
 

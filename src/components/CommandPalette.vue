@@ -154,7 +154,7 @@ defineExpose({ show, hide });
 .cp-inputrow input {
   flex: 1; background: none; border: none; outline: none; color: #e6e8ef; font-size: 14px; font-family: inherit;
 }
-.cp-inputrow input::placeholder { color: #5a627a; }
+.cp-inputrow input::placeholder { color: #8a90a6; }
 .cp-kbd { font-size: 10.5px; color: #8a90a6; border: 1px solid #2c3959; border-radius: 5px; padding: 1px 6px; }
 .cp-empty { padding: 22px 16px; color: #8a90a6; font-size: 12.5px; text-align: center; }
 .cp-list { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow-y: auto; }
@@ -165,8 +165,8 @@ defineExpose({ show, hide });
 .cp-list li.active { background: #223055; }
 .cp-list li.active .cp-title { color: #cfe4ff; }
 .cp-title { color: #dbe2f2; white-space: nowrap; }
-.cp-hint { flex: 1; color: #6b7590; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-hint { flex: 1; color: #8a90a6; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cp-keys { font-size: 10.5px; color: #8a90a6; border: 1px solid #2c3959; border-radius: 5px; padding: 1px 6px; }
 .cp-keys.cur { color: #3fd68f; border-color: #215437; }
-.cp-foot { padding: 8px 14px; border-top: 1px solid #232d45; color: #5a627a; font-size: 11px; }
+.cp-foot { padding: 8px 14px; border-top: 1px solid #232d45; color: #8a90a6; font-size: 11px; }
 </style>

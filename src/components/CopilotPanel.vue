@@ -208,7 +208,11 @@ onBeforeUnmount(() => {
 
 <template>
   <!-- 悬浮吉祥物球 -->
-  <div class="ori-fab" :class="{ busy }" @click="toggle" title="奥粒 · 工作台助手 (Ctrl+J)">
+  <div
+    class="ori-fab" :class="{ busy }"
+    role="button" tabindex="0" :aria-expanded="open" aria-label="奥粒,工作台助手(Ctrl+J 打开或收起)"
+    @click="toggle" @keydown.enter.prevent="toggle" @keydown.space.prevent="toggle"
+  >
     <svg viewBox="0 0 64 64" width="54" height="54" aria-hidden="true">
       <defs>
         <radialGradient id="oriBody" cx="35%" cy="28%" r="80%">
@@ -261,10 +265,10 @@ onBeforeUnmount(() => {
             {{ busy ? "思考中…" : providerOnline ? providerLabel + " · 对话中" : "离线小奥 · 规则应答" }}
           </span>
         </div>
-        <button class="ori-close" title="收起 (Esc)" @click="open = false">✕</button>
+        <button class="ori-close" title="收起 (Esc)" aria-label="收起奥粒面板" @click="open = false">✕</button>
       </div>
 
-      <div class="ori-list" ref="listEl">
+      <div class="ori-list" ref="listEl" role="log" aria-live="polite" aria-label="奥粒对话记录">
         <div v-for="(m, i) in msgs" :key="i" class="ori-msg" :class="m.role">
           <div class="ori-bubble">
             <span v-if="m.rule && m.role === 'assistant'" class="ori-ruletag">规则模式</span>
@@ -290,7 +294,7 @@ onBeforeUnmount(() => {
           placeholder="问奥粒…(Enter 发送,Shift+Enter 换行)"
           @keydown.enter.exact.prevent="send()"
         ></textarea>
-        <button class="ori-send" :disabled="busy || !input.trim()" @click="send()">➤</button>
+        <button class="ori-send" :disabled="busy || !input.trim()" aria-label="发送给奥粒" @click="send()">➤</button>
       </div>
     </div>
   </Transition>
@@ -308,6 +312,7 @@ onBeforeUnmount(() => {
   filter: drop-shadow(0 4px 14px rgba(78, 138, 232, 0.45));
   transition: transform 0.15s ease;
 }
+.ori-fab:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 3px; border-radius: 50%; }
 .ori-fab > svg { display: block; animation: ori-bob 3.6s ease-in-out infinite; }
 .ori-fab:hover { transform: scale(1.08); }
 .ori-fab:active { transform: scale(0.96); }

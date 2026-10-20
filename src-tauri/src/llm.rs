@@ -129,25 +129,42 @@ pub fn extract_json(raw: &str) -> String {
 }
 
 /// 剧情定制：基于玩法包与用户想法生成前提 + 节拍。
+/// `framework_rhythm` 为叙事框架的节奏要求（名称+阶段+节拍提示）；
+/// 不传时回退三幕式。解析失败自动重试一次。
 pub async fn generate_story(
     cfg: &ProviderCfg,
     gameplay_name: &str,
     tagline: &str,
     user_idea: &str,
     beat_count: usize,
+    framework_rhythm: Option<&str>,
 ) -> Result<GeneratedStory, String> {
     let system = "你是一位资深游戏叙事设计师。用户给你一个玩法类型和自己的想法，你产出原创、克制、有钩子的中文剧情设计。只输出 JSON，不要任何解释文字。";
+    let rhythm = framework_rhythm
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("三幕式（前 1/3 建置、中间对抗升级、最后结局）");
     let user = format!(
-        "玩法类型：{}（{}）\n用户想法：{}\n\n请输出严格 JSON，结构：{{\"premise\":\"一句话世界观前提，60字内\",\"beats\":[{{\"phase\":\"阶段名\",\"title\":\"节拍标题\",\"desc\":\"2-3句剧情描述\"}}]}}\n要求：beats 恰好 {} 条，节奏遵循三幕式（前 1/3 建置、中间对抗升级、最后结局），desc 要具体有画面感，避免陈词滥调。",
+        "玩法类型：{}（{}）\n用户想法：{}\n\n请输出严格 JSON，结构：{{\"premise\":\"一句话世界观前提，60字内\",\"beats\":[{{\"phase\":\"阶段名\",\"title\":\"节拍标题\",\"desc\":\"2-3句剧情描述\"}}]}}\n要求：beats 恰好 {} 条，节奏遵循：{rhythm}。desc 要具体有画面感，避免陈词滥调。",
         gameplay_name,
         tagline,
         if user_idea.trim().is_empty() { "（无特定想法，请自由发挥）" } else { user_idea },
         beat_count,
     );
 
-    let raw = chat(cfg, system, &user, 2000).await?;
-    let json_str = extract_json(&raw);
-    serde_json::from_str::<GeneratedStory>(&json_str).map_err(|e| format!("生成的剧情格式无法解析（{e}），请重试一次"))
+    let mut last_err = String::from("未知解析错误");
+    for attempt in 0..2 {
+        let mut prompt = user.clone();
+        if attempt > 0 {
+            prompt.push_str("\n（注意：你上一次的输出不是合法 JSON，这次只输出 JSON 本体。）");
+        }
+        let raw = chat(cfg, system, &prompt, 2000).await?;
+        let json_str = extract_json(&raw);
+        match serde_json::from_str::<GeneratedStory>(&json_str) {
+            Ok(story) => return Ok(story),
+            Err(e) => last_err = format!("生成的剧情格式无法解析（{e}）"),
+        }
+    }
+    Err(format!("{last_err}，已自动重试一次仍失败，请再点一次生成"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,7 +197,17 @@ pub async fn regenerate_beat(
         nxt = fmt(next),
         ins = if instruction.trim().is_empty() { "自由发挥，写得更精彩" } else { instruction },
     );
-    let raw = chat(cfg, system, &user, 600).await?;
+    // 单拍重写是外科手术式修订：低温度保前后一致，不用整篇生成的 0.9
+    let raw = post_chat(
+        cfg,
+        vec![
+            serde_json::json!({"role": "system", "content": system}),
+            serde_json::json!({"role": "user", "content": user}),
+        ],
+        600,
+        0.4,
+    )
+    .await?;
     let json_str = extract_json(&raw);
     serde_json::from_str::<Beat>(&json_str).map_err(|e| format!("重写结果无法解析（{e}），请重试一次"))
 }

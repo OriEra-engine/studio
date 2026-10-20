@@ -133,7 +133,7 @@ async fn test_provider(app: tauri::AppHandle) -> Result<String, String> {
     Ok(reply.chars().take(80).collect())
 }
 
-/// AI 剧情定制（M4 向导第二步「AI 生成」按钮）。
+/// AI 剧情定制（M4 向导第二步「AI 生成」按钮）。framework_rhythm 传叙事框架节奏，None 回退三幕式。
 #[tauri::command]
 async fn generate_story(
     app: tauri::AppHandle,
@@ -141,10 +141,11 @@ async fn generate_story(
     tagline: String,
     user_idea: String,
     beat_count: usize,
+    framework_rhythm: Option<String>,
 ) -> Result<llm::GeneratedStory, String> {
     let cfg = settings::load_provider(&app)
         .ok_or_else(|| "AI 定制需要先在模型中心配置模型".to_string())?;
-    llm::generate_story(&cfg, &gameplay_name, &tagline, &user_idea, beat_count).await
+    llm::generate_story(&cfg, &gameplay_name, &tagline, &user_idea, beat_count, framework_rhythm.as_deref()).await
 }
 
 /// Studio 助手「奥粒」多轮对话（前端 CopilotPanel 调用）。

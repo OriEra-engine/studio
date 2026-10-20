@@ -111,14 +111,17 @@ async function aiGenerate() {
   if (!pack.value) return;
   aiBusy.value = true;
   try {
-    const fwHint = framework.value && frameworkId.value !== "pack-default"
-      ? `（叙事框架：${framework.value.name}，阶段：${framework.value.phases.join("→")}）`
-      : "";
+    // 叙述框架节奏单独传参,替换后端默认的三幕式指令(避免两套节奏打架)
+    const rhythm =
+      framework.value && frameworkId.value !== "pack-default"
+        ? `${framework.value.name}：${framework.value.phases.join("→")}。各阶段节拍提示：${framework.value.beat_hint.join("；")}。请严格按该框架推进,不要套用三幕式。`
+        : undefined;
     const story: GeneratedStory = await api.generateStory(
       pack.value.name,
       pack.value.tagline,
-      `${userIdea.value} ${fwHint}`.trim(),
+      userIdea.value.trim(),
       6,
+      rhythm,
     );
     premise.value = story.premise;
     beats.splice(0, beats.length, ...story.beats);
@@ -206,7 +209,11 @@ const canNext = computed(() => {
       </div>
       <NGrid :cols="5" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="p in packs" :key="p.id" span="5 s:3 m:1">
-          <div class="pack-card" :class="{ sel: gameplayId === p.id }" @click="pickPack(p.id)">
+          <div
+            class="pack-card" :class="{ sel: gameplayId === p.id }"
+            role="button" tabindex="0" :aria-pressed="gameplayId === p.id" :aria-label="`选择玩法 ${p.name}`"
+            @click="pickPack(p.id)" @keydown.enter.prevent="pickPack(p.id)" @keydown.space.prevent="pickPack(p.id)"
+          >
             <div class="pack-emoji">{{ p.emoji }}</div>
             <div class="pack-name">{{ p.name }}</div>
             <div class="pack-tagline">{{ p.tagline }}</div>
@@ -226,10 +233,18 @@ const canNext = computed(() => {
         <NGi span="3 m:1">
           <NCard title="叙事框架" size="small">
             <div class="fw-list">
-              <div class="fw-item sel-like" :class="{ sel: frameworkId === 'pack-default' }" @click="pickFramework('pack-default')">
+              <div
+                class="fw-item sel-like" :class="{ sel: frameworkId === 'pack-default' }"
+                role="button" tabindex="0" :aria-pressed="frameworkId === 'pack-default'" aria-label="选择叙事框架：模板默认"
+                @click="pickFramework('pack-default')" @keydown.enter.prevent="pickFramework('pack-default')" @keydown.space.prevent="pickFramework('pack-default')"
+              >
                 <b>📦 模板默认</b><div class="fw-desc">{{ pack.name }} 精选的三幕式剧情（左下方预览）</div>
               </div>
-              <div v-for="f in frameworks" :key="f.id" class="fw-item" :class="{ sel: frameworkId === f.id }" @click="pickFramework(f.id)">
+              <div
+                v-for="f in frameworks" :key="f.id" class="fw-item" :class="{ sel: frameworkId === f.id }"
+                role="button" tabindex="0" :aria-pressed="frameworkId === f.id" :aria-label="`选择叙事框架 ${f.name}`"
+                @click="pickFramework(f.id)" @keydown.enter.prevent="pickFramework(f.id)" @keydown.space.prevent="pickFramework(f.id)"
+              >
                 <b>{{ f.emoji }} {{ f.name }}</b>
                 <div class="fw-desc">{{ f.desc }}</div>
                 <div class="fw-phases">{{ f.phases.join(" → ") }}</div>
@@ -247,7 +262,7 @@ const canNext = computed(() => {
               <NButton type="primary" ghost :loading="aiBusy" :disabled="!providerReady" @click="aiGenerate">
                 ✨ {{ providerReady ? 'AI 生成定制剧情' : 'AI 定制（需先配置模型）' }}
               </NButton>
-              <span style="color: #5a627a; font-size: 12px">使用模型：{{ providerModel || '未配置' }}</span>
+              <span style="color: #8a90a6; font-size: 12px">使用模型：{{ providerModel || '未配置' }}</span>
             </div>
             <p v-if="frameworkId !== 'pack-default' && appliedFramework !== frameworkId" style="color: #e8a35c; font-size: 12px; margin: 10px 0 0">
               ⚠️ 已选「{{ framework?.name }}」但尚未应用——下方节拍仍是模板默认（三幕式）。点上方「AI 生成」后生效。
@@ -289,7 +304,11 @@ const canNext = computed(() => {
     <template v-if="step === 4 && pack">
       <NCard title="🌍 场景主题" size="small" style="margin-bottom: 14px">
         <div style="display: flex; gap: 10px; flex-wrap: wrap">
-          <div v-for="t in THEMES" :key="t.id" class="theme-chip" :class="{ sel: theme === t.id }" @click="theme = t.id">
+          <div
+            v-for="t in THEMES" :key="t.id" class="theme-chip" :class="{ sel: theme === t.id }"
+            role="button" tabindex="0" :aria-pressed="theme === t.id" :aria-label="`选择主题 ${t.name}`"
+            @click="theme = t.id" @keydown.enter.prevent="theme = t.id" @keydown.space.prevent="theme = t.id"
+          >
             <div class="theme-name">{{ t.name }}</div>
             <div class="theme-desc">{{ t.desc }}</div>
           </div>
@@ -330,7 +349,7 @@ const canNext = computed(() => {
               🚀 生成游戏原型并运行
             </NButton>
           </NSpin>
-          <p style="color: #5a627a; font-size: 12px">
+          <p style="color: #8a90a6; font-size: 12px">
             生成后自动在新窗口运行；也可到「我的项目」随时再次打开。原型 = Three.js 3D 场景 + AI NPC + 剧情导演，可在项目目录继续改造。
           </p>
         </NSpace>
@@ -347,6 +366,7 @@ const canNext = computed(() => {
 </template>
 
 <style scoped>
+.pack-card:focus-visible, .fw-item:focus-visible, .theme-chip:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 2px; }
 .pack-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 14px 12px; cursor: pointer; height: 100%; transition: all .12s; }
 .pack-card:hover { border-color: #3a5e9e; transform: translateY(-2px); }
 .pack-card.sel { border-color: #7eb8ff; background: #17223a; }
