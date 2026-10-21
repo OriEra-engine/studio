@@ -96,7 +96,7 @@ pub fn open_demo(
         let _ = w.close();
     }
 
-    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url))
+    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.clone()))
         .title(&title)
         .inner_size(1280.0, 860.0)
         .min_inner_size(960.0, 640.0);
@@ -105,6 +105,8 @@ pub fn open_demo(
     let script = format!("{inject}{f5}");
     builder = builder.initialization_script(&script);
     let win = builder.build().map_err(|e| e.to_string())?;
+    // 同 open_project：新版 WebView2 下显式补导航，防 about:blank 空窗
+    let _ = win.navigate(url.clone());
     if crate::settings::load(&app).developer_mode {
         win.open_devtools();
     }
