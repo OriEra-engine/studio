@@ -204,8 +204,12 @@ export const api = {
   // 编辑器与项目维护（v0.2）
   readProject: (id: string) => invoke<ProjectDetail>("read_project", { id }),
   updateStory: (id: string, story: ProjectDetail["story"]) => invoke<void>("update_story", { id, story }),
-  regenerateBeat: (id: string, beatIndex: number, instruction: string) =>
-    invoke<{ phase: string; title: string; desc: string }>("regenerate_beat", { id, beatIndex, instruction }),
+  /** 单拍重写预览：返回新旧两版，不落盘（diff 确认制） */
+  previewRegenerateBeat: (id: string, beatIndex: number, instruction: string) =>
+    invoke<{ old: import("./types").StoryBeat; new: import("./types").StoryBeat }>("preview_regenerate_beat", { id, beatIndex, instruction }),
+  /** 采纳重写结果：落盘 + 备份 + 运行窗口热重载 */
+  applyBeat: (id: string, beatIndex: number, beat: import("./types").StoryBeat) =>
+    invoke<void>("apply_beat", { id, beatIndex, beat }),
   upgradeRuntime: (id: string) => invoke<string>("upgrade_runtime", { id }),
   exportProjectZip: (id: string) => invoke<string>("export_project_zip", { id }),
 
