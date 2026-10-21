@@ -44,6 +44,18 @@ async function run(p: ProjectMeta) {
     message.error(String(e));
   }
 }
+async function importZip() {
+  try {
+    const r = await api.importProjectZip();
+    if (r) {
+      message.success(r);
+      await refresh();
+      refreshStatus();
+    }
+  } catch (e) {
+    message.error(String(e));
+  }
+}
 async function reveal(p: ProjectMeta) {
   try {
     await api.revealProjectDir(p.id);
@@ -73,9 +85,16 @@ function fmtDate(unix: string) {
     <h2 class="page-title">我的项目</h2>
     <p class="page-sub">由「新建游戏」向导生成的 AI 原型都在这里，随时运行、改造、删除。</p>
 
+    <div v-if="projects.length || !loading" style="display: flex; justify-content: flex-end; margin-bottom: 12px">
+      <NButton size="small" secondary @click="importZip">📥 导入项目 zip</NButton>
+    </div>
+
     <NEmpty v-if="!loading && projects.length === 0" description="还没有项目——去「新建游戏」五步生成一个吧" style="margin: 60px 0">
       <template #extra>
-        <router-link to="/new-game"><NButton type="primary">🚀 新建游戏</NButton></router-link>
+        <NSpace>
+          <router-link to="/new-game"><NButton type="primary">🚀 新建游戏</NButton></router-link>
+          <NButton secondary @click="importZip">📥 导入项目 zip</NButton>
+        </NSpace>
       </template>
     </NEmpty>
 

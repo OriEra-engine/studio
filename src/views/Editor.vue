@@ -166,6 +166,15 @@ async function exportZip() {
     if (p) message.success(`已导出：${p}（对方解压到自己的 projects 目录即可玩）`);
   } catch (e) { message.error(String(e)); } finally { zipBusy.value = false; }
 }
+
+const htmlBusy = ref(false);
+async function exportHtml() {
+  htmlBusy.value = true;
+  try {
+    const p = await api.exportProjectSinglefile(id);
+    if (p) message.success(`已导出双击即玩 HTML：${p}（引擎已内联，发给谁都能直接玩）`);
+  } catch (e) { message.error(String(e)); } finally { htmlBusy.value = false; }
+}
 </script>
 
 <template>
@@ -182,6 +191,7 @@ async function exportZip() {
         <NButton size="small" type="primary" ghost @click="run">▶ 运行</NButton>
         <NButton size="small" secondary :loading="upgBusy" @click="upgrade">⬆ 升级运行时</NButton>
         <NButton size="small" secondary :loading="zipBusy" @click="exportZip">📦 导出分享</NButton>
+        <NButton size="small" secondary :loading="htmlBusy" @click="exportHtml">🌐 双击即玩 HTML</NButton>
       </NSpace>
     </div>
 
