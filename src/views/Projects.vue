@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { NCard, NGrid, NGi, NButton, NEmpty, NSpace, NTag, useMessage, NPopconfirm } from "naive-ui";
 import { useRouter } from "vue-router";
 import { api, type ProjectMeta } from "../api";
+import { refreshStatus } from "../store";
 
 const message = useMessage();
 const router = useRouter();
@@ -38,6 +39,7 @@ async function remove(p: ProjectMeta) {
     await api.deleteProject(p.id);
     message.success(`已删除「${p.name}」`);
     await refresh();
+    refreshStatus(); // 同步仪表盘的项目计数
   } catch (e) {
     message.error(String(e));
   }

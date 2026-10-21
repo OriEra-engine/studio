@@ -1,20 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { NCard, NGrid, NGi, NButton, NSpace, NTag, NStatistic } from "naive-ui";
-import { api, type AppStatus } from "../api";
 import { RouterLink } from "vue-router";
+import { store } from "../store";
 
-const status = ref<AppStatus | null>(null);
-const loading = ref(true);
+// 状态来自全局 store：模型中心保存后这里的「AI 模型」卡即时变绿，无需刷新
+const status = computed(() => store.status);
+const loading = computed(() => !store.loaded);
 const seenDemo = ref(localStorage.getItem("oe.seenDemo") === "1");
-
-onMounted(async () => {
-  try {
-    status.value = await api.getStatus();
-  } finally {
-    loading.value = false;
-  }
-});
 
 const isFresh = () => status.value && !status.value.provider_configured && status.value.project_count === 0;
 </script>
