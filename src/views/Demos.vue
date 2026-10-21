@@ -29,11 +29,15 @@ async function open(d: DemoInfo) {
 }
 
 async function openInBrowser(d: DemoInfo) {
+  opening.value = d.id;
   try {
     await api.openDemoInBrowser(d.id);
     localStorage.setItem("oe.seenDemo", "1");
+    message.success("已在系统浏览器打开 demo");
   } catch (e) {
-    message?.error?.(String(e));
+    message.error(String(e));
+  } finally {
+    opening.value = "";
   }
 }
 </script>
@@ -62,10 +66,10 @@ async function openInBrowser(d: DemoInfo) {
             </template>
             <p class="demo-desc">{{ d.desc }}</p>
             <NSpace justify="end">
-              <NButton size="small" quaternary @click.stop="openInBrowser(d)">🌐 浏览器打开</NButton>
-              <NButton size="small" type="primary" ghost :loading="opening === d.id">
-                {{ opening === d.id ? "启动中" : "运行" }}
+              <NButton size="small" type="primary" ghost :loading="opening === d.id" @click.stop="openInBrowser(d)">
+                {{ opening === d.id ? "启动中" : "▶ 运行" }}
               </NButton>
+              <NButton size="small" quaternary @click.stop="open(d)">🪟 独立窗口</NButton>
             </NSpace>
           </NCard>
         </NGi>
