@@ -297,18 +297,6 @@ pub fn open_project(
         .parse()
         .map_err(|e| format!("bad url: {e}"))?;
 
-    // 与 demo 相同的注入键（runtime 复用引擎 kernel.js 的 createProvider）
-    let inject = {
-        let cfg = settings::load_provider(&app);
-        match cfg {
-            Some(c) if c.is_usable() => format!(
-                "try{{localStorage.setItem('aicafe.llm.v1', JSON.stringify({}));}}catch(e){{}}",
-                serde_json::to_string(&c).unwrap_or_default()
-            ),
-            _ => String::new(),
-        }
-    };
-
     let label = format!("project-{id}");
     if let Some(w) = app.get_webview_window(&label) {
         // 已开着：聚焦即可，不销毁重建（重建会把玩家的进行中游戏重置回开场）
@@ -325,17 +313,9 @@ pub fn open_project(
         .title(&format!("🎮 {name} · OriEra 原型"))
         .inner_size(1360.0, 900.0)
         .min_inner_size(1024.0, 700.0);
-    if !inject.is_empty() {
-        // 刷新键：webview 默认无刷新，注入 F5 与 Ctrl/Cmd+R
-        let script = format!(
-            "{inject}document.addEventListener('keydown',e=>{{if(e.key==='F5'||((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='r')){{e.preventDefault();location.reload();}}}});"
-        );
-        builder = builder.initialization_script(&script);
-    } else {
-        builder = builder.initialization_script(
-            "document.addEventListener('keydown',e=>{if(e.key==='F5'||((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='r')){e.preventDefault();location.reload();}});",
-        );
-    }
+    // 不再挂 initialization_script：新版 WebView2 下「先挂脚本再导航」会吞掉初始导航
+    // （子窗口停留 about:blank 的根因规避）。provider 由页面同源拉取 /__provider.json，
+    // 刷新键监听已内建在 runtime 模板中。
     let win = builder.build().map_err(|e| e.to_string())?;
     // 新版 WebView2 运行时（Edge 155 实测）下「建窗即导航」存在时序回归：
     // 窗口停留在 about:blank 不发初始导航。建窗后显式补一次导航（同 URL 幂等）。

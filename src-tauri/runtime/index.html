@@ -140,8 +140,28 @@ const GLB_URL = "/examples/11-ai-cafe/vendor/RobotExpressive.glb";
 
 /* ============ L7 provider 装配（与引擎 café demo 同一机制） ============ */
 let provider = null, providerReady = false;
-const savedCfg = JSON.parse(localStorage.getItem("aicafe.llm.v1") || "null");
+/* 配置来源：优先同源 /__provider.json（Studio 植入的当前模型，改配置免刷新窗口），
+   拉不到（单文件导出/file:// 直开）回退 localStorage 存档。 */
+async function loadProviderCfg() {
+  try {
+    const r = await fetch("/__provider.json", { cache: "no-store" });
+    if (r.ok) {
+      const cfg = await r.json();
+      if (cfg && cfg.key && cfg.kind && cfg.kind !== "rule") {
+        try { localStorage.setItem("aicafe.llm.v1", JSON.stringify(cfg)); } catch (e) {}
+        return cfg;
+      }
+    }
+  } catch (e) { /* 无服务器环境 */ }
+  try { return JSON.parse(localStorage.getItem("aicafe.llm.v1") || "null"); } catch (e) { return null; }
+}
 async function boot() {
+  // 刷新键（原由 Studio initialization_script 注入——新版 WebView2 下会吞初始导航，故内建）
+  document.addEventListener("keydown", e => {
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) {
+      e.preventDefault(); location.reload();
+    }
+  });
   let mod;
   try {
     mod = await import(KERNEL);
@@ -149,6 +169,7 @@ async function boot() {
     document.getElementById("fallback").style.display = "flex";
     return;
   }
+  const savedCfg = await loadProviderCfg();
   if (savedCfg && savedCfg.key && savedCfg.kind !== "rule") {
     provider = mod.createProvider(savedCfg);
     providerReady = !!(provider && provider.ready);

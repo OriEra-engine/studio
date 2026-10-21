@@ -373,7 +373,11 @@ pub fn run() {
                 .expect("cannot resolve app data dir");
             let projects_dir = server::ensure_projects_dir(&data_dir);
 
-            let port = server::start(snapshot_examples.clone(), projects_dir.clone())
+            let port = server::start(
+                snapshot_examples.clone(),
+                projects_dir.clone(),
+                app.handle().clone(),
+            )
                 .unwrap_or_else(|e| panic!("static server: {e}"));
 
             let snapshot_version = snapshot_version(&snapshot_examples);
