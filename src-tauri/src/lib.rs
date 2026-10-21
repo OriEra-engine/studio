@@ -365,6 +365,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .register_uri_scheme_protocol("oriera", |ctx, request| {
+            crate::server::serve_content(ctx.app_handle(), request)
+        })
         .setup(|app| {
             let snapshot_examples = resolve_snapshot_examples(app);
             let data_dir = app
