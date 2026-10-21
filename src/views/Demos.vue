@@ -28,6 +28,17 @@ async function open(d: DemoInfo) {
   }
 }
 
+/* 每个demo一条确定性渐变色带（Meshy 画廊风） */
+function hueOf(seed: string): number {
+  let h = 2166136261;
+  for (const c of seed) { h ^= c.codePointAt(0)!; h = Math.imul(h, 16777619); }
+  return (h >>> 0) % 360;
+}
+function bandStyle(d: DemoInfo) {
+  const h = hueOf(d.id);
+  return { background: `linear-gradient(135deg, hsl(${h} 55% 26%) 0%, hsl(${(h + 40) % 360} 50% 15%) 100%)` };
+}
+
 async function openInBrowser(d: DemoInfo) {
   opening.value = d.id;
   try {
@@ -60,6 +71,11 @@ async function openInBrowser(d: DemoInfo) {
           <NCard class="demo-card" :class="{ featured: d.featured }" size="small" @click="open(d)">
             <template #header>
               <span style="font-size: 14px">{{ d.title }}</span>
+            </template>
+            <template #cover>
+              <div class="demo-band" :style="bandStyle(d)">
+                <span class="demo-band-emoji">{{ d.title.slice(0, 2) }}</span>
+              </div>
             </template>
             <template #header-extra>
               <NTag :type="d.featured ? 'success' : 'default'" size="small" round>{{ d.tag }}</NTag>

@@ -1,27 +1,47 @@
+/* ===== OriEra Studio 设计令牌（Godot 工作台 × Meshy 暗色画廊参照） ===== */
+:root {
+  --bg: #0f1117;            /* 页面底 */
+  --bg-raise: #161a28;      /* 卡片/面板 */
+  --bg-deep: #10141f;       /* 更深一档（代码块/预览底） */
+  --bg-hover: #1a2440;      /* 悬停态 */
+  --line: #232a3d;          /* 常规描边 */
+  --line-strong: #2a3a5c;   /* 强调描边 */
+  --text: #e6e8ef;          /* 主文本 */
+  --text-2: #aeb6cc;        /* 次文本 */
+  --text-3: #8a90a6;        /* 弱文本 */
+  --accent: #7eb8ff;        /* 主题蓝 */
+  --accent-deep: #2d5b9e;
+  --good: #35d07f;
+  --warn: #e8a35c;
+  --danger: #ff8f8f;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
 body {
   font-family: "Segoe UI", "Microsoft YaHei", -apple-system, sans-serif;
-  background: #0f1117;
-  color: #e6e8ef;
+  background: var(--bg);
+  color: var(--text);
 }
-a { color: #7eb8ff; text-decoration: none; }
+a { color: var(--accent); text-decoration: none; }
 
 .page { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
 .page-title { font-size: 22px; font-weight: 700; margin: 4px 0 4px; }
-.page-sub { color: #8a90a6; font-size: 13px; margin-bottom: 18px; }
+.page-sub { color: var(--text-3); font-size: 13px; margin-bottom: 18px; }
 
 .hero {
   border-radius: 14px;
   padding: 28px 32px;
   background: linear-gradient(135deg, #1a2340 0%, #12263a 55%, #0e1a2e 100%);
-  border: 1px solid #2a3a5c;
+  border: 1px solid var(--line-strong);
   margin-bottom: 18px;
 }
 .hero h1 { margin: 0 0 8px; font-size: 26px; }
-.hero p { color: #aeb6cc; margin: 0 0 16px; font-size: 14px; line-height: 1.7; }
+.hero p { color: var(--text-2); margin: 0 0 16px; font-size: 14px; line-height: 1.7; }
 
-.demo-card { cursor: pointer; transition: transform .12s ease, border-color .12s ease; }
-.demo-card:hover { transform: translateY(-2px); border-color: #4a7dc9 !important; }
+.demo-card { cursor: pointer; transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease; }
+.demo-card:hover { transform: translateY(-2px); border-color: #4a7dc9 !important; box-shadow: 0 8px 24px rgba(20, 40, 90, .35); }
 .demo-tag { font-size: 11px; color: #7fa8e0; }
-.demo-desc { color: #9aa2b8; font-size: 12.5px; line-height: 1.6; min-height: 40px; }
+.demo-desc { color: var(--text-2); font-size: 12.5px; line-height: 1.6; min-height: 40px; }

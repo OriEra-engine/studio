@@ -6,6 +6,7 @@ import {
   NPopconfirm, NSelect, useMessage,
 } from "naive-ui";
 import { api, type ProjectDetail } from "../api";
+import { store } from "../store";
 import { charDiff, type Seg } from "../utils/diff";
 import type { BeatChoice, StoryBeat } from "../types";
 
@@ -75,6 +76,7 @@ async function save() {
       })),
     });
     message.success("剧情已保存，运行窗口已自动刷新（旧版本备份在 .history/，保留 10 份）");
+    refreshPreview();
   } catch (e) {
     message.error(String(e));
   } finally {
@@ -103,6 +105,7 @@ async function applyDiff() {
     await api.applyBeat(id, diffIndex.value, diffNew.value);
     beats[diffIndex.value] = { ...diffNew.value };
     message.success(`第 ${diffIndex.value + 1} 拍已采纳，运行窗口已自动刷新`);
+    refreshPreview();
     diffIndex.value = -1;
     diffOld.value = diffNew.value = null;
   } catch (e) {
@@ -167,6 +170,14 @@ async function exportZip() {
   } catch (e) { message.error(String(e)); } finally { zipBusy.value = false; }
 }
 
+/* ---- Godot 式工作台：右侧实时预览 ---- */
+const previewKey = ref(0);
+const previewUrl = computed(() => {
+  const port = store.status?.server?.port;
+  return port ? `http://127.0.0.1:${port}/projects/${id}/` : "";
+});
+function refreshPreview() { previewKey.value++; }
+
 const htmlBusy = ref(false);
 async function exportHtml() {
   htmlBusy.value = true;
@@ -195,8 +206,10 @@ async function exportHtml() {
       </NSpace>
     </div>
 
-    <NSpin :show="loading">
-      <NCard title="世界观前提" size="small" style="margin-top: 14px">
+    <div class="wb">
+      <div class="wb-left">
+        <NSpin :show="loading">
+          <NCard title="世界观前提" size="small" style="margin-top: 14px">
         <NInput v-model:value="premise" type="textarea" :rows="2" placeholder="一句话世界观前提" />
       </NCard>
 
@@ -261,11 +274,47 @@ async function exportHtml() {
         <NButton type="primary" :loading="saving" @click="save">💾 保存剧情</NButton>
         <span style="color: #8a90a6; font-size: 12px">保存前旧版自动备份；保存后运行窗口自动刷新出新剧情</span>
       </div>
-    </NSpin>
+        </NSpin>
+      </div>
+      <div class="wb-right">
+        <div class="wb-bar">
+          <span class="wb-dot"></span>
+          <b>实时预览</b>
+          <span class="wb-tip">保存 / 采纳重写后自动刷新</span>
+          <span style="flex: 1"></span>
+          <NButton size="tiny" quaternary @click="refreshPreview">⟳ 刷新</NButton>
+          <NButton size="tiny" quaternary @click="run">↗ 浏览器打开</NButton>
+        </div>
+        <iframe
+          v-if="previewUrl"
+          :key="previewKey"
+          :src="previewUrl"
+          class="wb-frame"
+          title="游戏实时预览"
+        ></iframe>
+        <div v-else class="wb-empty">内置服务未就绪，稍候自动可用。</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* ---- Godot 式工作台分屏 ---- */
+.wb { display: flex; gap: 14px; margin-top: 14px; align-items: stretch; }
+.wb-left { flex: 1 1 480px; min-width: 0; max-width: 620px; }
+.wb-right { flex: 1.15 1 420px; min-width: 340px; display: flex; flex-direction: column;
+  background: var(--bg-deep, #10141f); border: 1px solid var(--line, #232a3d); border-radius: 12px; overflow: hidden; }
+.wb-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: #131726; border-bottom: 1px solid var(--line, #232a3d); font-size: 12.5px; color: #aeb6cc; }
+.wb-dot { width: 8px; height: 8px; border-radius: 50%; background: #35d07f; box-shadow: 0 0 8px #35d07f; }
+.wb-tip { color: #5f6b8a; font-size: 11px; }
+.wb-frame { flex: 1; width: 100%; border: 0; background: #0d1017; }
+.wb-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #5f6b8a; font-size: 13px; }
+@media (max-width: 1100px) {
+  .wb { flex-direction: column; }
+  .wb-left { max-width: none; }
+  .wb-right { min-height: 62vh; }
+}
 .beat-editor { background: #161a28; border: 1px solid #232a3d; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .beat-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
 .beat-no { color: #7c86a3; font-size: 12px; width: 20px; text-align: center; flex: none; }
