@@ -133,9 +133,35 @@ async function send(text?: string) {
     .map((m) => ({ role: m.role, content: m.content }));
 
   try {
-    const reply = await api.copilotChat(SYSTEM_PROMPT, history, q);
-    providerOnline.value = true;
-    typeOut(reply || "(空回复,再试一次?)", false);
+    // 真流式：奥粒边想边说（Codex 同款体感）；失败回落规则应答
+    msgs.value.push({ role: "assistant", content: "" });
+    const prox = msgs.value[msgs.value.length - 1];
+    const finish = () => {
+      busy.value = false;
+      if (prox.content) saveHistory();
+      scrollBottom();
+    };
+    await api.copilotChatStream(SYSTEM_PROMPT, history, q, ev => {
+      if (ev.event === "delta") {
+        providerOnline.value = true;
+        prox.content += ev.text;
+        scrollBottom();
+      } else if (ev.event === "done") {
+        if (!prox.content) prox.content = "(空回复,再试一次?)";
+        finish();
+      } else {
+        const detail = ev.message;
+        if (/已取消/.test(detail)) {
+          prox.content += "（已停止）";
+          finish();
+          return;
+        }
+        prox.rule = true;
+        const hint = /模型中心|配置/.test(detail) ? "" : `\n\n(原因:${detail.slice(0, 90)})`;
+        prox.content = ruleReply(q) + hint;
+        finish();
+      }
+    });
   } catch (e) {
     const detail = String(e);
     const hint = /模型中心|配置/.test(detail) ? "" : `\n\n(原因:${detail.slice(0, 90)})`;

@@ -92,35 +92,63 @@ function pickFramework(id: string) {
 }
 
 const aiBusy = ref(false);
+const aiStreaming = ref(false);
+const aiStreamText = ref("");
+let aiTaskId = "";
+
+function stopAi() {
+  if (aiTaskId) api.cancelAi(aiTaskId).catch(() => {});
+}
+
 async function aiGenerate() {
   if (!providerReady.value) {
-    message.warning("AI 定制需要先配置模型（第 3 步内即可配置）");
+    // 不再让用户自己找配置入口：直接带去第 3 步（内联快配）
+    message.info("AI 定制需要模型——已带你到第 3 步，配好再回来点生成");
+    wizard.step = 3;
     return;
   }
-  if (!pack.value) return;
+  if (!pack.value || aiBusy.value) return;
   aiBusy.value = true;
+  aiStreaming.value = true;
+  aiStreamText.value = "";
   try {
     // 叙述框架节奏单独传参,替换后端默认的三幕式指令(避免两套节奏打架)
     const rhythm =
       framework.value && frameworkId.value !== "pack-default"
         ? `${framework.value.name}：${framework.value.phases.join("→")}。各阶段节拍提示：${framework.value.beat_hint.join("；")}。请严格按该框架推进,不要套用三幕式。`
         : undefined;
-    const story: GeneratedStory = await api.generateStory(
-      pack.value.name,
-      pack.value.tagline,
-      userIdea.value.trim(),
-      6,
-      rhythm,
-      pack.value.economy.map(r => r.name),
+    aiTaskId = await api.generateStoryStream(
+      {
+        gameplayName: pack.value.name,
+        tagline: pack.value.tagline,
+        userIdea: userIdea.value.trim(),
+        beatCount: 6,
+        frameworkRhythm: rhythm,
+        economyNames: pack.value.economy.map(r => r.name),
+      },
+      ev => {
+        if (ev.event === "delta") {
+          aiStreamText.value += ev.text;
+        } else if (ev.event === "done") {
+          const story = ev.result as GeneratedStory;
+          premise.value = story.premise;
+          beats.splice(0, beats.length, ...story.beats);
+          appliedFramework.value = frameworkId.value;
+          aiBusy.value = false;
+          aiStreaming.value = false;
+          aiStreamText.value = "";
+          message.success("AI 已生成定制剧情，可继续调整或直接下一步");
+        } else {
+          aiBusy.value = false;
+          aiStreaming.value = false;
+          if (ev.message !== "已取消") message.error(ev.message);
+        }
+      },
     );
-    premise.value = story.premise;
-    beats.splice(0, beats.length, ...story.beats);
-    appliedFramework.value = frameworkId.value;
-    message.success("AI 已生成定制剧情，可继续调整或直接下一步");
   } catch (e) {
-    message.error(String(e).length > 160 ? String(e).slice(0, 160) + "…" : String(e));
-  } finally {
     aiBusy.value = false;
+    aiStreaming.value = false;
+    message.error(String(e).length > 160 ? String(e).slice(0, 160) + "…" : String(e));
   }
 }
 
@@ -250,9 +278,10 @@ const canNext = computed(() => {
               placeholder="例如：把故事放在深海邮轮上，主角是个失忆的钢琴师……（留空则按模板/AI 自由发挥）"
             />
             <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center">
-              <NButton type="primary" ghost :loading="aiBusy" @click="aiGenerate">
-                ✨ {{ providerReady ? 'AI 生成定制剧情' : 'AI 定制（先在第 3 步配置模型）' }}
+              <NButton type="primary" ghost :loading="aiBusy && !aiStreaming" @click="aiGenerate">
+                ✨ {{ aiStreaming ? '生成中…' : providerReady ? 'AI 生成定制剧情' : 'AI 定制（先在第 3 步配置模型）' }}
               </NButton>
+              <NButton v-if="aiStreaming" size="small" quaternary type="error" @click="stopAi">■ 停止</NButton>
               <span style="color: #8a90a6; font-size: 12px">使用模型：{{ providerModel || '未配置' }}</span>
             </div>
             <p v-if="frameworkId !== 'pack-default' && appliedFramework !== frameworkId" style="color: #e8a35c; font-size: 12px; margin: 10px 0 0">
@@ -260,12 +289,18 @@ const canNext = computed(() => {
             </p>
           </NCard>
           <NCard :title="`剧情预览（${beats.length} 拍）`" size="small">
-            <p style="color:#9fc3ff; font-size: 13px; margin: 0 0 12px">{{ premise }}</p>
-            <div v-for="(b, i) in beats" :key="i" class="beat-line">
-              <span class="beat-ph">{{ b.phase }}</span>
-              <b>{{ b.title }}</b>
-              <span class="beat-ds">{{ b.desc }}</span>
+            <div v-if="aiStreaming" class="stream-pane">
+              <pre class="stream-text">{{ aiStreamText }}▍</pre>
+              <p class="stream-hint">AI 正在逐字创作——首次点击约 1 秒内出字。生成完成自动替换预览，可随时「停止」。</p>
             </div>
+            <template v-else>
+              <p style="color:#9fc3ff; font-size: 13px; margin: 0 0 12px">{{ premise }}</p>
+              <div v-for="(b, i) in beats" :key="i" class="beat-line">
+                <span class="beat-ph">{{ b.phase }}</span>
+                <b>{{ b.title }}</b>
+                <span class="beat-ds">{{ b.desc }}</span>
+              </div>
+            </template>
           </NCard>
         </NGi>
       </NGrid>
@@ -355,6 +390,9 @@ const canNext = computed(() => {
 </template>
 
 <style scoped>
+.stream-pane { background: #10141f; border: 1px solid #232a3d; border-radius: 10px; padding: 12px 14px; }
+.stream-text { font-family: inherit; font-size: 12.5px; color: #aeb6cc; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 260px; overflow-y: auto; }
+.stream-hint { color: #5f6b8a; font-size: 11.5px; margin: 8px 0 0; }
 .pack-card:focus-visible, .fw-item:focus-visible, .theme-chip:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 2px; }
 .pack-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 14px 12px; cursor: pointer; height: 100%; transition: all .12s; }
 .pack-card:hover { border-color: #3a5e9e; transform: translateY(-2px); }

@@ -68,12 +68,7 @@ async fn post_chat(
     }
 
     let url = chat_endpoint(&cfg.base);
-    let body = json!({
-        "model": cfg.model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-    });
+    let body = request_body(cfg, messages, max_tokens, temperature, false);
 
     let resp = client
         .post(&url)
@@ -113,6 +108,30 @@ async fn post_chat(
         .next()
         .map(|c| c.message.content)
         .ok_or_else(|| "模型未返回内容".to_string())
+}
+
+/// 请求体统一构造：DeepSeek V4 默认 high 档思考会吃光 max_tokens 导致空正文/半句截断
+/// （引擎侧已踩平的坑），这里注入 thinking disabled；stream 标记供流式通道复用。
+fn request_body(
+    cfg: &ProviderCfg,
+    messages: Vec<serde_json::Value>,
+    max_tokens: u32,
+    temperature: f32,
+    stream: bool,
+) -> serde_json::Value {
+    let mut body = json!({
+        "model": cfg.model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    });
+    if stream {
+        body["stream"] = json!(true);
+    }
+    if cfg.kind == "deepseek" {
+        body["thinking"] = json!({"type": "disabled"});
+    }
+    body
 }
 
 /// Anthropic Messages 协议：system 独立字段、x-api-key 鉴权、content 为分块数组。
@@ -243,18 +262,15 @@ pub fn extract_json(raw: &str) -> String {
     no_fence.to_string()
 }
 
-/// 剧情定制：基于玩法包与用户想法生成前提 + 节拍。
-/// `framework_rhythm` 为叙事框架的节奏要求（名称+阶段+节拍提示）；
-/// 不传时回退三幕式。解析失败自动重试一次。
-pub async fn generate_story(
-    cfg: &ProviderCfg,
+/// 剧情定制提示词（阻塞与流式两条通道共用，避免两处漂移）。
+pub fn story_prompt(
     gameplay_name: &str,
     tagline: &str,
     user_idea: &str,
     beat_count: usize,
     framework_rhythm: Option<&str>,
     economy_names: &[String],
-) -> Result<GeneratedStory, String> {
+) -> (String, String) {
     let system = "你是一位资深游戏叙事设计师。用户给你一个玩法类型和自己的想法，你产出原创、克制、有钩子的中文剧情设计。只输出 JSON，不要任何解释文字。";
     let econ = if economy_names.is_empty() {
         "金币".to_string()
@@ -277,6 +293,23 @@ choices 只在 2~3 个关键节拍（非最后一拍）出现，其余节拍省�
         if user_idea.trim().is_empty() { "（无特定想法，请自由发挥）" } else { user_idea },
         beat_count,
     );
+    (system.to_string(), user)
+}
+
+/// 剧情定制：基于玩法包与用户想法生成前提 + 节拍。
+/// `framework_rhythm` 为叙事框架的节奏要求（名称+阶段+节拍提示）；
+/// 不传时回退三幕式。解析失败自动重试一次。
+pub async fn generate_story(
+    cfg: &ProviderCfg,
+    gameplay_name: &str,
+    tagline: &str,
+    user_idea: &str,
+    beat_count: usize,
+    framework_rhythm: Option<&str>,
+    economy_names: &[String],
+) -> Result<GeneratedStory, String> {
+    let (system, user) =
+        story_prompt(gameplay_name, tagline, user_idea, beat_count, framework_rhythm, economy_names);
 
     let mut last_err = String::from("未知解析错误");
     for attempt in 0..2 {
@@ -284,7 +317,7 @@ choices 只在 2~3 个关键节拍（非最后一拍）出现，其余节拍省�
         if attempt > 0 {
             prompt.push_str("\n（注意：你上一次的输出不是合法 JSON，这次只输出 JSON 本体。）");
         }
-        let raw = chat(cfg, system, &prompt, 2000).await?;
+        let raw = chat(cfg, &system, &prompt, 2000).await?;
         let json_str = extract_json(&raw);
         match serde_json::from_str::<GeneratedStory>(&json_str) {
             Ok(story) => return Ok(story),
@@ -301,6 +334,13 @@ pub struct Beat {
     pub desc: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choices: Option<Vec<BeatChoice>>,
+}
+
+/// 重写预览：新旧两版对比，采纳前不落盘（Codex 式 diff 确认制）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BeatPreview {
+    pub old: Beat,
+    pub new: Beat,
 }
 
 /// 单拍重写：保持前后文连贯地重写一个节拍（v0.2 编辑器核心）。
@@ -346,4 +386,163 @@ pub async fn regenerate_beat(
     // 重写只动文案;已有分支选项原样保留(编辑器可再改)
     beat.choices = cur.choices.clone();
     Ok(beat)
+}
+
+// ====================== 流式通道（SSE） ======================
+
+use crate::sse;
+use futures_util::StreamExt;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// 流式对话补全：每收到一段正文增量就调 `on_delta`；
+/// `cancelled` 置真后在下个增量边界停止读取。返回完整正文。
+/// `on_delta` 返回 false 表示调用方要求提前停止（同样返回已累计文本）。
+pub async fn chat_stream(
+    cfg: &ProviderCfg,
+    messages: Vec<serde_json::Value>,
+    max_tokens: u32,
+    temperature: f32,
+    on_delta: &mut (dyn FnMut(&str) -> bool + Send),
+    cancelled: &AtomicBool,
+) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let anthropic = cfg.kind == "anthropic";
+    let url = if anthropic {
+        let b = cfg.base.trim_end_matches('/');
+        if b.ends_with("/messages") {
+            b.to_string()
+        } else {
+            format!("{b}/messages")
+        }
+    } else {
+        chat_endpoint(&cfg.base)
+    };
+
+    let body = request_body(cfg, messages, max_tokens, temperature, true);
+    let req = if anthropic {
+        client
+            .post(&url)
+            .header("x-api-key", &cfg.key)
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(180))
+            .json(&body)
+    } else {
+        client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", cfg.key))
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(180))
+            .json(&body)
+    };
+
+    let resp = req.send().await.map_err(|e| {
+        let (title, hint) = sse::classify_error(None, &e.to_string());
+        format!("{title}：{hint}")
+    })?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format_http_error(status.as_u16(), &text));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut parser = sse::SseParser::new();
+    let mut full = String::new();
+
+    while let Some(item) = stream.next().await {
+        if cancelled.load(Ordering::Relaxed) {
+            break;
+        }
+        let chunk = item.map_err(|e| {
+            let (title, hint) = sse::classify_error(None, &e.to_string());
+            format!("{title}：{hint}")
+        })?;
+        for payload in parser.feed(&chunk) {
+            if payload.trim() == "[DONE]" {
+                return Ok(full);
+            }
+            if let Some(msg) = sse::error_payload(&payload) {
+                let (title, hint) = sse::classify_error(None, &msg);
+                return Err(format!("{title}：{hint}"));
+            }
+            let delta = if anthropic {
+                sse::anthropic_delta(&payload)
+            } else {
+                sse::openai_delta(&payload)
+            };
+            if let Some(d) = delta {
+                if d.is_empty() {
+                    continue;
+                }
+                full.push_str(&d);
+                if !on_delta(&d) {
+                    return Ok(full);
+                }
+            }
+        }
+    }
+    for payload in parser.flush() {
+        if let Some(d) = if anthropic {
+            sse::anthropic_delta(&payload)
+        } else {
+            sse::openai_delta(&payload)
+        } {
+            full.push_str(&d);
+        }
+    }
+    if full.is_empty() {
+        return Err("模型未返回内容（流提前结束），请重试一次".into());
+    }
+    Ok(full)
+}
+
+/// 流式剧情定制：一边吐增量一边积累，结束后解析 JSON（单次尝试，失败给可行动的错误）。
+pub async fn generate_story_stream(
+    cfg: &ProviderCfg,
+    gameplay_name: &str,
+    tagline: &str,
+    user_idea: &str,
+    beat_count: usize,
+    framework_rhythm: Option<&str>,
+    economy_names: &[String],
+    on_delta: &mut (dyn FnMut(&str) -> bool + Send),
+    cancelled: &AtomicBool,
+) -> Result<GeneratedStory, String> {
+    let (system, user) =
+        story_prompt(gameplay_name, tagline, user_idea, beat_count, framework_rhythm, economy_names);
+    let raw = chat_stream(
+        cfg,
+        vec![
+            json!({"role": "system", "content": system}),
+            json!({"role": "user", "content": user}),
+        ],
+        2000,
+        0.9,
+        on_delta,
+        cancelled,
+    )
+    .await?;
+    let json_str = extract_json(&raw);
+    serde_json::from_str::<GeneratedStory>(&json_str)
+        .map_err(|e| format!("生成的剧情格式无法解析（{e}），点「重试」再来一次"))
+}
+
+/// 流式 Copilot 对话（奥粒面板）。
+pub async fn copilot_chat_stream(
+    cfg: &ProviderCfg,
+    system: &str,
+    history: &[ChatTurn],
+    user: &str,
+    on_delta: &mut (dyn FnMut(&str) -> bool + Send),
+    cancelled: &AtomicBool,
+) -> Result<String, String> {
+    let mut messages = vec![json!({"role": "system", "content": system})];
+    for t in history {
+        let role = if t.role == "assistant" { "assistant" } else { "user" };
+        messages.push(json!({"role": role, "content": t.content}));
+    }
+    messages.push(json!({"role": "user", "content": user}));
+    chat_stream(cfg, messages, 1024, 0.7, on_delta, cancelled).await
 }

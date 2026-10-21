@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import type { GameSpec, StoryBeat } from "./types";
 
 export interface FeedbackResult {
@@ -125,6 +125,19 @@ export interface CopilotTurn {
   content: string;
 }
 
+/** AI 流式任务事件（Rust AiStreamEvent 一一对应） */
+export type AiStreamEvent =
+  | { event: "delta"; text: string }
+  | { event: "done"; result: unknown }
+  | { event: "error"; message: string };
+
+/** 发起流式任务：返回 task id（可传给 cancelAi），增量经 onEvent 推送。 */
+function streamTask(cmd: string, args: Record<string, unknown>, onEvent: (e: AiStreamEvent) => void): Promise<string> {
+  const channel = new Channel<AiStreamEvent>();
+  channel.onmessage = onEvent;
+  return invoke<string>(cmd, { ...args, channel });
+}
+
 export const api = {
   getStatus: () => invoke<AppStatus>("get_status"),
   listDemos: () => invoke<DemoInfo[]>("list_demos"),
@@ -147,11 +160,27 @@ export const api = {
       frameworkRhythm: frameworkRhythm ?? null,
       economy: (economyNames ?? []).map(n => ({ name: n })),
     }),
+  /** 流式剧情生成：点击 1s 内开始出字，可取消 */
+  generateStoryStream: (
+    args: { gameplayName: string; tagline: string; userIdea: string; beatCount: number; frameworkRhythm?: string; economyNames?: string[] },
+    onEvent: (e: AiStreamEvent) => void,
+  ) =>
+    streamTask("generate_story_stream", {
+      gameplayName: args.gameplayName,
+      tagline: args.tagline,
+      userIdea: args.userIdea,
+      beatCount: args.beatCount,
+      frameworkRhythm: args.frameworkRhythm ?? null,
+      economy: (args.economyNames ?? []).map(n => ({ name: n })),
+    }, onEvent),
+  cancelAi: (id: string) => invoke<void>("cancel_ai", { id }),
   createProject: (spec: GameSpec) => invoke<ProjectMeta>("create_project", { spec }),
 
   // 助手「奥粒」
   copilotChat: (system: string, history: CopilotTurn[], user: string) =>
     invoke<string>("copilot_chat", { system, history, user }),
+  copilotChatStream: (system: string, history: CopilotTurn[], user: string, onEvent: (e: AiStreamEvent) => void) =>
+    streamTask("copilot_chat_stream", { system, history, user }, onEvent),
 
   // 我的项目
   listProjects: () => invoke<ProjectMeta[]>("list_projects"),
