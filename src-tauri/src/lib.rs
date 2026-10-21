@@ -9,9 +9,14 @@ mod project;
 mod recommend;
 mod server;
 mod settings;
+mod sse;
 mod templates;
 
 use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use tauri::ipc::Channel;
 use tauri::Manager;
 
 /// 引擎快照版本（随安装包内置；更新走 gitee 镜像，M5 实现）。
@@ -124,12 +129,49 @@ fn get_recommendations(hw: hardware::HardwareInfo) -> recommend::Recommendation 
     recommend::recommend(&hw)
 }
 
-/// 用当前 provider 发起一次最小对话，验证 key/端点可用。
+/// 进行中的 AI 流式任务（task id → 取消旗标）。前端 cancel_ai 置位，流在下个增量边界退出。
+#[derive(Default)]
+pub struct AiTasks(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+fn next_task_id() -> String {
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("ai-{n:x}")
+}
+
+/// 推送给前端的 AI 流事件（tauri Channel）。
+#[derive(Clone, Serialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum AiStreamEvent {
+    Delta { text: String },
+    Done { result: serde_json::Value },
+    Error { message: String },
+}
+
+/// 用当前 provider 发起一次最小流式对话，验证 key/端点可用（流式顺便验证 SSE 通道）。
 #[tauri::command]
 async fn test_provider(app: tauri::AppHandle) -> Result<String, String> {
     let cfg = settings::load_provider(&app)
         .ok_or_else(|| "请先填写 API Key（或选择 Ollama 本地方案）".to_string())?;
-    let reply = llm::chat(&cfg, "你是连通性测试助手。", "请回复：连接成功", 20).await?;
+    let mut seen = 0usize;
+    let mut on_delta = |d: &str| {
+        seen += d.chars().count();
+        seen < 60
+    };
+    let reply = llm::chat_stream(
+        &cfg,
+        vec![
+            serde_json::json!({"role": "system", "content": "你是连通性测试助手。"}),
+            serde_json::json!({"role": "user", "content": "请回复：连接成功"}),
+        ],
+        40,
+        0.7,
+        &mut on_delta,
+        &AtomicBool::new(false),
+    )
+    .await?;
     Ok(reply.chars().take(80).collect())
 }
 
@@ -179,6 +221,130 @@ async fn copilot_chat(
     llm::copilot_chat(&cfg, &system, &history, &user).await
 }
 
+/// 流式 AI 剧情定制：立即返回 task id，增量经 Channel 推送（delta/done/error）。
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn generate_story_stream(
+    app: tauri::AppHandle,
+    tasks: tauri::State<'_, AiTasks>,
+    gameplay_name: String,
+    tagline: String,
+    user_idea: String,
+    beat_count: usize,
+    framework_rhythm: Option<String>,
+    economy: Option<Vec<serde_json::Value>>,
+    channel: Channel<AiStreamEvent>,
+) -> Result<String, String> {
+    let cfg = settings::load_provider(&app)
+        .ok_or_else(|| "AI 生成需要先配置模型（第 3 步内即可配置）".to_string())?;
+    let economy_names: Vec<String> = economy
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|v| v["name"].as_str().map(String::from))
+        .collect();
+
+    let flag = Arc::new(AtomicBool::new(false));
+    let id = next_task_id();
+    tasks.0.lock().unwrap().insert(id.clone(), flag.clone());
+
+    let ch = channel.clone();
+    let task_id = id.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut on_delta = |d: &str| {
+            let _ = ch.send(AiStreamEvent::Delta { text: d.to_string() });
+            true
+        };
+        let result = llm::generate_story_stream(
+            &cfg,
+            &gameplay_name,
+            &tagline,
+            &user_idea,
+            beat_count,
+            framework_rhythm.as_deref(),
+            &economy_names,
+            &mut on_delta,
+            &flag,
+        )
+        .await;
+        if flag.load(Ordering::Relaxed) {
+            let _ = channel.send(AiStreamEvent::Error { message: "已取消".into() });
+        } else {
+            match result {
+                Ok(story) => {
+                    let _ = channel.send(AiStreamEvent::Done {
+                        result: serde_json::to_value(&story).unwrap_or_default(),
+                    });
+                }
+                Err(e) => {
+                    let _ = channel.send(AiStreamEvent::Error { message: e });
+                }
+            }
+        }
+        if let Some(t) = app.try_state::<AiTasks>() {
+            t.0.lock().unwrap().remove(&task_id);
+        }
+    });
+    Ok(id)
+}
+
+/// 流式奥粒对话：同 generate_story_stream 的事件协议，Done.result = {"text": ...}。
+#[tauri::command]
+async fn copilot_chat_stream(
+    app: tauri::AppHandle,
+    tasks: tauri::State<'_, AiTasks>,
+    system: String,
+    history: Vec<llm::ChatTurn>,
+    user: String,
+    channel: Channel<AiStreamEvent>,
+) -> Result<String, String> {
+    let cfg = settings::load_provider(&app).ok_or_else(|| {
+        "小奥离线中：先在「模型中心」配置模型（云端或 Ollama 本地），配置好我就能真正对话啦"
+            .to_string()
+    })?;
+
+    let flag = Arc::new(AtomicBool::new(false));
+    let id = next_task_id();
+    tasks.0.lock().unwrap().insert(id.clone(), flag.clone());
+
+    let ch = channel.clone();
+    let task_id = id.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut on_delta = |d: &str| {
+            let _ = ch.send(AiStreamEvent::Delta { text: d.to_string() });
+            true
+        };
+        let result = llm::copilot_chat_stream(&cfg, &system, &history, &user, &mut on_delta, &flag)
+            .await;
+        if flag.load(Ordering::Relaxed) {
+            let _ = channel.send(AiStreamEvent::Error { message: "已取消".into() });
+        } else {
+            match result {
+                Ok(text) => {
+                    let _ = channel.send(AiStreamEvent::Done {
+                        result: serde_json::json!({ "text": text }),
+                    });
+                }
+                Err(e) => {
+                    let _ = channel.send(AiStreamEvent::Error { message: e });
+                }
+            }
+        }
+        if let Some(t) = app.try_state::<AiTasks>() {
+            t.0.lock().unwrap().remove(&task_id);
+        }
+    });
+    Ok(id)
+}
+
+/// 取消进行中的 AI 流式任务。
+#[tauri::command]
+fn cancel_ai(tasks: tauri::State<'_, AiTasks>, id: String) -> Result<(), String> {
+    if let Some(f) = tasks.0.lock().unwrap().get(&id) {
+        f.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -199,6 +365,7 @@ pub fn run() {
                 snapshot_examples,
                 projects_dir,
             });
+            app.manage(AiTasks::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -211,7 +378,10 @@ pub fn run() {
             get_recommendations,
             test_provider,
             generate_story,
+            generate_story_stream,
             copilot_chat,
+            copilot_chat_stream,
+            cancel_ai,
             demos::list_demos,
             demos::open_demo,
             ollama::ollama_status,
