@@ -7,6 +7,7 @@ import { NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, NMessage
 import type { MenuOption } from "naive-ui";
 import CommandPalette from "./components/CommandPalette.vue";
 import CopilotPanel from "./components/CopilotPanel.vue";
+import { refreshStatus } from "./store";
 
 const route = useRoute();
 const collapsed = ref(false);
@@ -21,7 +22,11 @@ function onGlobalKey(e: KeyboardEvent) {
 function openCopilot() {
   window.dispatchEvent(new CustomEvent("oriera:copilot:open"));
 }
-onMounted(() => window.addEventListener("keydown", onGlobalKey));
+onMounted(() => {
+  window.addEventListener("keydown", onGlobalKey);
+  // 全局状态唯一初始化点：之后模型保存/清除经 store 即时传导各页
+  refreshStatus();
+});
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKey));
 
 function icon(svg: string) {
