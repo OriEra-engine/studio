@@ -20,13 +20,28 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::Manager;
 
-/// 引擎快照版本（随安装包内置；更新走 gitee 镜像，M5 实现）。
-const SNAPSHOT_VERSION: &str = "oriera-engine v0.3.0 (examples 快照)";
+/// 引擎快照版本：从同步器生成的 VERSION.json 读取（engine commit + 同步日期）。
+fn snapshot_version(snapshot_examples: &std::path::Path) -> String {
+    snapshot_examples
+        .parent()
+        .and_then(|p| std::fs::read_to_string(p.join("VERSION.json")).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .map(|v| {
+            let engine = v["engine"].as_str().unwrap_or("?");
+            let synced = v["syncedAt"]
+                .as_str()
+                .map(|s| s.chars().take(10).collect::<String>())
+                .unwrap_or_default();
+            format!("oriera-engine {engine} (快照同步于 {synced})")
+        })
+        .unwrap_or_else(|| "oriera-engine (快照)".into())
+}
 
 pub struct AppState {
     pub port: u16,
     pub snapshot_examples: std::path::PathBuf,
     pub projects_dir: std::path::PathBuf,
+    pub snapshot_version: String,
 }
 
 #[derive(Serialize)]
@@ -75,7 +90,7 @@ fn get_status(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> AppSt
     AppStatus {
         server: ServerInfo {
             port: state.port,
-            snapshot_version: SNAPSHOT_VERSION.to_string(),
+            snapshot_version: state.snapshot_version.clone(),
             snapshot_dir: state.snapshot_examples.to_string_lossy().into_owned(),
             projects_dir: state.projects_dir.to_string_lossy().into_owned(),
         },
@@ -361,10 +376,12 @@ pub fn run() {
             let port = server::start(snapshot_examples.clone(), projects_dir.clone())
                 .unwrap_or_else(|e| panic!("static server: {e}"));
 
+            let snapshot_version = snapshot_version(&snapshot_examples);
             app.manage(AppState {
                 port,
                 snapshot_examples,
                 projects_dir,
+                snapshot_version,
             });
             app.manage(AiTasks::default());
             Ok(())
