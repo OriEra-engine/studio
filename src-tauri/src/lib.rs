@@ -399,6 +399,7 @@ pub fn run() {
             project::regenerate_beat,
             project::upgrade_runtime,
             project::export_project_zip,
+            project::running_projects,
             templates::list_templates,
             templates::import_gameplay_pack,
             feedback::submit_feedback,
