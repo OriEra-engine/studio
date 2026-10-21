@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { NCard, NGrid, NGi, NTag, NSpace, NButton, NAlert, NSpin } from "naive-ui";
+import { useMessage } from "naive-ui";
 import { api, type DemoInfo } from "../api";
 import { RouterLink } from "vue-router";
 
 const demos = ref<DemoInfo[]>([]);
 const loading = ref(true);
 const opening = ref("");
+const message = useMessage();
 
 onMounted(async () => {
   try {
@@ -23,6 +25,15 @@ async function open(d: DemoInfo) {
     localStorage.setItem("oe.seenDemo", "1");
   } finally {
     opening.value = "";
+  }
+}
+
+async function openInBrowser(d: DemoInfo) {
+  try {
+    await api.openDemoInBrowser(d.id);
+    localStorage.setItem("oe.seenDemo", "1");
+  } catch (e) {
+    message?.error?.(String(e));
   }
 }
 </script>
@@ -51,6 +62,7 @@ async function open(d: DemoInfo) {
             </template>
             <p class="demo-desc">{{ d.desc }}</p>
             <NSpace justify="end">
+              <NButton size="small" quaternary @click.stop="openInBrowser(d)">🌐 浏览器打开</NButton>
               <NButton size="small" type="primary" ghost :loading="opening === d.id">
                 {{ opening === d.id ? "启动中" : "运行" }}
               </NButton>

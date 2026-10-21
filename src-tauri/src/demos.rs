@@ -112,3 +112,21 @@ pub fn open_demo(
     }
     Ok(())
 }
+
+/// 用系统默认浏览器打开 demo（webview 子窗口受 WebView2 运行时兼容性影响时兜底）。
+#[tauri::command]
+pub fn open_demo_in_browser(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    folder: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let valid = catalog().iter().any(|d| d.id == folder);
+    if !valid {
+        return Err(format!("unknown demo: {folder}"));
+    }
+    let url = format!("http://127.0.0.1:{}/examples/{}/", state.port, folder);
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| format!("打开浏览器失败：{e}"))
+}
