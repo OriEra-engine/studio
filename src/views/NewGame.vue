@@ -8,6 +8,7 @@ import { useRouter } from "vue-router";
 import { api, type ProjectMeta, type GeneratedStory } from "../api";
 import { GAMEPLAY_PACKS as FALLBACK_PACKS } from "../data/gameplay-packs";
 import { STORY_FRAMEWORKS as FALLBACK_FRAMEWORKS } from "../data/story-frameworks";
+import { store, refreshStatus } from "../store";
 import type { AgentPreset, GameplayPack, StoryBeat, StoryFramework } from "../types";
 
 const message = useMessage();
@@ -62,8 +63,9 @@ const beats = reactive<StoryBeat[]>([]);
 const framework = computed(() => frameworks.value.find(f => f.id === frameworkId.value));
 
 // ---- 第三步：模型 ----
-const providerReady = ref(false);
-const providerModel = ref("");
+// 状态读全局 store：在向导内配好模型（或模型中心保存）后此处即时变就绪
+const providerReady = computed(() => !!store.status?.provider_configured);
+const providerModel = computed(() => store.status?.provider?.model ?? "");
 
 // ---- 第四步：Agent ----
 const agentSel = reactive<Record<string, boolean>>({});
@@ -74,11 +76,6 @@ const creating = ref(false);
 const created = ref<ProjectMeta | null>(null);
 
 async function boot() {
-  try {
-    const status = await api.getStatus();
-    providerReady.value = status.provider_configured;
-    providerModel.value = status.provider?.model ?? "";
-  } catch { /* 纯浏览器环境 */ }
   await loadTemplates();
 }
 boot();
@@ -168,6 +165,7 @@ async function generate() {
     });
     created.value = meta;
     message.success(`「${meta.name}」已生成！`);
+    refreshStatus(); // 仪表盘项目计数即时 +1
     await api.openProject(meta.id);
   } catch (e) {
     message.error(`生成失败：${e}`);
@@ -295,7 +293,6 @@ const canNext = computed(() => {
         </NAlert>
         <NSpace>
           <NButton type="primary" ghost @click="router.push('/models')">前往模型中心配置</NButton>
-          <NButton secondary @click="boot()">刷新状态</NButton>
           <NButton v-if="providerReady" quaternary @click="step = 4">已就绪，下一步</NButton>
         </NSpace>
       </NCard>

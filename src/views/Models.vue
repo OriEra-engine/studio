@@ -7,6 +7,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { api, type HardwareInfo, type Recommendation, type ProviderCfg, type OllamaStatus } from "../api";
 import { CLOUD_PRESETS, type CloudPreset } from "../api";
+import { store, refreshStatus, saveProvider as storeSaveProvider, clearProvider as storeClearProvider } from "../store";
 
 const message = useMessage();
 const hw = ref<HardwareInfo | null>(null);
@@ -17,7 +18,8 @@ const form = reactive<ProviderCfg>({ kind: "", key: "", model: "", base: "" });
 const saving = ref(false);
 const testing = ref(false);
 const testResult = ref<{ ok: boolean; text: string } | null>(null);
-const configured = ref(false);
+// 已植入状态来自全局 store：其他页面保存后回到这里无需重拉
+const configured = computed(() => store.status?.provider_configured ?? false);
 
 // ---- 全部厂商(筛选) ----
 type FilterId = "all" | "free" | "cn" | "vision";
@@ -82,12 +84,12 @@ async function detect() {
 }
 
 async function loadCurrent() {
-  const status = await api.getStatus();
-  configured.value = status.provider_configured;
-  if (status.provider) {
-    form.kind = status.provider.kind;
-    form.model = status.provider.model;
-    form.base = status.provider.base;
+  await refreshStatus();
+  const provider = store.status?.provider;
+  if (provider) {
+    form.kind = provider.kind;
+    form.model = provider.model;
+    form.base = provider.base;
     form.key = ""; // key 不回显
   }
 }
@@ -111,8 +113,7 @@ async function save() {
   if (!form.key && form.key !== "ollama") return message.warning("请粘贴 API Key");
   saving.value = true;
   try {
-    await api.saveProvider({ ...form });
-    configured.value = true;
+    await storeSaveProvider({ ...form });
     message.success("已保存并植入引擎——已打开的 demo/游戏窗口将自动重载生效");
   } catch (e) {
     message.error(`保存失败：${e}`);
@@ -135,8 +136,7 @@ async function test() {
 }
 
 async function clearCfg() {
-  await api.clearProvider();
-  configured.value = false;
+  await storeClearProvider();
   form.key = "";
   message.success("已清除模型配置，回到离线规则引擎");
 }
