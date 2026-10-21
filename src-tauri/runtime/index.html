@@ -120,7 +120,11 @@
 <script type="importmap">
 { "imports": {
   "three": "/examples/11-ai-cafe/vendor/three.module.js",
-  "three/addons/": "/examples/11-ai-cafe/vendor/"
+  "oriera-vendor/OrbitControls.js": "/examples/11-ai-cafe/vendor/OrbitControls.js",
+  "oriera-vendor/GLTFLoader.js": "/examples/11-ai-cafe/vendor/GLTFLoader.js",
+  "oriera-vendor/utils/BufferGeometryUtils.js": "/examples/11-ai-cafe/vendor/utils/BufferGeometryUtils.js",
+  "oriera-vendor/RobotExpressive.glb": "/examples/11-ai-cafe/vendor/RobotExpressive.glb",
+  "oriera-kernel": "/examples/11-ai-cafe/engine/kernel.js"
 } }
 </script>
 <script type="module">
@@ -128,8 +132,10 @@
 const GAME = __GAME_JSON__;
 const STORY = __STORY_JSON__;
 const AGENTS = __AGENTS_JSON__;
-const VENDOR_BASE = "/examples/11-ai-cafe/vendor/";
-const KERNEL = "/examples/11-ai-cafe/engine/kernel.js";
+/* bare specifier 走 importmap：Studio 模式指向内置快照，
+   单文件导出时由导出器把映射值换成 data URL，双击即玩。 */
+const KERNEL = "oriera-kernel";
+const GLB_URL = "oriera-vendor/RobotExpressive.glb";
 
 /* ============ L7 provider 装配（与引擎 café demo 同一机制） ============ */
 let provider = null, providerReady = false;
@@ -157,8 +163,8 @@ async function boot() {
 /* ============ 场景 ============ */
 async function startScene(mod) {
   const THREE = await import("three");
-  const { OrbitControls } = await import(VENDOR_BASE + "OrbitControls.js");
-  const { GLTFLoader } = await import(VENDOR_BASE + "GLTFLoader.js");
+  const { OrbitControls } = await import("oriera-vendor/OrbitControls.js");
+  const { GLTFLoader } = await import("oriera-vendor/GLTFLoader.js");
   const mem = new mod.MemoryStore("game." + GAME.id + ".mem.v1");
 
   /* ---- 主题（v0.2）：space / cafe / dungeon / snow ---- */
@@ -265,7 +271,7 @@ async function startScene(mod) {
   const palette = [0x7eb8ff, 0xffb37e, 0x9f8fff, 0x7effc3, 0xff8fb3, 0xffe37e];
   const npcs = [];
   const loader = new GLTFLoader();
-  const gltf = await loader.loadAsync(VENDOR_BASE + "RobotExpressive.glb");
+  const gltf = await loader.loadAsync(GLB_URL);
   AGENTS.forEach((a, i) => {
     const root = gltf.scene.clone(true);
     root.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(1); } });

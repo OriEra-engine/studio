@@ -9,6 +9,7 @@ mod project;
 mod recommend;
 mod server;
 mod settings;
+mod singlefile;
 mod sse;
 mod templates;
 
@@ -400,6 +401,8 @@ pub fn run() {
             project::apply_beat,
             project::upgrade_runtime,
             project::export_project_zip,
+            project::export_project_singlefile,
+            project::import_project_zip,
             project::running_projects,
             templates::list_templates,
             templates::import_gameplay_pack,
