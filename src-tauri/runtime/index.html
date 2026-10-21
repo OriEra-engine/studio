@@ -198,6 +198,69 @@ async function startScene(mod) {
     new THREE.MeshBasicMaterial({ color: TH.ring, transparent: true, opacity: .5 }));
   scene.add(ring);
 
+  /* ---- 场景差异化（按玩法包种子确定性生成）----
+     同一套主题下，不同玩法包的地貌道具、布光偏移、NPC 游走节奏都不同——
+     「赛车」和「农场」进游戏不再是同一张素圈地图。 */
+  const SCENE = (() => {
+    let seed = 2166136261;
+    for (const c of (GAME.gameplay_id || GAME.id || "oriera")) {
+      seed ^= c.codePointAt(0);
+      seed = Math.imul(seed, 16777619);
+    }
+    let st = seed >>> 0;
+    const rng = () => ((st = (st * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const kinds = ["crate", "pillar", "lamp", "table"];
+    const props = [];
+    const n = 7 + Math.floor(rng() * 8);
+    for (let k = 0; k < n; k++) {
+      const ang = rng() * Math.PI * 2;
+      const rad = k % 3 === 0 ? 2.2 + rng() * 1.6 : 8 + rng() * 5.5;
+      props.push({ kind: kinds[Math.floor(rng() * kinds.length)], ang, rad, s: 0.7 + rng() * 0.9, rot: rng() * Math.PI });
+    }
+    return {
+      props,
+      angleOffset: rng() * Math.PI * 2,          // NPC 站位整体旋转
+      wanderAmp: 0.15 + rng() * 0.5,             // 游走幅度
+      wanderSpeed: 0.3 + rng() * 0.7,            // 游走速度
+      hueShift: (rng() - 0.5) * 0.12,            // 布光色相偏移
+    };
+  })();
+  const propMat = new THREE.MeshStandardMaterial({ color: TH.ring, roughness: .8 });
+  const propMatDim = new THREE.MeshStandardMaterial({ color: TH.ground, roughness: .95 });
+  for (const pr of SCENE.props) {
+    let mesh;
+    if (pr.kind === "crate") {
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(.9 * pr.s, .9 * pr.s, .9 * pr.s), propMat);
+      mesh.position.set(Math.cos(pr.ang) * pr.rad, .45 * pr.s, Math.sin(pr.ang) * pr.rad);
+      mesh.rotation.y = pr.rot;
+    } else if (pr.kind === "pillar") {
+      mesh = new THREE.Mesh(new THREE.CylinderGeometry(.28 * pr.s, .34 * pr.s, 2.4 * pr.s, 10), propMatDim);
+      mesh.position.set(Math.cos(pr.ang) * pr.rad, 1.2 * pr.s, Math.sin(pr.ang) * pr.rad);
+    } else if (pr.kind === "lamp") {
+      mesh = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.06, .08, 2.2, 8), propMatDim);
+      pole.position.y = 1.1;
+      const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(.22, 12, 12),
+        new THREE.MeshBasicMaterial({ color: TH.sun }));
+      bulb.position.y = 2.3;
+      const glow = new THREE.PointLight(TH.sun, .7, 7);
+      glow.position.y = 2.3;
+      mesh.add(pole, bulb, glow);
+      mesh.position.set(Math.cos(pr.ang) * pr.rad, 0, Math.sin(pr.ang) * pr.rad);
+    } else {
+      mesh = new THREE.Group();
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(.9 * pr.s, .9 * pr.s, .12, 16), propMat);
+      top.position.y = .8;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, .8, 8), propMatDim);
+      leg.position.y = .4;
+      mesh.add(top, leg);
+      mesh.position.set(Math.cos(pr.ang) * pr.rad, 0, Math.sin(pr.ang) * pr.rad);
+    }
+    scene.add(mesh);
+  }
+  sun.color.offsetHSL(SCENE.hueShift, 0, 0);
+
   /* NPC 实例 */
   const palette = [0x7eb8ff, 0xffb37e, 0x9f8fff, 0x7effc3, 0xff8fb3, 0xffe37e];
   const npcs = [];
@@ -206,8 +269,9 @@ async function startScene(mod) {
   AGENTS.forEach((a, i) => {
     const root = gltf.scene.clone(true);
     root.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(1); } });
-    const angle = (i / Math.max(AGENTS.length, 1)) * Math.PI * 2;
-    root.position.set(Math.cos(angle) * 5, 0, Math.sin(angle) * 5);
+    const angle = (i / Math.max(AGENTS.length, 1)) * Math.PI * 2 + SCENE.angleOffset;
+    const radius = 4.6 + (i % 3) * 0.45;
+    root.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
     root.lookAt(0, 0, 0);
     root.userData = { index: i };
     scene.add(root);
@@ -228,7 +292,8 @@ async function startScene(mod) {
       const idle = gltf.animations.find(a => /idle/i.test(a.name)) || gltf.animations[0];
       if (idle) mixer.clipAction(idle).play();
     } catch (e) {}
-    npcs.push({ agent: a, root, label, mixer, color: palette[i % palette.length] });
+    npcs.push({ agent: a, root, label, mixer, color: palette[i % palette.length],
+      basePos: root.position.clone(), wPhase: i * 1.7 });
   });
 
   function roundRect(c, x, y, w, h, r) {
@@ -508,6 +573,7 @@ async function startScene(mod) {
     html += "<h4>经济循环</h4><table class=\"eco\"><tr><th>资源</th><th>来源</th><th>去向</th></tr>";
     GAME.economy.forEach(r => { html += `<tr><td>${esc(r.name)}</td><td>${esc(r.source)}</td><td>${esc(r.sink)}</td></tr>`; });
     html += `</table><h4>难度曲线</h4><div class="mech"><div>${esc(GAME.difficulty)}</div></div>`;
+    html += `<h4>LLM 预算账本</h4><div class="mech"><div>本局模型调用 <b>${ledger.calls}</b> 次 · 失败 ${ledger.fails} 次。导演自主发言走队列：间隔抖动 + 失败退避，防请求风暴。</div></div>`;
     html += `<h4>存档</h4><div style="display:flex;gap:8px;flex-wrap:wrap">
       <button id="btn-export-save" style="background:#2d5b9e;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:12.5px">📤 导出存档</button>
       <button id="btn-import-save" style="background:#161a28;color:#cdd6ec;border:1px solid #2a3a5c;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:12.5px">📥 导入存档</button>
@@ -558,19 +624,42 @@ async function startScene(mod) {
     else sys(`${a.name}（${a.role}）：「${a.first_line}」`);
   }, 600 + i * 2600));
 
-  /* 自主性：每 45s 一位 NPC 随机开口 */
-  setInterval(async () => {
-    if (!providerReady) return;
-    const i = Math.floor(Math.random() * AGENTS.length);
-    try {
-      // 注意：messages 不能只有 system——智谱/DeepSeek 等端点会直接 400
-      const out = await provider.complete([
-        { role: "system", content: systemPrompt(i) + "\n现在你没有被对话，请自然地自言自语或对世界发表一句感慨，1~2 句。" },
-        { role: "user", content: "（此刻你在做什么？自然地说一句话）" }
-      ], { max: 90 });
-    if (i === selected) npcLine(i, out); else sys(`${AGENTS[i].name}：「${out}」`);
-    } catch (e) { /* 静默 */ }
-  }, 45000);
+  /* ---- 导演队列（P3 契约：一切经队列、一切有预算）----
+     不再是裸 setInterval 直调 LLM：间隔抖动 + 失败指数退避（防 429 风暴）+ 调用计量落盘。
+     预算账本在「玩法」面板可见。 */
+  const LLM_LEDGER_KEY = "game." + GAME.id + ".llmledger";
+  const ledger = (() => {
+    try { return JSON.parse(localStorage.getItem(LLM_LEDGER_KEY)) || { calls: 0, fails: 0 }; }
+    catch { return { calls: 0, fails: 0 }; }
+  })();
+  function saveLedger() { localStorage.setItem(LLM_LEDGER_KEY, JSON.stringify(ledger)); }
+  function bill(ok) { ledger.calls++; if (!ok) ledger.fails++; saveLedger(); }
+
+  let directorBackoff = 1;
+  const DIRECTOR_BASE = 45000;
+  function directorTick() {
+    const jitter = 0.8 + Math.random() * 0.4; // ±20% 抖动，避免节拍式请求
+    setTimeout(async () => {
+      if (providerReady && !document.hidden) {
+        const i = Math.floor(Math.random() * AGENTS.length);
+        try {
+          // 注意：messages 不能只有 system——智谱/DeepSeek 等端点会直接 400
+          const out = await provider.complete([
+            { role: "system", content: systemPrompt(i) + "\n现在你没有被对话，请自然地自言自语或对世界发表一句感慨，1~2 句。" },
+            { role: "user", content: "（此刻你在做什么？自然地说一句话）" }
+          ], { max: 90 });
+          bill(true);
+          directorBackoff = 1;
+          if (i === selected) npcLine(i, out); else sys(`${AGENTS[i].name}：「${out}」`);
+        } catch (e) {
+          bill(false);
+          directorBackoff = Math.min(directorBackoff * 2, 7); // 失败翻倍退避，封顶约 5 分钟
+        }
+      }
+      directorTick();
+    }, DIRECTOR_BASE * directorBackoff * jitter);
+  }
+  directorTick();
 
   /* 主循环 */
   const clock = new THREE.Clock();
@@ -581,6 +670,10 @@ async function startScene(mod) {
       n.label.position.y = 3.1 + Math.sin(clock.elapsedTime * 2 + j) * 0.06;
       if (n.mixer) n.mixer.update(dt);
       if (j === selected) n.root.rotation.y += 0.004;
+      // 按包种子节奏的原地游走（不改变 NPC 与玩家的相对站圈）
+      const t2 = clock.elapsedTime * SCENE.wanderSpeed + n.wPhase;
+      n.root.position.x = n.basePos.x + Math.sin(t2) * SCENE.wanderAmp;
+      n.root.position.z = n.basePos.z + Math.cos(t2 * 0.8) * SCENE.wanderAmp;
     });
     controls.update();
     renderer.render(scene, camera);
