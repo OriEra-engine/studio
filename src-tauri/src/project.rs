@@ -448,15 +448,15 @@ pub fn update_story(
     Ok(())
 }
 
-/// 单拍 AI 重写（编辑器核心）。返回重写后的节拍并落盘。
+/// 单拍 AI 重写预览（不落盘）：返回新旧两版，前端 diff 对比后由 apply_beat 采纳。
 #[tauri::command]
-pub async fn regenerate_beat(
+pub async fn preview_regenerate_beat(
     app: AppHandle,
     state: tauri::State<'_, crate::AppState>,
     id: String,
     beat_index: usize,
     instruction: String,
-) -> Result<llm::Beat, String> {
+) -> Result<llm::BeatPreview, String> {
     if !valid_project_id(&id) {
         return Err(format!("非法项目 id：{id}"));
     }
@@ -465,7 +465,7 @@ pub async fn regenerate_beat(
 
     let dir = state.projects_dir.join(&id);
     let game = read_json_file(&dir, "game.json")?;
-    let mut story = read_json_file(&dir, "story.json")?;
+    let story = read_json_file(&dir, "story.json")?;
 
     let beats = story["beats"].as_array().cloned().unwrap_or_default();
     if beat_index >= beats.len() {
@@ -502,9 +502,26 @@ pub async fn regenerate_beat(
     )
     .await?;
 
-    story["beats"][beat_index] = serde_json::to_value(&rewritten).map_err(|e| e.to_string())?;
-    let _ = update_story(app, state, id.clone(), story);
-    Ok(rewritten)
+    Ok(llm::BeatPreview { old: cur, new: rewritten })
+}
+
+/// 采纳重写结果：替换对应节拍并落盘（含 .history 备份与运行窗口热重载）。
+#[tauri::command]
+pub fn apply_beat(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    id: String,
+    beat_index: usize,
+    beat: llm::Beat,
+) -> Result<(), String> {
+    let dir = state.projects_dir.join(&id);
+    let mut story = read_json_file(&dir, "story.json")?;
+    let len = story["beats"].as_array().map(|a| a.len()).unwrap_or(0);
+    if beat_index >= len {
+        return Err(format!("节拍序号越界：{beat_index}"));
+    }
+    story["beats"][beat_index] = serde_json::to_value(&beat).map_err(|e| e.to_string())?;
+    update_story(app, state, id, story)
 }
 
 /// 用当前运行时模板重写项目 index.html（保留 game/story/agents 数据）。
