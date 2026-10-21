@@ -77,7 +77,21 @@ pub fn build_singlefile(
     out.push_str(&html[..start + START.len()]);
     out.push_str(&new_inner);
     out.push_str(&html[end..]);
-    Ok(out)
+
+    // importmap 之外还可能有 fetch 加载的资产字面量（如 GLTFLoader 拉取的 GLB——
+    // fetch 不走 importmap）。把所有带引号的 "/examples/..." 字符串统一内联为 data URL。
+    let mut result = out;
+    let mut search_from = 0usize;
+    while let Some(rel_pos) = result[search_from..].find("\"/examples/") {
+        let open = search_from + rel_pos + 1; // 越过开头引号
+        let close = result[open..].find('"').ok_or("资产字面量未闭合")? + open;
+        let url = &result[open..close];
+        let bytes = resolve(url).ok_or_else(|| format!("导出依赖缺失：{url}（引擎快照不完整）"))?;
+        let data_url = format!("\"data:{};base64,{}\"", "application/octet-stream", base64_encode(&bytes));
+        result = format!("{}{}{}{}", &result[..open - 1], data_url, &result[close + 1..], "");
+        search_from = open - 1 + data_url.len();
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -98,7 +112,7 @@ mod tests {
 <script type="importmap">
 { "imports": { "oriera-kernel": "/examples/x/engine/kernel.js", "oriera-vendor/RobotExpressive.glb": "/examples/x/vendor/RobotExpressive.glb" } }
 </script>
-<script type="module">import("/examples/x/engine/kernel.js")</script>
+<script type="module">import("oriera-kernel")</script>
 </head></html>"#
             .into()
     }
@@ -115,8 +129,8 @@ mod tests {
         .unwrap();
         assert!(out.contains("data:text/javascript;base64,"), "{out}");
         assert!(out.contains("data:model/gltf-binary;base64,"));
-        // importmap 之外的引用（如动态 import 字符串）保持原样——它们走 importmap 解析
-        assert!(out.contains("import(\"/examples/x/engine/kernel.js\")"));
+        // importmap 之外的 bare specifier 动态导入保持原样（import() 走 importmap 解析）
+        assert!(out.contains("import(\"oriera-kernel\")"));
         // importmap 块内不再出现原始 URL（检查块内容而非全文）
         let map_start = out.find("<script type=\"importmap\">").unwrap();
         let map_end = out[map_start..].find("</script>").unwrap() + map_start;
@@ -127,6 +141,21 @@ mod tests {
     fn missing_dependency_is_hard_error() {
         let err = build_singlefile(&fixture(), &|_| None).unwrap_err();
         assert!(err.contains("导出依赖缺失"));
+    }
+
+    #[test]
+    fn fetch_asset_literal_inlined() {
+        let html = r#"<script type="importmap">{ "imports": {} }</script><script type="module">const GLB="/examples/v/model.glb";load(GLB);</script>"#;
+        let out = build_singlefile(html, &|url| {
+            if url == "/examples/v/model.glb" {
+                Some(vec![1, 2, 3])
+            } else {
+                None
+            }
+        })
+        .unwrap();
+        assert!(out.contains("data:application/octet-stream;base64,"), "{out}");
+        assert!(!out.contains("/examples/v/model.glb"));
     }
 
     #[test]
