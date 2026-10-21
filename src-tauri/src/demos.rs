@@ -61,7 +61,7 @@ pub fn open_demo(
         return Err(format!("unknown demo: {folder}"));
     }
 
-    let url: tauri::Url = format!("http://127.0.0.1:{}/examples/{}/", state.port, folder)
+    let url: tauri::Url = format!("http://oriera.localhost/examples/{}/", folder)
         .parse()
         .map_err(|e| format!("bad url: {e}"))?;
 

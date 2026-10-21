@@ -293,7 +293,7 @@ pub fn open_project(
     if !dir.join("index.html").is_file() {
         return Err(format!("项目不存在：{id}"));
     }
-    let url: tauri::Url = format!("http://127.0.0.1:{}/projects/{}/", state.port, id)
+    let url: tauri::Url = format!("http://oriera.localhost/projects/{}/", id)
         .parse()
         .map_err(|e| format!("bad url: {e}"))?;
 
