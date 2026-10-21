@@ -321,7 +321,7 @@ pub fn open_project(
         .and_then(|g| g["name"].as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| id.clone());
 
-    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url))
+    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.clone()))
         .title(&format!("🎮 {name} · OriEra 原型"))
         .inner_size(1360.0, 900.0)
         .min_inner_size(1024.0, 700.0);
@@ -337,6 +337,9 @@ pub fn open_project(
         );
     }
     let win = builder.build().map_err(|e| e.to_string())?;
+    // 新版 WebView2 运行时（Edge 155 实测）下「建窗即导航」存在时序回归：
+    // 窗口停留在 about:blank 不发初始导航。建窗后显式补一次导航（同 URL 幂等）。
+    let _ = win.navigate(url.clone());
     if crate::settings::load(&app).developer_mode {
         win.open_devtools();
     }
