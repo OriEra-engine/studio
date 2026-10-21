@@ -187,6 +187,8 @@ export const api = {
   openProject: (id: string) => invoke<void>("open_project", { id }),
   deleteProject: (id: string) => invoke<void>("delete_project", { id }),
   revealProjectDir: (id: string) => invoke<void>("reveal_project_dir", { id }),
+  /** 正在运行的项目 id（运行中徽标） */
+  runningProjects: () => invoke<string[]>("running_projects"),
 
   // Ollama
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),
