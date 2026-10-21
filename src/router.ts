@@ -10,5 +10,6 @@ export const router = createRouter({
     { path: "/projects", name: "projects", component: () => import("./views/Projects.vue"), meta: { title: "我的项目" } },
     { path: "/editor/:id", name: "editor", component: () => import("./views/Editor.vue"), meta: { title: "剧情编辑器" } },
     { path: "/settings", name: "settings", component: () => import("./views/Settings.vue"), meta: { title: "设置" } },
+    { path: "/play/:id", name: "play", component: () => import("./views/Play.vue"), meta: { title: "游玩", chrome: false } },
   ],
 });
