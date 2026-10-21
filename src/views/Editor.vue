@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton, NCard, NInput, NGi, NGrid, NTag, NSpace, NAlert, NSpin,
   NPopconfirm, NSelect, useMessage,
 } from "naive-ui";
 import { api, type ProjectDetail } from "../api";
-import type { BeatChoice } from "../types";
+import { charDiff, type Seg } from "../utils/diff";
+import type { BeatChoice, StoryBeat } from "../types";
 
 const route = useRoute();
 const router = useRouter();
@@ -24,6 +25,20 @@ const instruction = reactive<Record<number, string>>({});
 const saving = ref(false);
 const upgBusy = ref(false);
 const zipBusy = ref(false);
+
+// ---- AI 重写 diff 确认制：预览不落盘，采纳才写盘 ----
+const diffIndex = ref(-1); // 正在对比的节拍下标
+const diffOld = ref<StoryBeat | null>(null);
+const diffNew = ref<StoryBeat | null>(null);
+const diffDesc = computed<{ old: Seg[]; new: Seg[] } | null>(() => {
+  if (diffIndex.value < 0 || !diffOld.value || !diffNew.value) return null;
+  return charDiff(diffOld.value.desc, diffNew.value.desc);
+});
+const diffTitle = computed(() => {
+  if (!diffOld.value || !diffNew.value) return null;
+  return diffOld.value.title !== diffNew.value.title ? charDiff(diffOld.value.title, diffNew.value.title) : null;
+});
+const applying = ref(false);
 
 onMounted(async () => {
   try {
@@ -70,14 +85,35 @@ async function save() {
 async function rewrite(i: number) {
   aiBusy.value = i;
   try {
-    const beat = await api.regenerateBeat(id, i, instruction[i] ?? "");
-    beats[i] = beat;
-    message.success(`第 ${i + 1} 拍已重写（已自动落盘）`);
+    const pv = await api.previewRegenerateBeat(id, i, instruction[i] ?? "");
+    diffIndex.value = i;
+    diffOld.value = pv.old;
+    diffNew.value = pv.new;
   } catch (e) {
     message.error(String(e));
   } finally {
     aiBusy.value = -1;
   }
+}
+
+async function applyDiff() {
+  if (diffIndex.value < 0 || !diffNew.value) return;
+  applying.value = true;
+  try {
+    await api.applyBeat(id, diffIndex.value, diffNew.value);
+    beats[diffIndex.value] = { ...diffNew.value };
+    message.success(`第 ${diffIndex.value + 1} 拍已采纳，运行窗口已自动刷新`);
+    diffIndex.value = -1;
+    diffOld.value = diffNew.value = null;
+  } catch (e) {
+    message.error(String(e));
+  } finally {
+    applying.value = false;
+  }
+}
+function discardDiff() {
+  diffIndex.value = -1;
+  diffOld.value = diffNew.value = null;
 }
 
 function addBeat(i: number) {
@@ -138,7 +174,7 @@ async function exportZip() {
       <div>
         <h2 class="page-title" style="margin-bottom: 2px">✏️ {{ gameName || '剧情编辑器' }}</h2>
         <p class="page-sub" style="margin-bottom: 0">
-          叙事：{{ framework || '三幕式' }} · {{ beats.length }} 拍 · 修改后记得保存，AI 重写会自动落盘
+          叙事：{{ framework || '三幕式' }} · {{ beats.length }} 拍 · 修改后记得保存；AI 重写先对比再采纳
         </p>
       </div>
       <NSpace size="small">
@@ -168,7 +204,32 @@ async function exportZip() {
               删除第 {{ i + 1 }} 拍？
             </NPopconfirm>
           </div>
-          <NInput v-model:value="b.desc" type="textarea" :rows="2" placeholder="剧情描述" />
+          <NInput v-if="diffIndex !== i" v-model:value="b.desc" type="textarea" :rows="2" placeholder="剧情描述" />
+          <!-- AI 重写对比：左侧原版（划除），右侧新版（新增高亮）；采纳才落盘 -->
+          <div v-else class="diff-panel">
+            <div class="diff-cols">
+              <div class="diff-side">
+                <div class="diff-cap">原版（将被替换）</div>
+                <p class="diff-text">
+                  <template v-for="(s, si) in diffDesc?.old" :key="si"><del v-if="s.kind === 'del'" class="d-del">{{ s.text }}</del><span v-else>{{ s.text }}</span></template>
+                </p>
+              </div>
+              <div class="diff-side">
+                <div class="diff-cap diff-cap-new">AI 新版</div>
+                <p class="diff-text">
+                  <template v-for="(s, si) in diffDesc?.new" :key="si"><ins v-if="s.kind === 'add'" class="d-add">{{ s.text }}</ins><span v-else>{{ s.text }}</span></template>
+                </p>
+              </div>
+            </div>
+            <p v-if="diffTitle" style="margin: 8px 0 0; font-size: 12.5px">
+              标题：<del class="d-del">{{ diffOld?.title }}</del> → <ins class="d-add">{{ diffNew?.title }}</ins>
+            </p>
+            <NSpace size="small" style="margin-top: 10px">
+              <NButton size="small" type="primary" :loading="applying" @click="applyDiff">✅ 采纳新版</NButton>
+              <NButton size="small" quaternary @click="discardDiff">✕ 放弃</NButton>
+              <NButton size="small" secondary :loading="aiBusy === i" @click="rewrite(i)">🔄 再试一次</NButton>
+            </NSpace>
+          </div>
           <div v-if="b.choices?.length" class="choice-list">
             <div v-for="(c, ci) in b.choices" :key="ci" class="choice-row">
               <NTag size="small" type="info" :bordered="false">分支</NTag>
@@ -178,7 +239,7 @@ async function exportZip() {
               <NButton size="tiny" quaternary type="error" @click="delChoice(i, ci)">✕</NButton>
             </div>
           </div>
-          <div class="ai-row">
+          <div class="ai-row" v-if="diffIndex !== i">
             <NButton size="tiny" dashed @click="addChoice(i)">⑂ 加分支选项</NButton>
             <NInput v-model:value="instruction[i]" size="tiny" style="flex: 1" placeholder="AI 重写要求（留空=自由发挥更精彩）" />
             <NButton size="tiny" type="primary" ghost :loading="aiBusy === i" @click="rewrite(i)">✨ 重写这一拍</NButton>
@@ -201,4 +262,12 @@ async function exportZip() {
 .ai-row { display: flex; gap: 8px; margin-top: 8px; }
 .choice-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px; background: #131726; border: 1px dashed #2a3a5c; border-radius: 8px; }
 .choice-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.diff-panel { background: #10141f; border: 1px solid #2a3a5c; border-radius: 8px; padding: 10px 12px; margin-top: 2px; }
+.diff-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 720px) { .diff-cols { grid-template-columns: 1fr; } }
+.diff-cap { font-size: 11px; color: #7c86a3; margin-bottom: 5px; }
+.diff-cap-new { color: #35d07f; }
+.diff-text { font-size: 12.5px; line-height: 1.75; color: #cdd6ec; margin: 0; white-space: pre-wrap; word-break: break-word; }
+.d-del { background: #3d1d24; color: #ff9aa8; text-decoration: line-through; border-radius: 3px; padding: 0 1px; }
+.d-add { background: #143726; color: #7ee2a8; text-decoration: none; border-radius: 3px; padding: 0 1px; }
 </style>
