@@ -123,7 +123,6 @@
   "oriera-vendor/OrbitControls.js": "/examples/11-ai-cafe/vendor/OrbitControls.js",
   "oriera-vendor/GLTFLoader.js": "/examples/11-ai-cafe/vendor/GLTFLoader.js",
   "oriera-vendor/utils/BufferGeometryUtils.js": "/examples/11-ai-cafe/utils/BufferGeometryUtils.js",
-  "oriera-vendor/RobotExpressive.glb": "/examples/11-ai-cafe/vendor/RobotExpressive.glb",
   "oriera-kernel": "/examples/11-ai-cafe/engine/kernel.js"
 } }
 </script>
@@ -135,7 +134,9 @@ const AGENTS = __AGENTS_JSON__;
 /* bare specifier 走 importmap：Studio 模式指向内置快照，
    单文件导出时由导出器把映射值换成 data URL，双击即玩。 */
 const KERNEL = "oriera-kernel";
-const GLB_URL = "oriera-vendor/RobotExpressive.glb";
+/* GLB 由 GLTFLoader 的 fetch 加载——fetch 不走 importmap，必须给真实 URL；
+   单文件导出时由导出器把这个字面量换成 data URL。 */
+const GLB_URL = "/examples/11-ai-cafe/vendor/RobotExpressive.glb";
 
 /* ============ L7 provider 装配（与引擎 café demo 同一机制） ============ */
 let provider = null, providerReady = false;
@@ -157,7 +158,13 @@ async function boot() {
       (savedCfg.model || "llm") + "（引擎 L7 · AI 已植入）";
     document.getElementById("dot").classList.add("live");
   }
-  await startScene(mod);
+  try {
+    await startScene(mod);
+  } catch (e) {
+    const fb = document.getElementById("fallback");
+    fb.innerHTML = `<div><div style="font-size:40px">🌌</div><h2 style="margin:12px 0">场景启动失败</h2><p style="color:#8a93ad">${String(e && e.message || e)}</p></div>`;
+    fb.style.display = "flex";
+  }
 }
 
 /* ============ 场景 ============ */
