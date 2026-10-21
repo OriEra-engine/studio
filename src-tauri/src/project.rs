@@ -385,6 +385,26 @@ pub fn reload_project_window(app: &AppHandle, id: &str) {
     }
 }
 
+/// 用系统默认浏览器打开项目（webview 子窗口受 WebView2 运行时兼容性影响时兜底）。
+#[tauri::command]
+pub fn open_project_in_browser(
+    state: State<'_, crate::AppState>,
+    app: AppHandle,
+    id: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    if !valid_project_id(&id) {
+        return Err(format!("非法项目 id：{id}"));
+    }
+    if !state.projects_dir.join(&id).join("index.html").is_file() {
+        return Err(format!("项目不存在：{id}"));
+    }
+    let url = format!("http://127.0.0.1:{}/projects/{}/", state.port, id);
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| format!("打开浏览器失败：{e}"))
+}
+
 /// 正在运行的项目 id 列表（「我的项目」运行中徽标用）。
 #[tauri::command]
 pub fn running_projects(app: AppHandle) -> Vec<String> {
