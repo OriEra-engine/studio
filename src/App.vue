@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 构建期注入（vite define），与 package.json 版本恒一致
 const APP_VERSION = __APP_VERSION__;
-import { h, ref, onBeforeUnmount, onMounted, Component } from "vue";
+import { computed, h, ref, onBeforeUnmount, onMounted, Component } from "vue";
 import { useRoute, RouterLink, RouterView } from "vue-router";
 import { NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NMenu, NMessageProvider, NDialogProvider, darkTheme, zhCN, dateZhCN } from "naive-ui";
 import type { MenuOption } from "naive-ui";
