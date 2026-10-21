@@ -56,6 +56,14 @@ async function importZip() {
     message.error(String(e));
   }
 }
+async function runInBrowser(p: ProjectMeta) {
+  try {
+    await api.openProjectInBrowser(p.id);
+    message.success("已在系统浏览器打开——浏览器里游玩不受窗口兼容性影响");
+  } catch (e) {
+    message.error(String(e));
+  }
+}
 async function reveal(p: ProjectMeta) {
   try {
     await api.revealProjectDir(p.id);
@@ -114,6 +122,7 @@ function fmtDate(unix: string) {
           <NSpace size="small">
             <NButton size="small" type="primary" @click="run(p)">{{ running.has(p.id) ? '聚焦' : '运行' }}</NButton>
             <NButton size="small" secondary @click="router.push(`/editor/${p.id}`)">✏️ 编辑</NButton>
+            <NButton size="small" secondary @click="runInBrowser(p)">🌐 浏览器</NButton>
             <NButton size="small" secondary @click="reveal(p)">打开目录</NButton>
             <NPopconfirm @positive-click="remove(p)">
               <template #trigger>
