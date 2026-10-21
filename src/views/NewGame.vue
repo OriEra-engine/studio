@@ -72,6 +72,16 @@ const created = ref<ProjectMeta | null>(null);
 
 loadTemplates();
 
+function hueOf(seed: string): number {
+  let h = 2166136261;
+  for (const c of seed) { h ^= c.codePointAt(0)!; h = Math.imul(h, 16777619); }
+  return (h >>> 0) % 360;
+}
+function packStyle(id: string) {
+  const h = hueOf(id);
+  return { background: `linear-gradient(160deg, hsl(${h} 45% 20%) 0%, #161a28 78%)` };
+}
+
 function pickPack(id: string) {
   gameplayId.value = id;
   const p = packs.value.find(x => x.id === id)!;
@@ -229,7 +239,7 @@ const canNext = computed(() => {
       <NGrid :cols="5" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="p in packs" :key="p.id" span="5 s:3 m:1">
           <div
-            class="pack-card" :class="{ sel: gameplayId === p.id }"
+            class="pack-card" :class="{ sel: gameplayId === p.id }" :style="packStyle(p.id)"
             role="button" tabindex="0" :aria-pressed="gameplayId === p.id" :aria-label="`选择玩法 ${p.name}`"
             @click="pickPack(p.id)" @keydown.enter.prevent="pickPack(p.id)" @keydown.space.prevent="pickPack(p.id)"
           >
