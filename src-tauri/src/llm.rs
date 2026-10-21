@@ -41,7 +41,7 @@ fn chat_endpoint(base: &str) -> String {
     }
 }
 
-/// 调 OpenAI 兼容 chat/completions。anthropic 协议不同，直接返回提示错误。
+/// 调一次对话补全（按 provider kind 分派 OpenAI 兼容 / Anthropic 协议）。
 pub async fn chat(
     cfg: &ProviderCfg,
     system: &str,
@@ -55,16 +55,18 @@ pub async fn chat(
     post_chat(cfg, messages, max_tokens, 0.9).await
 }
 
-/// 一次 chat/completions 调用（消息数组由调用方组装）。
+/// 一次对话补全调用（消息数组由调用方组装；首条 system 消息按协议归位）。
 async fn post_chat(
     cfg: &ProviderCfg,
     messages: Vec<serde_json::Value>,
     max_tokens: u32,
     temperature: f32,
 ) -> Result<String, String> {
+    let client = reqwest::Client::new();
     if cfg.kind == "anthropic" {
-        return Err("AI 定制暂不支持 Anthropic 端点，请在模型中心选择智谱 / DeepSeek / Ollama 等 OpenAI 兼容服务".into());
+        return post_anthropic(&client, cfg, messages, max_tokens, temperature).await;
     }
+
     let url = chat_endpoint(&cfg.base);
     let body = json!({
         "model": cfg.model,
@@ -73,7 +75,6 @@ async fn post_chat(
         "temperature": temperature,
     });
 
-    let client = reqwest::Client::new();
     let resp = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", cfg.key))
@@ -90,8 +91,7 @@ async fn post_chat(
         .await
         .map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
-        let short: String = text.chars().take(400).collect();
-        return Err(format!("服务返回 {}：{}", status.as_u16(), short));
+        return Err(format_http_error(status.as_u16(), &text));
     }
 
     #[derive(Deserialize)]
@@ -113,6 +113,92 @@ async fn post_chat(
         .next()
         .map(|c| c.message.content)
         .ok_or_else(|| "模型未返回内容".to_string())
+}
+
+/// Anthropic Messages 协议：system 独立字段、x-api-key 鉴权、content 为分块数组。
+async fn post_anthropic(
+    client: &reqwest::Client,
+    cfg: &ProviderCfg,
+    messages: Vec<serde_json::Value>,
+    max_tokens: u32,
+    temperature: f32,
+) -> Result<String, String> {
+    let b = cfg.base.trim_end_matches('/');
+    let url = if b.ends_with("/messages") {
+        b.to_string()
+    } else {
+        format!("{b}/messages")
+    };
+    // anthropic 不接受 messages 里的 system 角色，摘出来放独立字段
+    let system = messages
+        .first()
+        .filter(|m| m["role"] == "system")
+        .and_then(|m| m["content"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let turns: Vec<serde_json::Value> = messages
+        .into_iter()
+        .filter(|m| m["role"] != "system")
+        .collect();
+    let mut body = json!({
+        "model": cfg.model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": turns,
+    });
+    if !system.is_empty() {
+        body["system"] = json!(system);
+    }
+
+    let resp = client
+        .post(&url)
+        .header("x-api-key", &cfg.key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(120))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败：{e}"))?;
+
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format_http_error(status.as_u16(), &text));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("解析响应失败：{e}"))?;
+    let mut out = String::new();
+    if let Some(blocks) = parsed["content"].as_array() {
+        for blk in blocks {
+            if blk["type"] == "text" {
+                if let Some(t) = blk["text"].as_str() {
+                    out.push_str(t);
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err("模型未返回内容".to_string());
+    }
+    Ok(out)
+}
+
+/// HTTP 错误 → 说人话的中文提示（带端点原文片段便于排查）。
+fn format_http_error(status: u16, body: &str) -> String {
+    let hint = match status {
+        401 | 403 => "API Key 无效或无权限——请到「模型中心」检查密钥",
+        404 => "端点或模型名不存在——请检查 Base URL 与模型名",
+        429 => "触发限流或额度不足——稍后再试，或更换免费档模型",
+        500..=599 => "模型服务端暂时故障——稍后再试",
+        _ => "请求被服务端拒绝",
+    };
+    let short: String = body.chars().take(300).collect();
+    format!("服务返回 {status}：{hint}｜{short}")
 }
 
 /// Copilot 对话历史中的一轮（"user" | "assistant"）。
