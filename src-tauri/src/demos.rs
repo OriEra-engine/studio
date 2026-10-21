@@ -1,6 +1,5 @@
 //! Demo 目录与打开逻辑：元数据 + webview 窗口 + provider 注入脚本。
 
-use crate::settings::ProviderCfg;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -44,18 +43,6 @@ pub fn catalog() -> Vec<DemoInfo> {
         .collect()
 }
 
-/// 生成注入脚本：把已配置的 provider 写入 café demo 的 localStorage（键 aicafe.llm.v1）。
-/// 未配置或仅规则引擎时不注入，保持 demo 自身的设置面板流程。
-fn build_inject_script(cfg: &ProviderCfg) -> String {
-    if !cfg.is_usable() {
-        return String::new();
-    }
-    let json = serde_json::to_string(cfg).unwrap_or_default();
-    format!(
-        "try{{localStorage.setItem('aicafe.llm.v1', JSON.stringify({json}));}}catch(e){{}}",
-        json = json
-    )
-}
 
 #[tauri::command]
 pub fn list_demos() -> Vec<DemoInfo> {
@@ -78,12 +65,6 @@ pub fn open_demo(
         .parse()
         .map_err(|e| format!("bad url: {e}"))?;
 
-    let settings = crate::settings::load_provider(&app);
-    let inject = settings
-        .as_ref()
-        .map(build_inject_script)
-        .unwrap_or_default();
-
     let title = catalog()
         .iter()
         .find(|d| d.id == folder)
@@ -100,10 +81,7 @@ pub fn open_demo(
         .title(&title)
         .inner_size(1280.0, 860.0)
         .min_inner_size(960.0, 640.0);
-    // F5 刷新 + provider 注入合并为一条初始化脚本
-    let f5 = "document.addEventListener('keydown',e=>{if(e.key==='F5'){e.preventDefault();location.reload();}});";
-    let script = format!("{inject}{f5}");
-    builder = builder.initialization_script(&script);
+    // 同 open_project：不挂 initialization_script，避免新版 WebView2 吞初始导航
     let win = builder.build().map_err(|e| e.to_string())?;
     // 同 open_project：新版 WebView2 下显式补导航，防 about:blank 空窗
     let _ = win.navigate(url.clone());
