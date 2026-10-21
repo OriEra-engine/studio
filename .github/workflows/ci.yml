@@ -1,0 +1,39 @@
+name: ci
+
+# PR 门禁：前端可构建 + Rust 可编译 + 预设表与内核快照对齐。
+# 本地 tauri cargo check 受工具链死结限制（见 memory），Rust 侧验证以此为准。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install frontend deps
+        run: npm ci || npm install --no-package-lock --no-save
+      - name: Preset alignment check (api.ts ↔ kernel snapshot)
+        run: node scripts/check-presets.mjs
+      - name: Build frontend
+        run: npx vite build
+
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
