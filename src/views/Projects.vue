@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { NCard, NGrid, NGi, NButton, NEmpty, NSpace, NTag, useMessage, NPopconfirm } from "naive-ui";
 import { useRouter } from "vue-router";
 import { api, type ProjectMeta } from "../api";
@@ -9,6 +9,13 @@ const message = useMessage();
 const router = useRouter();
 const projects = ref<ProjectMeta[]>([]);
 const loading = ref(true);
+const running = ref<Set<string>>(new Set());
+
+async function refreshRunning() {
+  try {
+    running.value = new Set(await api.runningProjects());
+  } catch { /* 纯浏览器降级 */ }
+}
 
 async function refresh() {
   loading.value = true;
@@ -18,11 +25,21 @@ async function refresh() {
     loading.value = false;
   }
 }
-onMounted(refresh);
+
+let pollTimer: number | undefined;
+onMounted(() => {
+  refresh();
+  refreshRunning();
+  pollTimer = window.setInterval(refreshRunning, 3000);
+});
+onBeforeUnmount(() => {
+  if (pollTimer !== undefined) clearInterval(pollTimer);
+});
 
 async function run(p: ProjectMeta) {
   try {
     await api.openProject(p.id);
+    refreshRunning();
   } catch (e) {
     message.error(String(e));
   }
@@ -69,11 +86,14 @@ function fmtDate(unix: string) {
             <b>🎮 {{ p.name }}</b>
           </template>
           <template #header-extra>
-            <NTag size="tiny" round>{{ fmtDate(p.created) }}</NTag>
+            <NSpace size="small" :wrap="false" align="center">
+              <NTag v-if="running.has(p.id)" type="success" size="tiny" round>运行中</NTag>
+              <NTag size="tiny" round>{{ fmtDate(p.created) }}</NTag>
+            </NSpace>
           </template>
           <p style="color: #8a93ad; font-size: 12.5px; min-height: 34px">{{ p.tagline }}</p>
           <NSpace size="small">
-            <NButton size="small" type="primary" @click="run(p)">运行</NButton>
+            <NButton size="small" type="primary" @click="run(p)">{{ running.has(p.id) ? '聚焦' : '运行' }}</NButton>
             <NButton size="small" secondary @click="router.push(`/editor/${p.id}`)">✏️ 编辑</NButton>
             <NButton size="small" secondary @click="reveal(p)">打开目录</NButton>
             <NPopconfirm @positive-click="remove(p)">

@@ -311,7 +311,9 @@ pub fn open_project(
 
     let label = format!("project-{id}");
     if let Some(w) = app.get_webview_window(&label) {
-        let _ = w.close();
+        // 已开着：聚焦即可，不销毁重建（重建会把玩家的进行中游戏重置回开场）
+        let _ = w.set_focus();
+        return Ok(());
     }
     let name = std::fs::read_to_string(dir.join("game.json"))
         .ok()
@@ -324,14 +326,14 @@ pub fn open_project(
         .inner_size(1360.0, 900.0)
         .min_inner_size(1024.0, 700.0);
     if !inject.is_empty() {
-        // F5 刷新：webview 默认无刷新键，注入键盘监听
+        // 刷新键：webview 默认无刷新，注入 F5 与 Ctrl/Cmd+R
         let script = format!(
-            "{inject}document.addEventListener('keydown',e=>{{if(e.key==='F5'){{e.preventDefault();location.reload();}}}});"
+            "{inject}document.addEventListener('keydown',e=>{{if(e.key==='F5'||((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='r')){{e.preventDefault();location.reload();}}}});"
         );
         builder = builder.initialization_script(&script);
     } else {
         builder = builder.initialization_script(
-            "document.addEventListener('keydown',e=>{if(e.key==='F5'){e.preventDefault();location.reload();}});",
+            "document.addEventListener('keydown',e=>{if(e.key==='F5'||((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='r')){e.preventDefault();location.reload();}});",
         );
     }
     let win = builder.build().map_err(|e| e.to_string())?;
@@ -375,9 +377,28 @@ pub fn read_project(
     })
 }
 
+/// 重载指定项目的运行窗口：保存/重写剧情后即时生效，告别手动 F5。
+pub fn reload_project_window(app: &AppHandle, id: &str) {
+    let label = format!("project-{id}");
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.eval("location.reload()");
+    }
+}
+
+/// 正在运行的项目 id 列表（「我的项目」运行中徽标用）。
+#[tauri::command]
+pub fn running_projects(app: AppHandle) -> Vec<String> {
+    app.webview_windows()
+        .keys()
+        .filter_map(|l| l.strip_prefix("project-").map(String::from))
+        .collect()
+}
+
 /// 保存剧情编辑（含前提与节拍）。写入前把旧 story.json 备份到 .history/（保留 10 份）。
+/// 写入成功后自动重载该项目的运行窗口。
 #[tauri::command]
 pub fn update_story(
+    app: AppHandle,
     state: State<'_, crate::AppState>,
     id: String,
     story: serde_json::Value,
@@ -422,7 +443,9 @@ pub fn update_story(
         dir.join("story.json"),
         serde_json::to_vec_pretty(&story).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| format!("写入失败：{e}"))
+    .map_err(|e| format!("写入失败：{e}"))?;
+    reload_project_window(&app, &id);
+    Ok(())
 }
 
 /// 单拍 AI 重写（编辑器核心）。返回重写后的节拍并落盘。
@@ -480,13 +503,17 @@ pub async fn regenerate_beat(
     .await?;
 
     story["beats"][beat_index] = serde_json::to_value(&rewritten).map_err(|e| e.to_string())?;
-    let _ = update_story(state, id.clone(), story);
+    let _ = update_story(app, state, id.clone(), story);
     Ok(rewritten)
 }
 
 /// 用当前运行时模板重写项目 index.html（保留 game/story/agents 数据）。
 #[tauri::command]
-pub fn upgrade_runtime(state: State<'_, crate::AppState>, id: String) -> Result<String, String> {
+pub fn upgrade_runtime(
+    app: AppHandle,
+    state: State<'_, crate::AppState>,
+    id: String,
+) -> Result<String, String> {
     if !valid_project_id(&id) {
         return Err(format!("非法项目 id：{id}"));
     }
@@ -505,7 +532,8 @@ pub fn upgrade_runtime(state: State<'_, crate::AppState>, id: String) -> Result<
         .replace("__STORY_JSON__", &json_for_html(&story))
         .replace("__AGENTS_JSON__", &json_for_html(&agents));
     std::fs::write(dir.join("index.html"), html).map_err(|e| format!("写入失败：{e}"))?;
-    Ok("运行时已升级到当前模板".into())
+    reload_project_window(&app, &id);
+    Ok("运行时已升级到当前模板，运行窗口已自动刷新".into())
 }
 
 /// 导出项目为可分享 zip（对方导入自己的 Studio projects 目录即可玩）。
