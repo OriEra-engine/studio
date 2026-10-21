@@ -553,6 +553,98 @@ pub fn upgrade_runtime(
     Ok("运行时已升级到当前模板，运行窗口已自动刷新".into())
 }
 
+/// 导出单文件「双击即玩」HTML：引擎模块内联为 data URL，脱离 Studio 也能玩
+/// （无 key 时自动离线规则引擎；模型 key 不写入文件）。
+#[tauri::command]
+pub async fn export_project_singlefile(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    id: String,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+    if !valid_project_id(&id) {
+        return Err(format!("非法项目 id：{id}"));
+    }
+    let dir = state.projects_dir.join(&id);
+    if !dir.join("index.html").is_file() {
+        return Err(format!("项目不存在：{id}"));
+    }
+    let Some(file) = app
+        .dialog()
+        .file()
+        .add_filter("HTML", &["html"])
+        .set_file_name(&format!("{id}.html"))
+        .blocking_save_file()
+    else {
+        return Ok(String::new()); // 用户取消
+    };
+    let out = file.into_path().map_err(|e| format!("路径无效：{e}"))?;
+    let html = std::fs::read_to_string(dir.join("index.html")).map_err(|e| format!("读取失败：{e}"))?;
+    let snapshot = state.snapshot_examples.clone();
+    let built = crate::singlefile::build_singlefile(&html, &|url| {
+        // url 形如 /examples/11-ai-cafe/...；快照根即 examples 目录
+        let rel = url.trim_start_matches("/examples/");
+        std::fs::read(snapshot.join(rel)).ok()
+    })?;
+    std::fs::write(&out, built).map_err(|e| format!("写入失败：{e}"))?;
+    Ok(out.to_string_lossy().into_owned())
+}
+
+/// 导入项目 zip：解压到 projects/<zip名>/，防路径穿越；兼容带顶层目录的打包。
+#[tauri::command]
+pub async fn import_project_zip(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(file) = app.dialog().file().add_filter("zip", &["zip"]).blocking_pick_file() else {
+        return Ok(String::new()); // 用户取消
+    };
+    let path = file.into_path().map_err(|e| format!("路径无效：{e}"))?;
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("imported");
+    let dir_name = slugify(stem);
+    let f = std::fs::File::open(&path).map_err(|e| format!("打开失败：{e}"))?;
+    let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("不是有效 zip：{e}"))?;
+    let target = state.projects_dir.join(&dir_name);
+    std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        // enclosed_name 拒绝 ../ 与绝对路径等穿越形态
+        let Some(rel) = entry.enclosed_name() else { continue };
+        let dest = target.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut outf = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
+        std::io::copy(&mut entry, &mut outf).map_err(|e| e.to_string())?;
+    }
+    // zip 内带一层顶层目录时，整体上提一层（list_projects 只认 projects/<id>/index.html）
+    if !target.join("index.html").is_file() {
+        if let Ok(rd) = std::fs::read_dir(&target) {
+            let entries: Vec<_> = rd.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+            if entries.len() == 1 && entries[0].is_dir() {
+                let inner = entries[0].clone();
+                for e in std::fs::read_dir(&inner)
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|e| e.ok())
+                {
+                    let dest = target.join(e.file_name());
+                    std::fs::rename(e.path(), dest).map_err(|e| e.to_string())?;
+                }
+                let _ = std::fs::remove_dir(&inner);
+            }
+        }
+    }
+    Ok(format!("已导入「{dir_name}」，到「我的项目」查看"))
+}
+
 /// 导出项目为可分享 zip（对方导入自己的 Studio projects 目录即可玩）。
 #[tauri::command]
 pub async fn export_project_zip(

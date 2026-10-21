@@ -212,6 +212,10 @@ export const api = {
     invoke<void>("apply_beat", { id, beatIndex, beat }),
   upgradeRuntime: (id: string) => invoke<string>("upgrade_runtime", { id }),
   exportProjectZip: (id: string) => invoke<string>("export_project_zip", { id }),
+  /** 单文件「双击即玩」HTML 导出（引擎模块内联，脱离 Studio 可玩） */
+  exportProjectSinglefile: (id: string) => invoke<string>("export_project_singlefile", { id }),
+  /** 导入项目 zip（自动防路径穿越），返回提示信息 */
+  importProjectZip: () => invoke<string>("import_project_zip"),
 
   // 设置
   setDeveloperMode: (enabled: boolean) => invoke<void>("set_developer_mode", { enabled }),
