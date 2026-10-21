@@ -142,6 +142,8 @@ export const api = {
   getStatus: () => invoke<AppStatus>("get_status"),
   listDemos: () => invoke<DemoInfo[]>("list_demos"),
   openDemo: (folder: string) => invoke<void>("open_demo", { folder }),
+  /** 用系统浏览器打开 demo（webview 子窗口兼容性兜底） */
+  openDemoInBrowser: (folder: string) => invoke<void>("open_demo_in_browser", { folder }),
 
   // 模型中心
   detectHardware: () => invoke<HardwareInfo>("detect_hardware"),
@@ -187,6 +189,8 @@ export const api = {
   openProject: (id: string) => invoke<void>("open_project", { id }),
   deleteProject: (id: string) => invoke<void>("delete_project", { id }),
   revealProjectDir: (id: string) => invoke<void>("reveal_project_dir", { id }),
+  /** 用系统浏览器打开项目（webview 子窗口兼容性兜底） */
+  openProjectInBrowser: (id: string) => invoke<void>("open_project_in_browser", { id }),
   /** 正在运行的项目 id（运行中徽标） */
   runningProjects: () => invoke<string[]>("running_projects"),
 
