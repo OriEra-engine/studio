@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, ref, toRefs } from "vue";
 import {
   NButton, NCard, NInput, NGi, NGrid, NSteps, NStep, NTag, NSpace,
   NAlert, NCheckbox, useMessage, NSpin,
@@ -9,11 +9,19 @@ import { api, type ProjectMeta, type GeneratedStory } from "../api";
 import { GAMEPLAY_PACKS as FALLBACK_PACKS } from "../data/gameplay-packs";
 import { STORY_FRAMEWORKS as FALLBACK_FRAMEWORKS } from "../data/story-frameworks";
 import { store, refreshStatus } from "../store";
+import { wizard } from "../wizard-state";
+import ProviderQuickSetup from "../components/ProviderQuickSetup.vue";
 import type { AgentPreset, GameplayPack, StoryBeat, StoryFramework } from "../types";
 
 const message = useMessage();
 const router = useRouter();
-const step = ref(1);
+
+// 向导状态跨路由暂存：跳去模型中心/看 Demo 再回来，选过的东西不丢
+const {
+  step, gameplayId, frameworkId, appliedFramework, userIdea,
+  premise, theme, agentSel, projectName,
+} = toRefs(wizard);
+const beats: StoryBeat[] = wizard.beats;
 
 // ---- 模板库（Rust 合并内置+用户包；纯浏览器环境回退到静态数据）----
 const packs = ref<GameplayPack[]>([...FALLBACK_PACKS]);
@@ -47,38 +55,22 @@ const THEMES = [
   { id: "dungeon", name: "🕯️ 幽暗地牢", desc: "火把与阴影" },
   { id: "snow", name: "❄️ 雪原", desc: "白昼极光" },
 ];
-const theme = ref("space");
 
 // ---- 第一步：玩法 ----
-const gameplayId = ref("");
 const pack = computed(() => packs.value.find(p => p.id === gameplayId.value));
 
 // ---- 第二步：剧情 ----
-const frameworkId = ref("pack-default");
-/** 实际应用到当前 beats 的框架（选了框架但没点 AI 生成时不改标签，避免失实） */
-const appliedFramework = ref("pack-default");
-const userIdea = ref("");
-const premise = ref("");
-const beats = reactive<StoryBeat[]>([]);
 const framework = computed(() => frameworks.value.find(f => f.id === frameworkId.value));
 
-// ---- 第三步：模型 ----
-// 状态读全局 store：在向导内配好模型（或模型中心保存）后此处即时变就绪
+// ---- 第三步：模型（状态读全局 store）----
 const providerReady = computed(() => !!store.status?.provider_configured);
 const providerModel = computed(() => store.status?.provider?.model ?? "");
 
-// ---- 第四步：Agent ----
-const agentSel = reactive<Record<string, boolean>>({});
-
 // ---- 第五步：生成 ----
-const projectName = ref("");
 const creating = ref(false);
 const created = ref<ProjectMeta | null>(null);
 
-async function boot() {
-  await loadTemplates();
-}
-boot();
+loadTemplates();
 
 function pickPack(id: string) {
   gameplayId.value = id;
@@ -86,7 +78,7 @@ function pickPack(id: string) {
   premise.value = p.story_premise;
   beats.splice(0, beats.length, ...p.story_beats.map(b => ({ ...b })));
   frameworkId.value = "pack-default";
-  p.agents.forEach(a => (agentSel[a.name] = true));
+  p.agents.forEach(a => (agentSel.value[a.name] = true));
   projectName.value = `我的${p.name}`;
 }
 
@@ -102,7 +94,7 @@ function pickFramework(id: string) {
 const aiBusy = ref(false);
 async function aiGenerate() {
   if (!providerReady.value) {
-    message.warning("AI 定制需要先在「模型中心」配置模型");
+    message.warning("AI 定制需要先配置模型（第 3 步内即可配置）");
     return;
   }
   if (!pack.value) return;
@@ -133,7 +125,7 @@ async function aiGenerate() {
 }
 
 const chosenAgents = computed<AgentPreset[]>(() =>
-  pack.value ? pack.value.agents.filter(a => agentSel[a.name]) : []
+  pack.value ? pack.value.agents.filter(a => agentSel.value[a.name]) : []
 );
 
 async function generate() {
@@ -258,8 +250,8 @@ const canNext = computed(() => {
               placeholder="例如：把故事放在深海邮轮上，主角是个失忆的钢琴师……（留空则按模板/AI 自由发挥）"
             />
             <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center">
-              <NButton type="primary" ghost :loading="aiBusy" :disabled="!providerReady" @click="aiGenerate">
-                ✨ {{ providerReady ? 'AI 生成定制剧情' : 'AI 定制（需先配置模型）' }}
+              <NButton type="primary" ghost :loading="aiBusy" @click="aiGenerate">
+                ✨ {{ providerReady ? 'AI 生成定制剧情' : 'AI 定制（先在第 3 步配置模型）' }}
               </NButton>
               <span style="color: #8a90a6; font-size: 12px">使用模型：{{ providerModel || '未配置' }}</span>
             </div>
@@ -279,23 +271,22 @@ const canNext = computed(() => {
       </NGrid>
     </template>
 
-    <!-- 第三步：模型 -->
+    <!-- 第三步：模型（内联快配，不再跳页） -->
     <template v-if="step === 3">
-      <NCard size="small">
-        <template #header>🔌 模型植入</template>
-        <NAlert :type="providerReady ? 'success' : 'warning'" style="margin-bottom: 14px">
-          <template v-if="providerReady">
-            当前已植入：<b>{{ providerModel }}</b> —— 生成的游戏里 NPC 对话与导演旁白将由它驱动。
-          </template>
-          <template v-else>
-            尚未配置模型。生成的游戏会以<b>离线性格引擎</b>运行（可玩但 NPC 为固定话术）。
-          </template>
-        </NAlert>
-        <NSpace>
-          <NButton type="primary" ghost @click="router.push('/models')">前往模型中心配置</NButton>
-          <NButton v-if="providerReady" quaternary @click="step = 4">已就绪，下一步</NButton>
-        </NSpace>
+      <NAlert :type="providerReady ? 'success' : 'warning'" style="margin-bottom: 14px">
+        <template v-if="providerReady">
+          当前已植入：<b>{{ providerModel }}</b> —— 生成的游戏里 NPC 对话与导演旁白将由它驱动。
+        </template>
+        <template v-else>
+          在下面直接配置（也可跳过——生成的游戏会以<b>离线性格引擎</b>运行，之后随时可植入）。
+        </template>
+      </NAlert>
+      <NCard size="small" style="max-width: 720px">
+        <ProviderQuickSetup />
       </NCard>
+      <div style="margin-top: 12px">
+        <NButton size="tiny" quaternary @click="router.push('/models')">需要硬件体检 / Ollama 本地模型 / 任务槽位？前往模型中心 ↗</NButton>
+      </div>
     </template>
 
     <!-- 第四步：居民 -->
