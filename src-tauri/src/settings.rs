@@ -45,6 +45,9 @@ pub struct Settings {
     /// 开发者模式：demo/项目窗口自动开 devtools
     #[serde(default)]
     pub developer_mode: bool,
+    /// 火绒兼容提醒已展示过（只提示一次）
+    #[serde(default)]
+    pub huorong_hint_shown: bool,
 }
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
