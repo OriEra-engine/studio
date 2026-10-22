@@ -22,6 +22,8 @@ pub fn start(
     tauri::async_runtime::spawn(async move {
         let examples = ServeDir::new(&snapshot_examples).append_index_html_on_directories(true);
         let projects = ServeDir::new(&projects_dir).append_index_html_on_directories(true);
+        let assets = ServeDir::new(projects_dir.parent().map(|p| p.join("assets")).unwrap_or_default())
+            .append_index_html_on_directories(true);
         let app_for_provider = app.clone();
         let app_router = Router::new()
             .route(
@@ -42,7 +44,8 @@ pub fn start(
                 }),
             )
             .nest_service("/examples", examples)
-            .nest_service("/projects", projects);
+            .nest_service("/projects", projects)
+            .nest_service("/assets", assets);
 
         let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
             Ok(l) => l,
