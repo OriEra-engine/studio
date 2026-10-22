@@ -734,6 +734,17 @@ async function startScene(mod) {
     r.readAsText(file);
   }
 
+  /* ---- 导演队列（P3 契约：一切经队列、一切有预算）----
+     不再是裸 setInterval 直调 LLM：间隔抖动 + 失败指数退避（防 429 风暴）+ 调用计量落盘。
+     预算账本在「玩法」面板可见。 */
+  const LLM_LEDGER_KEY = "game." + GAME.id + ".llmledger";
+  const ledger = (() => {
+    try { return JSON.parse(localStorage.getItem(LLM_LEDGER_KEY)) || { calls: 0, fails: 0 }; }
+    catch { return { calls: 0, fails: 0 }; }
+  })();
+  function saveLedger() { localStorage.setItem(LLM_LEDGER_KEY, JSON.stringify(ledger)); }
+  function bill(ok) { ledger.calls++; if (!ok) ledger.fails++; saveLedger(); }
+
   /* 玩法图鉴（v0.3 真逻辑）：核心循环按玩家真实行为自动追踪 */
   const doneManual = new Set(JSON.parse(localStorage.getItem("game." + GAME.id + ".loop") || "[]"));
   const doneAuto = new Set(JSON.parse(localStorage.getItem("game." + GAME.id + ".loopAuto") || "[]"));
@@ -819,14 +830,7 @@ async function startScene(mod) {
 
   /* ---- 导演队列（P3 契约：一切经队列、一切有预算）----
      不再是裸 setInterval 直调 LLM：间隔抖动 + 失败指数退避（防 429 风暴）+ 调用计量落盘。
-     预算账本在「玩法」面板可见。 */
-  const LLM_LEDGER_KEY = "game." + GAME.id + ".llmledger";
-  const ledger = (() => {
-    try { return JSON.parse(localStorage.getItem(LLM_LEDGER_KEY)) || { calls: 0, fails: 0 }; }
-    catch { return { calls: 0, fails: 0 }; }
-  })();
-  function saveLedger() { localStorage.setItem(LLM_LEDGER_KEY, JSON.stringify(ledger)); }
-  function bill(ok) { ledger.calls++; if (!ok) ledger.fails++; saveLedger(); }
+     预算账本在「玩法」面板可见（账本本体已前移到首次渲染之前，避免 TDZ）。 */
 
   /* v0.7.5 成本可视化（评审：优化不可感知=没发生）：读引擎 provider.stats
      （calls/tokens/cached，与 Rust 对镜的缓存钳制口径），HUD 简读 + 玩法面板详读。 */
