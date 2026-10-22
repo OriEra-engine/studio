@@ -4,8 +4,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   MemoryStore, HttpChatProvider, parseIntent, CommandQueue,
-  CognitionSystem, DirectorSystem, PROVIDER_PRESETS, createProvider,
+  CognitionSystem, DirectorSystem, PROVIDER_PRESETS, createProvider, fitBudget,
 } from "./kernel.js";
+
+const fitBudgetJS = fitBudget; // 显式别名：断言里读得出这是对镜腿
 
 /* ---- parseIntent：与 Rust L9 parse 同词汇表（镜像断言） ---- */
 test("parse 镜像：spawn/clear/gravity/teleport/count/speed", () => {
@@ -91,6 +93,82 @@ test("provider 透传 seed 与 thinking（仅 openai 兼容方言）", async () 
   } finally { globalThis.fetch = origFetch; }
 });
 
+/* ---- v0.7（PLAN-deepseek-upgrade）：B6 schema 透传 / B5 缓存计量 ---- */
+test("provider 透传 schema 为 json_schema，且优先于 json_object（B6）", async () => {
+  const bodies = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (_u, o) => {
+    bodies.push(JSON.parse(o.body));
+    return { ok: true, json: async () => ({ choices: [{ message: { content: "{}" } }], usage: {} }) };
+  };
+  try {
+    const p = new HttpChatProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x" });
+    const schema = { type: "object", properties: { say: { type: "string" } }, required: ["say"] };
+    await p.complete([{ role: "user", content: "hi" }], { json: true, schema });
+    assert.equal(bodies[0].response_format.type, "json_schema");
+    assert.equal(bodies[0].response_format.json_schema.name, "reply");
+    assert.deepEqual(bodies[0].response_format.json_schema.schema, schema);
+    // 单独 json 仍是旧对象格式
+    await p.complete([{ role: "user", content: "hi" }], { json: true });
+    assert.deepEqual(bodies[1].response_format, { type: "json_object" });
+    // 都不传：线上干净（与 Rust default 分支对镜）
+    await p.complete([{ role: "user", content: "hi" }], {});
+    assert.equal(bodies[2].response_format, undefined);
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test("provider 缓存命中 tokens 进 stats.cached（DeepSeek/OpenAI + 谎报钳制，B5）", async () => {
+  const replies = [
+    { choices: [{ message: { content: "a" } }], usage: { total_tokens: 108, prompt_tokens: 100, completion_tokens: 8, prompt_cache_hit_tokens: 92 } },
+    { choices: [{ message: { content: "b" } }], usage: { total_tokens: 54, prompt_tokens: 50, completion_tokens: 4, prompt_tokens_details: { cached_tokens: 30 } } },
+    // 谎报厂商：cached 999 > prompt 10 → 按 prompt 钳制（与 Rust 对镜）
+    { choices: [{ message: { content: "c" } }], usage: { total_tokens: 11, prompt_tokens: 10, completion_tokens: 1, prompt_cache_hit_tokens: 999 } },
+  ];
+  let i = 0;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => replies[i++] });
+  try {
+    const p = new HttpChatProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x" });
+    await p.complete([{ role: "user", content: "x" }]);
+    assert.equal(p.stats.cached, 92);
+    await p.complete([{ role: "user", content: "x" }]);
+    assert.equal(p.stats.cached, 122, "两次调用累加（92 + 30）");
+    await p.complete([{ role: "user", content: "x" }]);
+    assert.equal(p.stats.cached, 132, "谎报被钳到 prompt（122 + 10）");
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test("Anthropic 方言：cache_read_input_tokens 进 stats.cached", async () => {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ content: [{ text: "在场" }], usage: { input_tokens: 40, output_tokens: 5, cache_read_input_tokens: 25 } }),
+  });
+  try {
+    const p = new HttpChatProvider({ kind: "anthropic", key: "k", model: "claude", base: "https://x" });
+    const out = await p.complete([{ role: "user", content: "x" }]);
+    assert.equal(out, "在场");
+    assert.equal(p.stats.cached, 25);
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test("预设表带已核实的 caps/price（deepseek/openai），未核实行保持干净", () => {
+  assert.equal(PROVIDER_PRESETS.deepseek.caps.contextWindow, 1000000);
+  assert.ok(PROVIDER_PRESETS.deepseek.caps.promptCache);
+  assert.ok(PROVIDER_PRESETS.deepseek.price.cachedMicroPerM < PROVIDER_PRESETS.deepseek.price.promptMicroPerM,
+    "缓存命中必须比 miss 便宜——这是 B5 的全部意义");
+  assert.ok(PROVIDER_PRESETS.openai.caps.structuredOutput);
+  // 未核实行：不带 caps 也不带 price（镜像 Rust ModelCaps::UNREGISTERED）
+  for (const id of ["rule", "qwen", "stepfun", "moonshot", "groq", "openrouter"]) {
+    assert.equal(PROVIDER_PRESETS[id].caps, undefined, id);
+    assert.equal(PROVIDER_PRESETS[id].price, undefined, id);
+  }
+  // 本地行永不带价（电费口径）
+  for (const id of ["ollama", "vllm", "llamacpp", "lmstudio"]) {
+    assert.equal(PROVIDER_PRESETS[id].price, undefined, id);
+  }
+});
+
 /* ---- CognitionSystem：场景/台词库/RNG/max 注入 ---- */
 test("认知系统：注入场景与 max 后 prompt 走新世界，默认仍是咖啡馆", async () => {
   let capturedSys = null, capturedOpts = null;
@@ -137,6 +215,31 @@ test("认知系统：注入 rng 后离线台词可复现", () => {
   assert.equal(run(), run());
 });
 
+test("稳定前缀（B5）：system 跨拍字节不变，易变内容走 user", async () => {
+  const calls = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (_u, o) => {
+    const b = JSON.parse(o.body);
+    calls.push({ sys: b.messages[0].content, user: b.messages[1].content });
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '{"say":"好","action":"idle","mood":"neutral","remember":"","to":"客人"}' } }], usage: {} }) };
+  };
+  try {
+    const world = { turn: 0, npcs: [{ id: "zhou", name: "老周", role: "老板", description: "手冲派", mood: "neutral" }], dialogue: [], story: { day: 1, beats: [] }, guestQueue: [] };
+    const c = new CognitionSystem(
+      new HttpChatProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x" }),
+      new MemoryStore("test.stable"), {},
+    );
+    await c.tick(world);
+    world.story.day = 2;                       // 世界在动
+    world.dialogue.push({ speaker: "客人", to: "老周", text: "今天豆子如何？" });
+    await c.tick(world);
+    assert.equal(calls[0].sys, calls[1].sys, "system prompt 必须字节稳定（前缀缓存契约）");
+    assert.ok(!calls[1].sys.includes("世界进度"), "易变内容不得进 system");
+    assert.ok(calls[1].user.includes("第 2 世界日"), "易变内容在 user");
+    assert.ok(calls[1].user.includes("今天豆子如何"), "对话在 user");
+  } finally { globalThis.fetch = origFetch; }
+});
+
 test("导演系统：注入 ruleBeats 生效", async () => {
   const d = new DirectorSystem({ ready: false }, new MemoryStore("test.dir"), { ruleBeats: ["甲事件", "乙事件"] });
   const world = { turn: 0, dialogue: [], story: { day: 1, beats: [] } };
@@ -145,18 +248,195 @@ test("导演系统：注入 ruleBeats 生效", async () => {
   assert.equal(beat, "甲事件");
 });
 
-/* ---- 预设表：13 行与 Rust PROVIDER_PRESETS 对齐 ---- */
-test("预设表 13 行（rule 领头 + 云端 8 + 本地开源 4）", () => {
+/* ---- 预设表：15 行（rule + xlite 自家网关 + 云端 9 + 本地开源 4） ---- */
+test("预设表 15 行（rule 领头，xlite 第二，云端 9 + 本地开源 4）", () => {
   const ids = Object.keys(PROVIDER_PRESETS);
-  assert.equal(ids.length, 13);
+  assert.equal(ids.length, 15);
   assert.equal(ids[0], "rule");
-  for (const id of ["qwen", "ollama", "vllm", "llamacpp", "lmstudio"]) assert.ok(ids.includes(id), id);
+  assert.equal(ids[1], "xlite");
+  for (const id of ["qwen", "stepfun", "ollama", "vllm", "llamacpp", "lmstudio"]) assert.ok(ids.includes(id), id);
   assert.equal(PROVIDER_PRESETS.ollama.base, "http://127.0.0.1:11434/v1");
   assert.equal(PROVIDER_PRESETS.qwen.base, "https://dashscope.aliyuncs.com/compatible-mode/v1");
+  assert.equal(PROVIDER_PRESETS.stepfun.base, "https://api.stepfun.com/v1");
+  assert.equal(PROVIDER_PRESETS.xlite.base, "https://xlite.dezai.com/v1");
 });
 
 test("createProvider 兼容：rule/无 key 返回 null 走降级", () => {
   assert.equal(createProvider({ kind: "rule" }), null);
   assert.equal(createProvider({ kind: "deepseek" }), null);
   assert.ok(createProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x" }));
+});
+
+/* ---- v2.1 极客评测快修回归 ---- */
+test("parseIntent 全角数字归一（中文输入法）", () => {
+  assert.deepEqual(parseIntent("放５个"), { kind: "spawn", n: 5 });
+  assert.deepEqual(parseIntent("重力２.５"), { kind: "gravity", g: 2.5 });
+  assert.deepEqual(parseIntent("speed ２"), { kind: "speed", k: 2 });
+});
+
+test("createProvider 未知 kind 拒绝（不再静默按 openai-compat）", () => {
+  assert.equal(createProvider({ kind: "deepseak", key: "k", model: "m", base: "https://x" }), null);
+  for (const kind of ["deepseek", "zhipu", "ollama", "qwen", "openai-compat", "xlite"]) {
+    const p = createProvider({ kind, key: "k", model: "m", base: "https://x" });
+    assert.ok(p, kind);
+  }
+});
+
+/* ---- v3 HttpChatProvider 参数自愈（本地 mock 服务器，node:http） ---- */
+import http from "node:http";
+
+/** 起 n 步 mock：每步 {status, body} 顺序应答，记录收到的请求体；返回 {server, base, reqs} */
+function mockGateway(steps) {
+  const reqs = [];
+  const server = http.createServer((req, res) => {
+    let buf = "";
+    req.on("data", c => buf += c);
+    req.on("end", () => {
+      reqs.push(buf);
+      const step = steps[Math.min(reqs.length - 1, steps.length - 1)];
+      res.writeHead(step.status, { "Content-Type": "application/json" });
+      res.end(step.body);
+    });
+  });
+  return new Promise(resolve => {
+    server.listen(0, "127.0.0.1", () => {
+      resolve({ server, base: "http://127.0.0.1:" + server.address().port, reqs });
+    });
+  });
+}
+
+test("自愈①：400 点名 temperature → 归一为 1 重试成功", async () => {
+  const m = await mockGateway([
+    { status: 400, body: '{"error":{"message":"claude-sonnet-5-5 does not support non-default temperature"}}' },
+    { status: 200, body: '{"choices":[{"message":{"content":"好了"}}],"usage":{"total_tokens":9}}' },
+  ]);
+  const p = createProvider({ kind: "xlite", key: "k", model: "m", base: m.base });
+  const out = await p.complete([{ role: "user", content: "hi" }], { max: 40 });
+  assert.equal(out, "好了");
+  assert.equal(p.stats.retries, 1);
+  assert.match(m.reqs[1], /"temperature":1(\.0)?/); // 第二次请求温度为 1
+  assert.match(m.reqs[0], /"temperature":0\.85/);   // 第一次是默认 0.85
+  m.server.close();
+});
+
+test("自愈②：length 截断空内容 → 加倍 max_tokens 重试成功", async () => {
+  const m = await mockGateway([
+    { status: 200, body: '{"choices":[{"message":{"content":""},"finish_reason":"length"}],"usage":{"total_tokens":50}}' },
+    { status: 200, body: '{"choices":[{"message":{"content":"这次有内容了"}}],"usage":{"total_tokens":120}}' },
+  ]);
+  const p = createProvider({ kind: "openai-compat", key: "k", model: "m", base: m.base });
+  const out = await p.complete([{ role: "user", content: "hi" }], { max: 60 });
+  assert.equal(out, "这次有内容了");
+  assert.equal(p.stats.retries, 1);
+  assert.match(m.reqs[1], /"max_tokens":120/); // 60 → 120
+  m.server.close();
+});
+
+test("自愈不误伤：普通 400 直接抛错（不再重试）", async () => {
+  const m = await mockGateway([
+    { status: 400, body: '{"error":{"message":"insufficient quota"}}' },
+    { status: 400, body: '{"error":{"message":"insufficient quota"}}' },
+  ]);
+  const p = createProvider({ kind: "openai-compat", key: "k", model: "m", base: m.base });
+  await assert.rejects(() => p.complete([{ role: "user", content: "hi" }], { max: 40 }), /HTTP 400/);
+  assert.equal(m.reqs.length, 2); // 初始 + 传输层重试 1 次（900ms 后），无参数自愈轮
+  m.server.close();
+});
+
+test("超时可配：opts.timeout 短预算触发超时错误", async () => {
+  const slow = http.createServer((req, res) => setTimeout(() => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end('{"choices":[{"message":{"content":"迟到"}}]}');
+  }, 500));
+  await new Promise(r => slow.listen(0, "127.0.0.1", r));
+  const p = createProvider({ kind: "openai-compat", key: "k", model: "m", base: "http://127.0.0.1:" + slow.address().port });
+  await assert.rejects(() => p.complete([{ role: "user", content: "hi" }], { timeout: 80, max: 40 }));
+  slow.close();
+});
+
+test("MemoryStore 未来 turn 不再 Infinity 霸榜", () => {
+  const m = new MemoryStore("test.future");
+  m.record("a", { turn: 1000, day: 1, about: "w", text: "来自未来", imp: 1 });
+  const hits = m.retrieve("a", "w", "来自未来", 10, 3);
+  assert.equal(hits.length, 1); // 分数有界（>0.8 阈值仍可召回）
+  assert.ok(Number.isFinite(m.retrieve("a", "w", "来自未来", 10, 3).length));
+});
+
+/* ---- v0.8（B7 熔断器 + B4 预算裁剪） ---- */
+test("熔断器：连续失败开闸快速失败，半开探测成功闭闸（B7）", async () => {
+  let fetches = 0, fail = true;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => { fetches++; if (fail) throw new Error("HTTP 503");
+    return { ok: true, json: async () => ({ choices: [{ message: { content: "好了" } }], usage: {} }) }; };
+  try {
+    // 长冷却：开闸后快速失败腿（冷却未过，绝不碰网络）
+    const p = new HttpChatProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x", breakerThreshold: 2, breakerCooldownMs: 60000, retryDelayMs: 0 });
+    await assert.rejects(p.complete([{ role: "user", content: "x" }]));
+    assert.equal(p.breaker.consecutiveFailures, 1);
+    await assert.rejects(p.complete([{ role: "user", content: "x" }]));
+    assert.equal(p.breaker.state, "open");
+    const before = fetches;
+    await assert.rejects(p.complete([{ role: "user", content: "x" }]), /breaker open/);
+    assert.equal(fetches, before, "开闸后快速失败，绝不碰网络");
+    // 零冷却：半开探测成功闭闸腿
+    const q = new HttpChatProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x", breakerThreshold: 2, breakerCooldownMs: 0, retryDelayMs: 0 });
+    await assert.rejects(q.complete([{ role: "user", content: "x" }]));
+    await assert.rejects(q.complete([{ role: "user", content: "x" }]));
+    assert.equal(q.breaker.state, "open");
+    fail = false; // 冷却 0 → 半开探测成功闭闸
+    assert.equal(await q.complete([{ role: "user", content: "x" }]), "好了");
+    assert.equal(q.breaker.state, "closed");
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test("熔断器：4xx 配置类错误不计开闸（与 Rust trips_breaker 对镜）", async () => {
+  let fetches = 0;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => { fetches++; return { ok: false, status: 401, json: async () => ({}) }; };
+  try {
+    const p = new HttpChatProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x", breakerThreshold: 2, retryDelayMs: 0 });
+    await assert.rejects(p.complete([{ role: "user", content: "x" }]));
+    await assert.rejects(p.complete([{ role: "user", content: "x" }]));
+    await assert.rejects(p.complete([{ role: "user", content: "x" }]));
+    assert.equal(p.breaker.state, "closed", "坏 key 换线没用，不开闸");
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test("fitBudget：头部必保、最旧对话先删、确定性（B4）", () => {
+  let user = "世界进度：第 1 世界日，拍\n对话对象：「客人」。\n你的相关记忆：\n- 记忆甲\n最近对话：\n";
+  for (let i = 0; i < 20; i++) user += `老周：第${i}句台词内容比较长一些\n`;
+  const out = fitBudgetJS(user, 250);
+  assert.ok(out.length <= 251, "预算守住");
+  assert.ok(out.startsWith("世界进度"), "头部必保");
+  assert.ok(out.includes("第19句"), "最新台词保住");
+  assert.ok(!out.includes("第0句"), "最旧台词先删");
+  assert.equal(out, fitBudgetJS(user, 250), "确定性");
+  assert.equal(fitBudgetJS("世界进度：短\n", 250), "世界进度：短\n", "预算内直通");
+});
+
+test("fitBudget：emoji 按码点计（与 Rust chars 对镜，评审 P1-2）", () => {
+  const user = "世界进度：第 1 世界日\n你的相关记忆：\n- 🐱记忆\n最近对话：\n老周：🐱🐱🐱🐱🐱🐱🐱🐱🐱🐱\n老周：普通台词\n";
+  const out = fitBudget(user, 30);
+  assert.ok([...out].length <= 30, "码点预算守住");
+  assert.ok(!/[\uD800-\uDFFF]/.test(out.slice(-2))) ; // 末尾不落孤代理
+  assert.ok(out.includes("世界进度"), "头部必保");
+});
+
+test("熔断器：半开探测失败→重开（与 Rust 对镜腿）", async () => {
+  let calls = 0, mode = "fail";
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => { calls++;
+    if (mode === "fail" || mode === "probe-fail") throw new Error("HTTP 503");
+    return { ok: true, json: async () => ({ choices: [{ message: { content: "ok" } }], usage: {} }) }; };
+  try {
+    const p = new HttpChatProvider({ kind: "deepseek", key: "k", model: "m", base: "https://x", breakerThreshold: 1, breakerCooldownMs: 0, retryDelayMs: 0 });
+    await assert.rejects(p.complete([{ role: "user", content: "x" }])); // trip (threshold 1)
+    assert.equal(p.breaker.state, "open");
+    mode = "probe-fail";
+    await assert.rejects(p.complete([{ role: "user", content: "x" }])); // 半开探测失败
+    assert.equal(p.breaker.state, "open", "探测失败重开");
+    mode = "ok";
+    assert.equal(await p.complete([{ role: "user", content: "x" }]), "ok"); // 再半开→成功闭闸
+    assert.equal(p.breaker.state, "closed");
+  } finally { globalThis.fetch = origFetch; }
 });

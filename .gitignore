@@ -5,3 +5,5 @@ src-tauri/gen/schemas/
 portable/
 *.log
 .DS_Store
+scripts/xlite-matrix-report*.json
+scripts/proxy-vs-direct.json

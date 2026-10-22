@@ -262,6 +262,9 @@ export interface CloudPreset {
 }
 
 export const CLOUD_PRESETS: CloudPreset[] = [
+  { kind: "xlite", label: "XLite 潜元网关", base: "https://xlite.dezai.com/v1", model: "gpt-4o-mini",
+    models: ["gpt-4o-mini", "gpt-5.2", "claude-sonnet-4-6", "gemini-3.6-flash", "deepseek-v4.1-flash", "glm-5.3", "MiniMax-M3", "qwen3.8-max"],
+    note: "潜元无限企业网关 · 一个 Key 调用 160+ 家族模型（GPT/Claude/Gemini/Qwen/DeepSeek/GLM/Kimi/豆包）", cn: true, badge: "潜元无限", url: "https://xlite.dezai.com" },
   { kind: "zhipu", label: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash",
     models: ["glm-4-flash", "glm-4.7-flash", "glm-4.6v-flash", "glm-5.3"],
     note: "国内直连 · Flash 档免费;4.6V 免费视觉", free: true, cn: true, vision: true, url: "https://open.bigmodel.cn" },

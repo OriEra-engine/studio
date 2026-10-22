@@ -67,6 +67,20 @@ function slotKindOf(s: { id: string; recKind: string }): string {
   return routing.value[s.id] || s.recKind;
 }
 
+// ---- XLite 实时模型清单（公开 pricing 接口，经本机代理免 CORS） ----
+const serverPort = ref<number | null>(null);
+const xliteLive = ref<{ models: string[]; count: number } | null>(null);
+async function loadXliteLive() {
+  if (!serverPort.value || xliteLive.value) return;
+  try {
+    const r = await fetch(`http://127.0.0.1:${serverPort.value}/proxy/xlite/api/pricing`);
+    const d = await r.json();
+    const text = ((d.data || []) as { model_name: string; catalog_categories?: string[] }[])
+      .filter(m => (m.catalog_categories || []).includes("text_chat"));
+    xliteLive.value = { models: text.slice(0, 12).map(m => m.model_name), count: text.length };
+  } catch { /* 拉不到就静默回退静态 pills */ }
+}
+
 // Ollama
 const ollama = ref<OllamaStatus | null>(null);
 const pulling = ref("");
@@ -86,6 +100,9 @@ async function detect() {
 async function loadCurrent() {
   await refreshStatus();
   const provider = store.status?.provider;
+  // XLite 实时模型清单：经本机代理拉公开 pricing 接口（拉不到静默回退静态 pills）
+  serverPort.value = store.status?.server?.port ?? null;
+  void loadXliteLive();
   if (provider) {
     form.kind = provider.kind;
     form.model = provider.model;
@@ -295,6 +312,15 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
                 @click.stop="pickPreset(p, m)" @keydown.enter.stop.prevent="pickPreset(p, m)" @keydown.space.stop.prevent="pickPreset(p, m)"
               >{{ m }}</span>
             </div>
+            <div v-if="p.kind === 'xlite' && xliteLive" class="model-row">
+              <span class="model-pill-mini live-tag" title="来自网关实时价目接口">实时 · {{ xliteLive.count }} 个文本模型</span>
+              <span
+                v-for="m in xliteLive.models" :key="`live-${m}`"
+                class="model-pill-mini" :class="{ on: form.model === m && form.kind === p.kind }"
+                role="button" tabindex="0" :aria-label="`选择模型 ${m}`"
+                @click.stop="pickPreset(p, m)" @keydown.enter.stop.prevent="pickPreset(p, m)" @keydown.space.stop.prevent="pickPreset(p, m)"
+              >{{ m }}</span>
+            </div>
             <div class="rec-actions">
               <NButton size="tiny" secondary @click.stop="pickPreset(p)">选择</NButton>
               <NButton v-if="p.url" size="tiny" quaternary tag="a" :href="p.url" target="_blank">注册入口 ↗</NButton>
@@ -434,6 +460,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .model-pill-mini { font-size: 11px; color: #aeb6cc; background: #10141f; border: 1px solid #2a3a5c; border-radius: 10px; padding: 1px 8px; cursor: pointer; }
 .model-pill-mini:hover { border-color: #3a5e9e; color: #9fd0ff; }
 .model-pill-mini.on { border-color: #7eb8ff; color: #9fd0ff; background: #17223a; }
+.live-tag { color: #7ce38b; border-style: dashed; cursor: default; }
 .slot-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 12px; height: 100%; }
 .slot-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-size: 13.5px; }
 .slot-id { font-size: 10.5px; color: #8a90a6; font-family: Consolas, monospace; }
