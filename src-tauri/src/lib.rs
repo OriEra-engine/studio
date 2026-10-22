@@ -1,5 +1,6 @@
 //! OriEra Studio —— 开箱即用的 OriEra 世界引擎桌面工作台。
 
+mod assets;
 mod demos;
 mod feedback;
 mod hardware;
@@ -450,6 +451,10 @@ pub fn run() {
             cancel_ai,
             demos::list_demos,
             demos::open_demo,
+            assets::generate_asset_command,
+            assets::list_assets,
+            assets::delete_asset,
+            assets::add_asset_to_project,
             demos::open_demo_in_browser,
             ollama::ollama_status,
             ollama::ollama_serve,
