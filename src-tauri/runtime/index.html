@@ -180,8 +180,12 @@ async function boot() {
   slotDialog = (savedCfg && mod.resolveSlotProvider("npc_dialog", savedCfg)) || provider;
   slotDirector = (savedCfg && mod.resolveSlotProvider("director", savedCfg)) || provider;
   if (providerReady) {
+    // v0.7.4 槽位路由：状态行如实展示各槽实际模型（与全局不同才标）
+    const slotTag =
+      (slotDialog && slotDialog.cfg && slotDialog.cfg.model !== (savedCfg.model || "") ? " 对话:" + slotDialog.cfg.model : "") +
+      (slotDirector && slotDirector.cfg && slotDirector.cfg.model !== (savedCfg.model || "") ? " 导演:" + slotDirector.cfg.model : "");
     document.getElementById("prov-name").textContent =
-      (savedCfg.model || "llm") + "（引擎 L7 · AI 已植入）";
+      (savedCfg.model || "llm") + slotTag + "（引擎 L7 · AI 已植入）";
     document.getElementById("dot").classList.add("live");
   }
   try {
@@ -417,15 +421,22 @@ async function startScene(mod) {
   function sys(text) { bubble("sys", text); }
   function npcLine(i, text) { bubble("npc", `<b>${esc(AGENTS[i].name)}</b><br>${esc(text)}`); }
 
+  /* v0.7.4 前缀缓存契约（与引擎认知系统对齐）：system 只放恒定内容
+     （身份/人设/世界观/输出要求），每拍易变项（天数/剧情拍/情绪/记忆）
+     全部走 user——system 字节稳定，DeepSeek 类前缀缓存每拍命中。 */
   function systemPrompt(i) {
     const a = AGENTS[i];
-    const beat = STORY.beats[storyIdx] || {};
-    return `你在一场名为「${GAME.name}」的游戏原型里扮演 NPC。
-角色：${a.name}（${a.role}），人设：${a.persona}，当前情绪基调：${a.mood}。
-世界观前提：${STORY.premise}
-当前剧情：第${day}天 · ${beat.phase || ""}「${beat.title || ""}」——${beat.desc || ""}
+    return `「${GAME.name}」游戏原型 NPC。
+角色：${a.name}（${a.role}），人设：${a.persona}。
+世界观：${STORY.premise}
 玩法基调：${GAME.tagline}（${GAME.difficulty}）
-要求：始终以 ${a.name} 的身份第一人称说话，2~4 句，符合人设与情绪，可以推进当前剧情但不要跳出世界观。`;
+要求：始终以 ${a.name} 第一人称说话，2~4 句，符合人设，可推进剧情不跳出世界观。`;
+  }
+  /* 每拍易变上下文：拼进本轮 user 消息开头 */
+  function turnContext(i) {
+    const a = AGENTS[i];
+    const beat = STORY.beats[storyIdx] || {};
+    return `（第${day}天 · 剧情拍：${beat.phase || ""}「${beat.title || ""}」——${beat.desc || ""} · 你当前情绪：${a.mood}）`;
   }
 
   async function send() {
@@ -443,9 +454,9 @@ async function startScene(mod) {
         .map(e => `· ${e.text}`);
       const memLine = recalled.length ? `\n[${a.name}对玩家的长期记忆]\n${recalled.join("\n")}` : "";
       const msgs = [
-        { role: "system", content: systemPrompt(i) + memLine },
+        { role: "system", content: systemPrompt(i) },
         ...recent,
-        { role: "user", content: text }
+        { role: "user", content: turnContext(i) + memLine + "\n玩家：" + text }
       ];
       const out = await useSlot.complete(msgs, { max: 300 });
       t.remove(); npcLine(i, out);
@@ -584,8 +595,8 @@ async function startScene(mod) {
       const t = bubble("thinking", "（TA 环顾四周，压低声音……）");
       try {
         const out = await (slotDialog || provider).complete([
-          { role: "system", content: `你是${a.name}（${a.role}），玩家刚花10金币向你买了一条剧情线索。按你的人设，用1~2句悄悄透露关于当前剧情「${beat.title || "?"}」的真实有用信息。` },
-          { role: "user", content: "这是金币。说吧，你知道什么？" }
+          { role: "system", content: `你是${a.name}（${a.role}）。玩家花10金币向你买剧情线索时，按人设用1~2句悄悄透露真实有用的信息。` },
+          { role: "user", content: `${turnContext(i)}\n（玩家递上金币买当前剧情「${beat.title || "?"}」的线索）这是金币。说吧，你知道什么？` }
         ], { max: 120 });
         t.remove(); npcLine(i, out);
       } catch (e) { t.remove(); sys("（交易被打断了……）"); }
@@ -724,8 +735,8 @@ async function startScene(mod) {
         try {
           // 注意：messages 不能只有 system——智谱/DeepSeek 等端点会直接 400
           const out = await (slotDialog || provider).complete([
-            { role: "system", content: systemPrompt(i) + "\n现在你没有被对话，请自然地自言自语或对世界发表一句感慨，1~2 句。" },
-            { role: "user", content: "（此刻你在做什么？自然地说一句话）" }
+            { role: "system", content: systemPrompt(i) + "\n没被对话时也会自然地自言自语或对世界感慨一两句。" },
+            { role: "user", content: turnContext(i) + "\n（此刻你在做什么？自然地说一句话）" }
           ], { max: 90 });
           bill(true);
           directorBackoff = 1;
