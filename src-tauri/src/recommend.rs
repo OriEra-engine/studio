@@ -35,6 +35,18 @@ pub struct Recommendation {
     pub local: Option<LocalRec>,
 }
 
+fn xlite() -> CloudRec {
+    CloudRec {
+        label: "XLite 潜元网关 · 全家桶".into(),
+        kind: "xlite".into(),
+        model: "gpt-4o-mini".into(),
+        base: "https://xlite.dezai.com/v1".into(),
+        note: "潜元无限统一网关 · 一个 Key 调用 160+ 模型，OpenAI 兼容".into(),
+        free: false,
+        signup_url: "https://xlite.dezai.com".into(),
+    }
+}
+
 fn zhipu() -> CloudRec {
     CloudRec {
         label: "智谱 GLM · glm-4-flash".into(),
@@ -118,7 +130,7 @@ pub fn recommend(hw: &HardwareInfo) -> Recommendation {
                 hw.ram_gb,
                 if has_dgpu { format!(" / 独显显存约 {:.0}GB", vram) } else { String::new() }
             ),
-            cloud: vec![zhipu(), deepseek(), doubao()],
+            cloud: vec![xlite(), zhipu(), deepseek(), doubao()],
             local: None,
         };
     }
@@ -172,7 +184,7 @@ pub fn recommend(hw: &HardwareInfo) -> Recommendation {
         detail: format!(
             "本地模型零 token 费用、数据不出本机，适合长时间挂机游玩；云端免安装、覆盖所有机型。两者都注入引擎，随时在「模型中心」切换。"
         ),
-        cloud: vec![zhipu(), deepseek(), doubao(), moonshot()],
+        cloud: vec![xlite(), zhipu(), deepseek(), doubao(), moonshot()],
         local,
     }
 }

@@ -170,10 +170,16 @@ pub enum AiStreamEvent {
 }
 
 /// 用当前 provider 发起一次最小流式对话，验证 key/端点可用（流式顺便验证 SSE 通道）。
+/// 测试路径=运行路径：白名单网关（XLite）经本机代理测试——直连测试通过
+/// 不等于浏览器游戏可用（CORS），别让「测试连接」骗用户。
 #[tauri::command]
-async fn test_provider(app: tauri::AppHandle) -> Result<String, String> {
-    let cfg = settings::load_provider(&app)
+async fn test_provider(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let mut cfg = settings::load_provider(&app)
         .ok_or_else(|| "请先填写 API Key（或选择 Ollama 本地方案）".to_string())?;
+    cfg.base = server::localize_base(&cfg.base, state.port);
     let mut seen = 0usize;
     let mut on_delta = |d: &str| {
         seen += d.chars().count();
