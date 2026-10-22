@@ -140,6 +140,9 @@ const GLB_URL = "/examples/11-ai-cafe/vendor/RobotExpressive.glb";
 
 /* ============ L7 provider 装配（与引擎 café demo 同一机制） ============ */
 let provider = null, providerReady = false;
+// v0.9 槽位路由：对话/导演各走各的槽位 provider（oriera.routing.v1；
+// 缺省/无凭据时 resolveSlotProvider 诚实回退全局，这里再兜底 provider）
+let slotDialog = null, slotDirector = null;
 /* 配置来源：优先同源 /__provider.json（Studio 植入的当前模型，改配置免刷新窗口），
    拉不到（单文件导出/file:// 直开）回退 localStorage 存档。 */
 async function loadProviderCfg() {
@@ -174,6 +177,8 @@ async function boot() {
     provider = mod.createProvider(savedCfg);
     providerReady = !!(provider && provider.ready);
   }
+  slotDialog = (savedCfg && mod.resolveSlotProvider("npc_dialog", savedCfg)) || provider;
+  slotDirector = (savedCfg && mod.resolveSlotProvider("director", savedCfg)) || provider;
   if (providerReady) {
     document.getElementById("prov-name").textContent =
       (savedCfg.model || "llm") + "（引擎 L7 · AI 已植入）";
@@ -429,6 +434,7 @@ async function startScene(mod) {
     const i = selected;
     if (!providerReady) return ruleReply(i, text);
     const t = bubble("thinking", "……");
+    const useSlot = slotDialog || provider;
     try {
       const a = AGENTS[i];
       // 近期对话（本页内存）+ 长期记忆（引擎 MemoryStore 检索）
@@ -441,7 +447,7 @@ async function startScene(mod) {
         ...recent,
         { role: "user", content: text }
       ];
-      const out = await provider.complete(msgs, { max: 300 });
+      const out = await useSlot.complete(msgs, { max: 300 });
       t.remove(); npcLine(i, out);
       track("talk");
       const h = histMap.get(a.name) || [];
@@ -521,7 +527,7 @@ async function startScene(mod) {
     if (providerReady) {
       const t = bubble("thinking", "导演系统正在运镜……");
       try {
-        const out = await provider.complete([
+        const out = await (slotDirector || provider).complete([
           { role: "system", content: "你是游戏导演系统（DirectorSystem），用 2~3 句有画面感的中文旁白演绎当前剧情节拍，不要解释。" },
           { role: "user", content: `前提：${STORY.premise}\n节拍：${b.phase}「${b.title}」——${b.desc}\n玩家已进行到第${day}天。` }
         ], { max: 200 });
@@ -577,7 +583,7 @@ async function startScene(mod) {
     if (providerReady) {
       const t = bubble("thinking", "（TA 环顾四周，压低声音……）");
       try {
-        const out = await provider.complete([
+        const out = await (slotDialog || provider).complete([
           { role: "system", content: `你是${a.name}（${a.role}），玩家刚花10金币向你买了一条剧情线索。按你的人设，用1~2句悄悄透露关于当前剧情「${beat.title || "?"}」的真实有用信息。` },
           { role: "user", content: "这是金币。说吧，你知道什么？" }
         ], { max: 120 });
@@ -717,7 +723,7 @@ async function startScene(mod) {
         const i = Math.floor(Math.random() * AGENTS.length);
         try {
           // 注意：messages 不能只有 system——智谱/DeepSeek 等端点会直接 400
-          const out = await provider.complete([
+          const out = await (slotDialog || provider).complete([
             { role: "system", content: systemPrompt(i) + "\n现在你没有被对话，请自然地自言自语或对世界发表一句感慨，1~2 句。" },
             { role: "user", content: "（此刻你在做什么？自然地说一句话）" }
           ], { max: 90 });
