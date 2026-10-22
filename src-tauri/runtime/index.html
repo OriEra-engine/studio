@@ -295,6 +295,45 @@ async function startScene(mod) {
   }
   sun.color.offsetHSL(SCENE.hueShift, 0, 0);
 
+  /* ---- AI 画廊墙：素材中心生成的插画挂进场景 ---- */
+  (async function loadArtWall() {
+    try {
+      const res = await fetch("/projects/" + GAME.id + "/art.json", { cache: "no-store" });
+      if (!res.ok) return;
+      const arts = await res.json();
+      if (!Array.isArray(arts) || !arts.length) return;
+      const loader = new THREE.TextureLoader();
+      loader.setCrossOrigin("anonymous");
+      const n = Math.min(arts.length, 6);
+      for (let k = 0; k < n; k++) {
+        try {
+          const tex = await loader.loadAsync(arts[k].file);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          const w = 2.6, h = 2.6 * (tex.image ? tex.image.height / tex.image.width : 0.75);
+          const frame = new THREE.Mesh(
+            new THREE.BoxGeometry(w + 0.16, h + 0.16, 0.08),
+            new THREE.MeshStandardMaterial({ color: 0x2a2118, roughness: .7 })
+          );
+          const painting = new THREE.Mesh(
+            new THREE.PlaneGeometry(w, h),
+            new THREE.MeshStandardMaterial({ map: tex, roughness: .85 })
+          );
+          painting.position.z = 0.05;
+          frame.add(painting);
+          const ang = (-Math.PI / 3) + (k / Math.max(n - 1, 1)) * (2 * Math.PI / 3);
+          const rad = 13.2;
+          frame.position.set(Math.cos(ang) * rad, 3.4, Math.sin(ang) * rad);
+          frame.lookAt(0, 3.4, 0);
+          scene.add(frame);
+          const spot = new THREE.PointLight(TH.sun, 0.9, 9);
+          spot.position.set(frame.position.x * 0.82, 5.2, frame.position.z * 0.82);
+          scene.add(spot);
+        } catch (e) { /* 单张失败不拖垮整墙 */ }
+      }
+      sys("🖼 画廊墙已挂上 " + n + " 幅 AI 插画（素材中心生成）");
+    } catch (e) { /* 无 art.json = 没有自定义插画 */ }
+  })();
+
   /* NPC 实例 */
   const palette = [0x7eb8ff, 0xffb37e, 0x9f8fff, 0x7effc3, 0xff8fb3, 0xffe37e];
   const npcs = [];

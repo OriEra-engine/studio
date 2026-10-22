@@ -191,6 +191,16 @@ export const api = {
   revealProjectDir: (id: string) => invoke<void>("reveal_project_dir", { id }),
   /** 用系统浏览器打开项目（webview 子窗口兼容性兜底） */
   openProjectInBrowser: (id: string) => invoke<void>("open_project_in_browser", { id }),
+
+  // AI 素材中心
+  generateAsset: (prompt: string, model?: string) =>
+    invoke<{ id: string; file: string; prompt: string; created: string }>("generate_asset_command", { prompt, model: model ?? null }),
+  listAssets: () =>
+    invoke<{ id: string; file: string; prompt: string; created: string }[]>("list_assets"),
+  deleteAsset: (id: string) => invoke<void>("delete_asset", { id }),
+  addAssetToProject: (assetId: string, projectId: string) =>
+    invoke<void>("add_asset_to_project", { assetId, projectId }),
+
   /** 正在运行的项目 id（运行中徽标） */
   runningProjects: () => invoke<string[]>("running_projects"),
 
