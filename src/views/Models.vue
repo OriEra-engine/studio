@@ -48,10 +48,11 @@ function pickPreset(p: CloudPreset, model?: string) {
 
 // ---- 任务槽位(RFC 0002 槽位路由 · 数据先行预览) ----
 const SLOTS = [
-  { id: "npc_dialog", name: "NPC 对话", duty: "高频 · 低延迟 · 成本敏感", recKind: "zhipu", recModel: "glm-4-flash", why: "免费 Flash 档,零成本高频对话" },
-  { id: "director", name: "剧情导演", duty: "长上下文 · 世界观一致", recKind: "moonshot", recModel: "kimi-k2.6", why: "256K 装得下整本世界书" },
-  { id: "codegen", name: "行为生成", duty: "代码与推理优先", recKind: "deepseek", recModel: "deepseek-chat", why: "代码性价比" },
-  { id: "reviewer", name: "生成审校", duty: "视觉 + 文本评审", recKind: "zhipu", recModel: "glm-4.6v-flash", why: "免费多模态,截图评审零成本" },
+  { id: "npc_dialog", name: "NPC 对话", duty: "高频 · 低延迟 · 成本敏感", recKind: "zhipu", recModel: "glm-4-flash", why: "免费 Flash 档,零成本高频对话", live: true },
+  { id: "director", name: "剧情导演", duty: "长上下文 · 世界观一致", recKind: "moonshot", recModel: "kimi-k2.6", why: "256K 装得下整本世界书", live: true },
+  // v0.7.5（评审铁律：追不到管线的按钮不许上屏）：runtime 尚未消费的槽位置灰展示
+  { id: "codegen", name: "行为生成", duty: "代码与推理优先", recKind: "deepseek", recModel: "deepseek-chat", why: "代码性价比", live: false },
+  { id: "reviewer", name: "生成审校", duty: "视觉 + 文本评审", recKind: "zhipu", recModel: "glm-4.6v-flash", why: "免费多模态,截图评审零成本", live: false },
 ];
 const ROUTING_KEY = "oriera.routing.v1";
 // v0.7.3：槽位条目升级为 {kind, model, key?}（key 留空=同厂商继承全局 Key；
@@ -375,28 +376,29 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       </p>
       <NGrid :cols="4" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="s in SLOTS" :key="s.id" span="4 m:1">
-          <div class="slot-card">
+          <div class="slot-card" :class="{ 'slot-off': !s.live }">
             <div class="slot-head">
               <b>{{ s.name }}</b>
-              <span class="slot-id">{{ (s.id === 'npc_dialog' || s.id === 'director') ? s.id : s.id + ' · 预留' }}</span>
+              <span class="slot-id">{{ s.live ? s.id : s.id + ' · v0.8 接入' }}</span>
             </div>
             <div class="slot-duty">{{ s.duty }}</div>
             <NSelect
-              size="small" :value="slotKindOf(s)" :options="slotOptions"
+              size="small" :value="slotKindOf(s)" :options="slotOptions" :disabled="!s.live"
               @update:value="(v: string) => onSlotChange(s.id, v)"
             />
             <NInput
-              size="small" style="margin-top: 6px" :value="slotEntry(s).model || ''"
+              size="small" style="margin-top: 6px" :value="slotEntry(s).model || ''" :disabled="!s.live"
               placeholder="模型名（默认用该厂商推荐档）"
               @update:value="(v: string) => onSlotModel(s.id, v)"
             />
             <NInput
-              size="small" style="margin-top: 6px" type="password" show-password-on="click"
+              size="small" style="margin-top: 6px" type="password" show-password-on="click" :disabled="!s.live"
               :value="slotEntry(s).key || ''" placeholder="该槽 Key（留空=同厂商用全局）"
               @update:value="(v: string) => onSlotKey(s.id, v)"
             />
             <div v-if="slotFallbackHint(s)" class="slot-fb">{{ slotFallbackHint(s) }}</div>
             <div class="slot-why">推荐:{{ CLOUD_PRESETS.find(p => p.kind === s.recKind)?.label }} · {{ s.why }}</div>
+            <div v-if="!s.live" class="slot-why" style="color:#e6a23c">运行时尚未消费此槽位，配置暂不生效</div>
           </div>
         </NGi>
       </NGrid>
@@ -509,6 +511,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .model-pill-mini.on { border-color: #7eb8ff; color: #9fd0ff; background: #17223a; }
 .live-tag { color: #7ce38b; border-style: dashed; cursor: default; }
 .slot-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 12px; height: 100%; }
+.slot-card.slot-off { opacity: .55; }
 .slot-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-size: 13.5px; }
 .slot-id { font-size: 10.5px; color: #8a90a6; font-family: Consolas, monospace; }
 .slot-duty { font-size: 11.5px; color: #8a93ad; margin-bottom: 8px; }
