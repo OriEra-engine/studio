@@ -54,17 +54,49 @@ const SLOTS = [
   { id: "reviewer", name: "生成审校", duty: "视觉 + 文本评审", recKind: "zhipu", recModel: "glm-4.6v-flash", why: "免费多模态,截图评审零成本" },
 ];
 const ROUTING_KEY = "oriera.routing.v1";
-const routing = ref<Record<string, string>>({});
+// v0.7.3：槽位条目升级为 {kind, model, key?}（key 留空=同厂商继承全局 Key；
+// 跨厂商未填 Key 运行时诚实回退全局）。旧字符串格式自动迁移为对象。
+interface SlotEntry { kind: string; model?: string; key?: string }
+type SlotVal = SlotEntry | string | undefined;
+const routing = ref<Record<string, SlotVal>>({});
 try { routing.value = JSON.parse(localStorage.getItem(ROUTING_KEY) || "{}"); } catch { /* 坏数据忽略 */ }
 const slotOptions = CLOUD_PRESETS.map(p => ({ label: p.label, value: p.kind }));
-function onSlotChange(id: string, kind: string) {
-  routing.value[id] = kind;
+function slotEntry(s: { id: string; recKind: string; recModel: string }): SlotEntry {
+  const v = routing.value[s.id];
+  if (typeof v === "string") return { kind: v, model: CLOUD_PRESETS.find(p => p.kind === v)?.model };
+  if (v && typeof v === "object" && v.kind) return v;
+  return { kind: s.recKind, model: s.recModel };
+}
+function persistRouting() {
   localStorage.setItem(ROUTING_KEY, JSON.stringify(routing.value));
+}
+function onSlotChange(id: string, kind: string) {
+  const prev = slotEntry(SLOTS.find(x => x.id === id)!);
+  routing.value[id] = { kind, model: prev.kind === kind ? (prev.model || "") : (CLOUD_PRESETS.find(p => p.kind === kind)?.model || "") };
+  persistRouting();
   const p = CLOUD_PRESETS.find(x => x.kind === kind);
-  message.success(`槽位 ${id} → ${p?.label ?? kind}(已存本机,引擎 v0.5 槽位路由接入后生效)`);
+  message.success(`槽位 ${id} → ${p?.label ?? kind}（已接入运行时，重开游戏生效）`);
+}
+function onSlotModel(id: string, model: string) {
+  const e = slotEntry(SLOTS.find(x => x.id === id)!);
+  routing.value[id] = { ...e, model };
+  persistRouting();
+}
+function onSlotKey(id: string, key: string) {
+  const e = slotEntry(SLOTS.find(x => x.id === id)!);
+  routing.value[id] = { ...e, key };
+  persistRouting();
+}
+/** 跨厂商且未填 Key → 运行时回退全局（界面如实提示） */
+function slotFallbackHint(s: { id: string }): string {
+  const e = slotEntry(s);
+  const g = store.status?.provider;
+  if (e.kind === "rule") return "跟随全局";
+  if (g && e.kind !== g.kind && !e.key) return "未填该厂商 Key，运行时回退全局";
+  return "";
 }
 function slotKindOf(s: { id: string; recKind: string }): string {
-  return routing.value[s.id] || s.recKind;
+  return slotEntry(s).kind;
 }
 
 // ---- XLite 实时模型清单（公开 pricing 接口，经本机代理免 CORS） ----
@@ -333,22 +365,37 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       </p>
     </NCard>
 
-    <!-- 任务槽位(预览) -->
+    <!-- 任务槽位(v0.7.3 已接入运行时:对话/导演槽生效;行为/审校预留) -->
     <NCard size="small" style="margin-bottom: 14px">
-      <template #header>🧭 任务槽位 <NTag size="tiny" round style="margin-left: 6px" :bordered="false">预览 · 数据先行</NTag></template>
+      <template #header>🧭 任务槽位 <NTag size="tiny" type="success" round style="margin-left: 6px" :bordered="false">已接入运行时</NTag></template>
       <p style="color: #9aa2b8; font-size: 12.5px; line-height: 1.7; margin: 0 0 12px">
-        按「任务」而非全局选模型:对话/剧情/行为/审校各选各家,故障自动走降级链。槽位表已存本机(<code>oriera.routing.v1</code>),
-        引擎 v0.5 槽位路由接入运行时后自动生效;当前游戏运行时仍使用下方全局默认模型。
+        按「任务」而非全局选模型:对话走 npc_dialog 槽、剧情推进走 director 槽(游戏与咖啡馆 demo 已生效);
+        行为生成/生成审校为预留槽位。Key 留空=同厂商继承全局 Key(XLite 一 Key 多模型最顺手),
+        跨厂商需填该槽自己的 Key,未填则运行时诚实回退全局模型。槽位表存本机(<code>oriera.routing.v1</code>),重开游戏生效。
       </p>
       <NGrid :cols="4" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="s in SLOTS" :key="s.id" span="4 m:1">
           <div class="slot-card">
-            <div class="slot-head"><b>{{ s.name }}</b><span class="slot-id">{{ s.id }}</span></div>
+            <div class="slot-head">
+              <b>{{ s.name }}</b>
+              <span class="slot-id">{{ (s.id === 'npc_dialog' || s.id === 'director') ? s.id : s.id + ' · 预留' }}</span>
+            </div>
             <div class="slot-duty">{{ s.duty }}</div>
             <NSelect
               size="small" :value="slotKindOf(s)" :options="slotOptions"
               @update:value="(v: string) => onSlotChange(s.id, v)"
             />
+            <NInput
+              size="small" style="margin-top: 6px" :value="slotEntry(s).model || ''"
+              placeholder="模型名（默认用该厂商推荐档）"
+              @update:value="(v: string) => onSlotModel(s.id, v)"
+            />
+            <NInput
+              size="small" style="margin-top: 6px" type="password" show-password-on="click"
+              :value="slotEntry(s).key || ''" placeholder="该槽 Key（留空=同厂商用全局）"
+              @update:value="(v: string) => onSlotKey(s.id, v)"
+            />
+            <div v-if="slotFallbackHint(s)" class="slot-fb">{{ slotFallbackHint(s) }}</div>
             <div class="slot-why">推荐:{{ CLOUD_PRESETS.find(p => p.kind === s.recKind)?.label }} · {{ s.why }}</div>
           </div>
         </NGi>
@@ -466,6 +513,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .slot-id { font-size: 10.5px; color: #8a90a6; font-family: Consolas, monospace; }
 .slot-duty { font-size: 11.5px; color: #8a93ad; margin-bottom: 8px; }
 .slot-why { font-size: 11px; color: #8a90a6; margin-top: 8px; line-height: 1.55; }
+.slot-fb { font-size: 10.5px; color: #e6a23c; margin-top: 6px; }
 .fld label { display: block; font-size: 12px; color: #8a93ad; margin-bottom: 6px; }
 .fld { margin-bottom: 10px; }
 </style>
