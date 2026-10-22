@@ -55,6 +55,11 @@ const menuOptions: MenuOption[] = [
     icon: icon('<svg viewBox="0 0 24 24" fill="none" stroke="#9fb4d8" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>'),
   },
   {
+    label: () => h(RouterLink, { to: "/assets" }, { default: () => "AI 素材中心" }),
+    key: "assets",
+    icon: icon('<svg viewBox="0 0 24 24" fill="none" stroke="#9fb4d8" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>'),
+  },
+  {
     label: () => h(RouterLink, { to: "/projects" }, { default: () => "我的项目" }),
     key: "projects",
     icon: icon('<svg viewBox="0 0 24 24" fill="none" stroke="#9fb4d8" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>'),
