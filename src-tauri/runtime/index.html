@@ -74,6 +74,29 @@
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   #fallback { position: fixed; inset: 0; background: #0d1017ee; display: none; align-items: center;
     justify-content: center; z-index: 99; text-align: center; padding: 40px; line-height: 2; }
+  /* v0.7.5：加载指示——白屏与崩溃从此可区分（评审：玩家第一步就摔死） */
+  #boot { position: fixed; inset: 0; background: #0d1017; display: flex; align-items: center;
+    justify-content: center; z-index: 98; transition: opacity .45s; }
+  #boot.hide { opacity: 0; pointer-events: none; }
+  .boot-ring { width: 34px; height: 34px; border: 3px solid #1e2a44; border-top-color: #7eb8ff;
+    border-radius: 50%; margin: 0 auto 14px; animation: bootspin .9s linear infinite; }
+  @keyframes bootspin { to { transform: rotate(360deg); } }
+  #boot-txt { color: #8a93ad; font-size: 13px; text-align: center; line-height: 2; }
+  /* v0.7.5：分享场景的 AI 解锁横幅（key 只进收件人自己的浏览器） */
+  #keygate { position: fixed; inset: 0; background: #0d1017f2; display: none; align-items: center;
+    justify-content: center; z-index: 97; }
+  .kg-box { width: min(430px, 92vw); background: #12151f; border: 1px solid #2a3a5c; border-radius: 14px;
+    padding: 26px 28px; line-height: 1.7; }
+  .kg-box h3 { margin-bottom: 6px; }
+  .kg-box p { font-size: 12.5px; color: #8a93ad; margin-bottom: 12px; }
+  .kg-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .kg-row select, .kg-row input { flex: 1; background: #0d1017; border: 1px solid #2a3a5c; color: #e6e8ef;
+    border-radius: 8px; padding: 9px 11px; font-size: 13px; outline: none; }
+  .kg-btns { display: flex; gap: 10px; margin-top: 12px; }
+  .kg-btns button { flex: 1; border: none; border-radius: 8px; padding: 10px; cursor: pointer; font-size: 13px; }
+  #kg-unlock { background: #2d5b9e; color: #fff; }
+  #kg-skip { background: #161a28; color: #aeb6cc; border: 1px solid #2a3a5c; }
+  #kg-msg { color: #ff9a8a; font-size: 12px; min-height: 18px; }
   .hint { font-size: 12px; color: #7c86a3; margin-top: 8px; }
   .thinking { color: #7c86a3; font-size: 12px; align-self: flex-start; }
 </style>
@@ -85,6 +108,7 @@
       <div class="chip"><b style="color:#9fc3ff">__PROJECT_NAME__</b> · <span id="tagline"></span></div>
       <div class="chip">第 <b id="day" style="color:#e8d78a">1</b> 天</div>
       <span id="res-chips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+      <div class="chip" id="ai-chip" style="display:none"></div>
       <div class="chip"><span id="dot"></span><span id="prov-name">规则引擎（离线）</span></div>
     </div>
   </div>
@@ -102,7 +126,7 @@
         <button id="buy-hint" style="display:none; background:#7a5b1e" title="花 10 金币向 TA 买一条剧情线索">💡10</button>
         <button id="send">发送</button>
       </div>
-      <p class="hint">AI 由 OriEra 引擎 L7 层驱动 · 记忆保存在本浏览器 · F5 刷新</p>
+      <p class="hint">NPC 由 AI 驱动 · 记忆保存在本浏览器 · F5 刷新</p>
     </div>
     <div id="page-story" class="tab-page"></div>
     <div id="page-codex" class="tab-page codex"></div>
@@ -114,6 +138,38 @@
     <div style="font-size:40px">🌌</div>
     <h2 style="margin:12px 0">请通过 OriEra Studio 打开本项目</h2>
     <p style="color:#8a93ad">生成的游戏原型依赖 Studio 内置的引擎服务与静态服务器。</p>
+  </div>
+</div>
+<!-- v0.7.5：加载指示（z-index 低于 fallback，出错时被人话错误页覆盖） -->
+<div id="boot">
+  <div>
+    <div class="boot-ring"></div>
+    <div id="boot-txt">正在进入世界…<br><span style="font-size:11px;color:#5f6b8a">首次加载会下载 3D 模型，请稍候</span></div>
+  </div>
+</div>
+<!-- v0.7.5：分享件解锁横幅——收到的单文件默认离线预览，粘贴 Key 解锁真 AI -->
+<div id="keygate">
+  <div class="kg-box">
+    <h3>🔓 解锁这个世界的 AI</h3>
+    <p>你正在玩一份 OriEra 世界分享件。当前 NPC 由离线性格引擎驱动（有限预览）；粘贴一个
+    AI Key，NPC 将由大模型真实驱动。Key 只保存在你自己的浏览器，不会发给任何人。</p>
+    <div class="kg-row">
+      <select id="kg-kind">
+        <option value="zhipu">智谱 · glm-4-flash（有免费额度）</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="openai-compat">OpenAI 兼容端点（自填）</option>
+      </select>
+    </div>
+    <div class="kg-row"><input id="kg-key" type="password" placeholder="粘贴 API Key（sk-… / 智谱 …）" /></div>
+    <div class="kg-row" id="kg-extra" style="display:none">
+      <input id="kg-base" placeholder="Base URL（如 https://api.x.com/v1）" />
+      <input id="kg-model" placeholder="模型名" style="max-width:130px" />
+    </div>
+    <div id="kg-msg"></div>
+    <div class="kg-btns">
+      <button id="kg-unlock">解锁 AI</button>
+      <button id="kg-skip">先离线逛逛</button>
+    </div>
   </div>
 </div>
 
@@ -144,19 +200,56 @@ let provider = null, providerReady = false;
 // 缺省/无凭据时 resolveSlotProvider 诚实回退全局，这里再兜底 provider）
 let slotDialog = null, slotDirector = null;
 /* 配置来源：优先同源 /__provider.json（Studio 植入的当前模型，改配置免刷新窗口），
-   拉不到（单文件导出/file:// 直开）回退 localStorage 存档。 */
+   拉不到（单文件导出/file:// 直开）回退 localStorage 存档。
+   studioOnline 区分两种「无 AI」：Studio 在线（去模型中心配）vs 分享件离线（弹解锁横幅）。 */
+let studioOnline = false;
+function setBoot(txt) { const el = document.getElementById("boot-txt"); if (el) el.innerHTML = txt + "<br><span style='font-size:11px;color:#5f6b8a'>首次加载会下载 3D 模型，请稍候</span>"; }
+function hideBoot() { const el = document.getElementById("boot"); if (el) { el.classList.add("hide"); setTimeout(() => el.remove(), 600); } }
 async function loadProviderCfg() {
   try {
     const r = await fetch("/__provider.json", { cache: "no-store" });
     if (r.ok) {
+      studioOnline = true;
       const cfg = await r.json();
       if (cfg && cfg.key && cfg.kind && cfg.kind !== "rule") {
         try { localStorage.setItem("aicafe.llm.v1", JSON.stringify(cfg)); } catch (e) {}
         return cfg;
       }
     }
-  } catch (e) { /* 无服务器环境 */ }
+  } catch (e) { /* 无服务器环境：分享件/file:// 场景 */ }
   try { return JSON.parse(localStorage.getItem("aicafe.llm.v1") || "null"); } catch (e) { return null; }
+}
+/* v0.7.5：分享件的 AI 解锁横幅（key 只写收件人自己的 localStorage，与 demo 11 同约定） */
+function setupKeygate() {
+  const kg = document.getElementById("keygate");
+  const kind = document.getElementById("kg-kind");
+  const keyInput = document.getElementById("kg-key");
+  const extra = document.getElementById("kg-extra");
+  const msg = document.getElementById("kg-msg");
+  kind.onchange = () => {
+    extra.style.display = kind.value === "openai-compat" ? "flex" : "none";
+    msg.textContent = "";
+  };
+  document.getElementById("kg-unlock").onclick = () => {
+    const k = kind.value, key = keyInput.value.trim();
+    if (!key) { msg.textContent = "先粘贴 API Key（智谱 / DeepSeek 控制台可免费申请）"; return; }
+    let cfg;
+    if (k === "zhipu") cfg = { kind: "zhipu", key, model: "glm-4-flash", base: "https://open.bigmodel.cn/api/paas/v4" };
+    else if (k === "deepseek") cfg = { kind: "deepseek", key, model: "deepseek-chat", base: "https://api.deepseek.com" };
+    else {
+      const base = document.getElementById("kg-base").value.trim();
+      const model = document.getElementById("kg-model").value.trim() || "gpt-4o-mini";
+      if (!base) { msg.textContent = "自建端点需要填 Base URL"; return; }
+      cfg = { kind: "openai-compat", key, model, base };
+    }
+    try { localStorage.setItem("aicafe.llm.v1", JSON.stringify(cfg)); } catch (e) { msg.textContent = "浏览器存储不可用"; return; }
+    location.reload();
+  };
+  document.getElementById("kg-skip").onclick = () => {
+    try { sessionStorage.setItem("oriera.keygate.dismissed", "1"); } catch (e) {}
+    kg.style.display = "none";
+  };
+  kg.style.display = "flex";
 }
 async function boot() {
   // 刷新键（原由 Studio initialization_script 注入——新版 WebView2 下会吞初始导航，故内建）
@@ -165,13 +258,16 @@ async function boot() {
       e.preventDefault(); location.reload();
     }
   });
+  setBoot("正在加载引擎内核…");
   let mod;
   try {
     mod = await import(KERNEL);
   } catch (e) {
+    hideBoot();
     document.getElementById("fallback").style.display = "flex";
     return;
   }
+  setBoot("正在装配 AI 与场景…");
   const savedCfg = await loadProviderCfg();
   if (savedCfg && savedCfg.key && savedCfg.kind !== "rule") {
     provider = mod.createProvider(savedCfg);
@@ -179,6 +275,10 @@ async function boot() {
   }
   slotDialog = (savedCfg && mod.resolveSlotProvider("npc_dialog", savedCfg)) || provider;
   slotDirector = (savedCfg && mod.resolveSlotProvider("director", savedCfg)) || provider;
+  // 分享件且无可用 AI（且本次会话没跳过）→ 解锁横幅；Studio 在线环境走模型中心，不打扰
+  let dismissed = false;
+  try { dismissed = sessionStorage.getItem("oriera.keygate.dismissed") === "1"; } catch (e) {}
+  if (!studioOnline && !providerReady && !dismissed) setupKeygate();
   if (providerReady) {
     // v0.7.4 槽位路由：状态行如实展示各槽实际模型（与全局不同才标）
     const slotTag =
@@ -191,6 +291,7 @@ async function boot() {
   try {
     await startScene(mod);
   } catch (e) {
+    hideBoot();
     const fb = document.getElementById("fallback");
     fb.innerHTML = `<div><div style="font-size:40px">🌌</div><h2 style="margin:12px 0">场景启动失败</h2><p style="color:#8a93ad">${String(e && e.message || e)}</p></div>`;
     fb.style.display = "flex";
@@ -348,6 +449,8 @@ async function startScene(mod) {
   const npcs = [];
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync(GLB_URL);
+  // 模型落地即撤加载指示（此后的 NPC 装配/面板渲染都是同步快速步骤）
+  hideBoot();
   AGENTS.forEach((a, i) => {
     const root = gltf.scene.clone(true);
     root.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(1); } });
@@ -663,7 +766,7 @@ async function startScene(mod) {
     html += "<h4>经济循环</h4><table class=\"eco\"><tr><th>资源</th><th>来源</th><th>去向</th></tr>";
     GAME.economy.forEach(r => { html += `<tr><td>${esc(r.name)}</td><td>${esc(r.source)}</td><td>${esc(r.sink)}</td></tr>`; });
     html += `</table><h4>难度曲线</h4><div class="mech"><div>${esc(GAME.difficulty)}</div></div>`;
-    html += `<h4>LLM 预算账本</h4><div class="mech"><div>本局模型调用 <b>${ledger.calls}</b> 次 · 失败 ${ledger.fails} 次。导演自主发言走队列：间隔抖动 + 失败退避，防请求风暴。</div></div>`;
+    html += `<h4>AI 用量</h4><div class="mech"><div>本局 AI 对话 <b>${ledger.calls}</b> 次（失败 ${ledger.fails} 次）。NPC 自言自语走导演队列：主动错开时间、失败自动等待，不会刷爆 API 额度。</div><div id="ai-ledger-detail" style="margin-top:4px;color:#8a93ad">${aiStatsLine()}</div></div>`;
     html += `<h4>存档</h4><div style="display:flex;gap:8px;flex-wrap:wrap">
       <button id="btn-export-save" style="background:#2d5b9e;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:12.5px">📤 导出存档</button>
       <button id="btn-import-save" style="background:#161a28;color:#cdd6ec;border:1px solid #2a3a5c;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:12.5px">📥 导入存档</button>
@@ -724,6 +827,40 @@ async function startScene(mod) {
   })();
   function saveLedger() { localStorage.setItem(LLM_LEDGER_KEY, JSON.stringify(ledger)); }
   function bill(ok) { ledger.calls++; if (!ok) ledger.fails++; saveLedger(); }
+
+  /* v0.7.5 成本可视化（评审：优化不可感知=没发生）：读引擎 provider.stats
+     （calls/tokens/cached，与 Rust 对镜的缓存钳制口径），HUD 简读 + 玩法面板详读。 */
+  function aiStatsAgg() {
+    const agg = { calls: 0, tokens: 0, cached: 0 };
+    const seen = new Set();
+    [slotDialog, slotDirector, provider].forEach(p => {
+      if (p && !seen.has(p)) {
+        seen.add(p);
+        agg.calls += (p.stats && p.stats.calls) || 0;
+        agg.tokens += (p.stats && p.stats.tokens) || 0;
+        agg.cached += (p.stats && p.stats.cached) || 0;
+      }
+    });
+    return agg;
+  }
+  function aiStatsLine() {
+    const a = aiStatsAgg();
+    if (!a.calls) return "还没调用过 AI——配置模型后这里实时显示用量与省钱额。";
+    const hit = a.tokens ? Math.round((a.cached / a.tokens) * 100) : 0;
+    return `累计 ${a.tokens.toLocaleString()} tokens · 缓存命中 ${hit}%（重复的上下文不再重复计费）`;
+  }
+  function refreshAiChip() {
+    const el = document.getElementById("ai-chip");
+    if (!el) return;
+    const a = aiStatsAgg();
+    if (!a.calls) { el.style.display = "none"; return; }
+    const hit = a.tokens ? Math.round((a.cached / a.tokens) * 100) : 0;
+    el.textContent = `AI · ${a.calls} 次对话 · 缓存命中 ${hit}%`;
+    el.style.display = "";
+    const detail = document.getElementById("ai-ledger-detail");
+    if (detail) detail.textContent = aiStatsLine();
+  }
+  setInterval(refreshAiChip, 5000);
 
   let directorBackoff = 1;
   const DIRECTOR_BASE = 45000;
