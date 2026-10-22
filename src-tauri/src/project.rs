@@ -613,6 +613,16 @@ pub async fn import_project_zip(
     let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("不是有效 zip：{e}"))?;
     let target = state.projects_dir.join(&dir_name);
     std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    // v0.7.5 资源帽：导入是官方分享链路，zip bomb 不许填盘
+    //（单文件 256MB / 总解压 512MB / 条目 2 万，正常生成游戏远用不到）。
+    const MAX_FILE: u64 = 256 * 1024 * 1024;
+    const MAX_TOTAL: u64 = 512 * 1024 * 1024;
+    const MAX_ENTRIES: usize = 20_000;
+    if archive.len() > MAX_ENTRIES {
+        let _ = std::fs::remove_dir_all(&target);
+        return Err(format!("zip 条目数超限（>{MAX_ENTRIES}），疑似异常包，已中止导入"));
+    }
+    let mut total: u64 = 0;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         // enclosed_name 拒绝 ../ 与绝对路径等穿越形态
@@ -621,6 +631,11 @@ pub async fn import_project_zip(
         if entry.is_dir() {
             std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
             continue;
+        }
+        total += entry.size();
+        if entry.size() > MAX_FILE || total > MAX_TOTAL {
+            let _ = std::fs::remove_dir_all(&target);
+            return Err("zip 解压体积超限（单文件 256MB / 总量 512MB），已中止导入".to_string());
         }
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

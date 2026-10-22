@@ -37,6 +37,28 @@ pub fn localize_base(base: &str, port: u16) -> String {
     base.to_string()
 }
 
+/// Host 白名单（v0.7.5 安全加固）：本机服务只应被本机源（127.0.0.1/localhost，
+/// 去端口比较）与自定义协议域（oriera.localhost）访问。伪造 Host 的远程网页
+/// （DNS rebinding）会被 403；无 Host 头的非浏览器客户端（curl 等本机进程）
+/// 放行——CORS/Host 防线只对浏览器有意义。
+pub fn host_in_allowlist(host: &str) -> bool {
+    let bare = host.trim().to_ascii_lowercase();
+    let bare = bare.split(':').next().unwrap_or("");
+    matches!(bare, "127.0.0.1" | "localhost" | "oriera.localhost")
+}
+
+/// CORS 回显白名单（v0.7.5 安全加固）：代理响应不再 `Access-Control-Allow-Origin: *`
+///（任意网页可跨源读本机代理），只对同机源回显 Origin；带 Host 白名单外的
+/// Origin 一律不给 ACAO 头，浏览器将拦截响应体读取（curl 等无 Origin 不受影响）。
+pub fn cors_allow_origin(origin: Option<&str>) -> Option<String> {
+    let origin = origin?;
+    let o = origin.trim().to_ascii_lowercase();
+    let allowed = o.starts_with("http://127.0.0.1:")
+        || o.starts_with("http://localhost:")
+        || o == "http://oriera.localhost";
+    allowed.then(|| origin.to_string())
+}
+
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| reqwest::Client::builder().build().unwrap_or_default())
@@ -54,10 +76,16 @@ async fn proxy_passthrough(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
+    // v0.7.5：伪造 Host（DNS rebinding）直接 403。
+    if let Some(h) = headers.get("host").and_then(|v| v.to_str().ok()) {
+        if !host_in_allowlist(h) {
+            return (StatusCode::FORBIDDEN, "forbidden host").into_response();
+        }
+    }
+    let cors = cors_allow_origin(headers.get("origin").and_then(|v| v.to_str().ok()));
     if method == Method::OPTIONS {
-        return Response::builder()
+        let mut pre = Response::builder()
             .status(StatusCode::NO_CONTENT)
-            .header("Access-Control-Allow-Origin", "*")
             .header(
                 "Access-Control-Allow-Methods",
                 "GET, POST, PUT, DELETE, OPTIONS",
@@ -67,6 +95,11 @@ async fn proxy_passthrough(
                 "authorization, content-type, accept, x-api-key, anthropic-version",
             )
             .header("Access-Control-Max-Age", "86400")
+            .header("Vary", "Origin");
+        if let Some(o) = &cors {
+            pre = pre.header("Access-Control-Allow-Origin", o);
+        }
+        return pre
             .body(Body::empty())
             .unwrap_or_else(|_| (StatusCode::BAD_GATEWAY, "preflight error").into_response());
     }
@@ -89,9 +122,10 @@ async fn proxy_passthrough(
         Ok(up) => {
             let status =
                 StatusCode::from_u16(up.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-            let mut resp = Response::builder()
-                .status(status)
-                .header("Access-Control-Allow-Origin", "*");
+            let mut resp = Response::builder().status(status).header("Vary", "Origin");
+            if let Some(o) = &cors {
+                resp = resp.header("Access-Control-Allow-Origin", o);
+            }
             if let Some(ct) = up.headers().get(reqwest::header::CONTENT_TYPE).cloned() {
                 resp = resp.header("content-type", ct.as_bytes());
             }
@@ -126,7 +160,18 @@ fn build_router(
         )
         .route(
             "/__provider.json",
-            get(move || async move {
+            get(move |headers: HeaderMap| async move {
+                // v0.7.5：Host 白名单校验——伪造 Host 的远程网页（DNS rebinding）
+                // 扫不到 key。无 Host 的本机非浏览器客户端不受影响。
+                if let Some(h) = headers.get("host").and_then(|v| v.to_str().ok()) {
+                    if !host_in_allowlist(h) {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            axum::Json(serde_json::json!({"error": "forbidden host"})),
+                        )
+                            .into_response();
+                    }
+                }
                 // 仅监听 127.0.0.1：与此前注入 localStorage 的信任域一致。
                 // 白名单网关 base 在出口改写为同源代理（游戏免 CORS）。
                 let cfg = crate::settings::load_provider(&app_for_provider);
@@ -134,8 +179,9 @@ fn build_router(
                     Some(c) => axum::Json(serde_json::json!({
                         "kind": c.kind, "key": c.key, "model": c.model,
                         "base": localize_base(&c.base, port),
-                    })),
-                    None => axum::Json(serde_json::json!({"kind": "rule"})),
+                    }))
+                    .into_response(),
+                    None => axum::Json(serde_json::json!({"kind": "rule"})).into_response(),
                 }
             }),
         )
@@ -222,14 +268,65 @@ fn mime_of(path: &std::path::Path) -> &'static str {
     }
 }
 
-fn respond(status: u16, mime: &str, bytes: Vec<u8>) -> tauri::http::Response<Cow<'static, [u8]>> {
+fn respond(
+    status: u16,
+    mime: &str,
+    cache: &str,
+    bytes: Vec<u8>,
+) -> tauri::http::Response<Cow<'static, [u8]>> {
     tauri::http::Response::builder()
         .status(status)
         .header("Content-Type", mime)
         .header("Access-Control-Allow-Origin", "*")
-        .header("Cache-Control", "no-store")
+        .header("Cache-Control", cache)
         .body(Cow::Owned(bytes))
         .unwrap()
+}
+
+/// 缓存分型（v0.7.5）：大体积不可变资产（模型/贴图/音频/字体）允许浏览器
+/// 缓存 1 小时，避免每次刷新重拉 1.3MB three.js 与 GLB；html/js/css/json
+/// 迭代频繁，保持 no-store 保证改动即时可见。
+fn cache_control_of(path: &std::path::Path) -> &'static str {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "glb" | "gltf" | "png" | "jpg" | "jpeg" | "gif" | "svg" | "ico" | "wasm" | "mp3"
+        | "ogg" | "wav" | "ttf" | "woff2" | "mp4" => "public, max-age=3600",
+        _ => "no-store",
+    }
+}
+
+fn not_found() -> tauri::http::Response<Cow<'static, [u8]>> {
+    respond(404, "text/plain; charset=utf-8", "no-store", b"not found".to_vec())
+}
+
+/// 把 URL 相对路径安全解析到 root 之下（v0.7.5 安全加固）。
+///
+/// Windows 上 `root.join("C:/Users/...")` 会用盘符绝对路径**整体替换** root，
+/// 原有两道 `..` 检查都拦不住这种无 `..` 的形态（任意文件读）。这里在
+/// canonicalize 终检：解析后的真实路径必须仍在 root 之下才放行。
+fn resolve_under_root(root: &Path, rel: &str) -> Option<PathBuf> {
+    if rel.split('/').any(|seg| seg == "..") {
+        return None;
+    }
+    let full = root.join(rel);
+    if full
+        .components()
+        .any(|c| c.as_os_str().to_string_lossy() == "..")
+    {
+        return None;
+    }
+    let target = if full.is_dir() { full.join("index.html") } else { full };
+    let canonical = target.canonicalize().ok()?;
+    let root_canonical = root.canonicalize().ok()?;
+    if canonical.starts_with(&root_canonical) {
+        Some(canonical)
+    } else {
+        None
+    }
 }
 
 /// 自定义协议内容服务：/__provider.json、/examples/*（引擎快照）、/projects/*（用户项目）。
@@ -241,18 +338,40 @@ pub fn serve_content(
     let path = request.uri().path().to_string();
 
     if path == "/__provider.json" {
+        // v0.7.5：与 axum 出口同规则——Host 白名单外（伪造 Host 的远程网页）
+        // 一律 403，防止扫描/枚举端口读走明文 key。
+        if let Some(h) = request.uri().host().or_else(|| {
+            request
+                .headers()
+                .get("host")
+                .and_then(|v| v.to_str().ok())
+        }) {
+            if !host_in_allowlist(h) {
+                return respond(
+                    403,
+                    "application/json; charset=utf-8",
+                    "no-store",
+                    br#"{"error":"forbidden host"}"#.to_vec(),
+                );
+            }
+        }
         let cfg = crate::settings::load_provider(app);
         let body = match cfg {
             Some(c) => serde_json::json!({
                 "kind": c.kind, "key": c.key, "model": c.model,
                 // 与 axum 出口一致：白名单网关 base 改写为同源代理。
                 // 自定义协议域（oriera.localhost）跨源访问 127.0.0.1 代理不受
-                // 浏览器 CORS 限制（代理响应不校验 Origin），指向即可。
+                // 浏览器 CORS 限制（代理响应回显 oriera.localhost 源），指向即可。
                 "base": localize_base(&c.base, state.port),
             }),
             None => serde_json::json!({"kind": "rule"}),
         };
-        return respond(200, "application/json; charset=utf-8", serde_json::to_vec(&body).unwrap());
+        return respond(
+            200,
+            "application/json; charset=utf-8",
+            "no-store",
+            serde_json::to_vec(&body).unwrap(),
+        );
     }
 
     let (root, rel) = if let Some(r) = path.strip_prefix("/examples/") {
@@ -260,19 +379,15 @@ pub fn serve_content(
     } else if let Some(r) = path.strip_prefix("/projects/") {
         (state.projects_dir.clone(), r.to_string())
     } else {
-        return respond(404, "text/plain; charset=utf-8", b"not found".to_vec());
+        return not_found();
     };
 
-    // 防路径穿越（尾斜杠产生的空段无害，保留以支持目录 index.html）
-    let full = root.join(&rel);
-    if rel.split('/').any(|seg| seg == "..") || full.components().any(|c| c.as_os_str().to_string_lossy() == "..") {
-        return respond(404, "text/plain; charset=utf-8", b"not found".to_vec());
-    }
-
-    let target = if full.is_dir() { full.join("index.html") } else { full };
+    let Some(target) = resolve_under_root(&root, &rel) else {
+        return not_found();
+    };
     match std::fs::read(&target) {
-        Ok(bytes) => respond(200, mime_of(&target), bytes),
-        Err(_) => respond(404, "text/plain; charset=utf-8", b"not found".to_vec()),
+        Ok(bytes) => respond(200, mime_of(&target), cache_control_of(&target), bytes),
+        Err(_) => not_found(),
     }
 }
 
@@ -297,5 +412,80 @@ mod tests {
             localize_base("http://127.0.0.1:11434/v1", port),
             "http://127.0.0.1:11434/v1"
         );
+    }
+
+    #[test]
+    fn host_allowlist_blocks_remote_and_rebinding() {
+        assert!(host_in_allowlist("127.0.0.1:52340"));
+        assert!(host_in_allowlist("localhost:8080"));
+        assert!(host_in_allowlist("oriera.localhost"));
+        assert!(host_in_allowlist("oriera.localhost:80"));
+        // DNS rebinding / 伪造 Host / 大小写混淆
+        assert!(!host_in_allowlist("evil.com"));
+        assert!(!host_in_allowlist("evil.com:52340"));
+        assert!(!host_in_allowlist("ORIERA.LOCALHOST.evil.com"));
+        assert!(!host_in_allowlist("oriera.localhost@evil.com"));
+        assert!(!host_in_allowlist("[::1]:52340"));
+    }
+
+    #[test]
+    fn cors_only_echoes_local_origins() {
+        assert_eq!(
+            cors_allow_origin(Some("http://oriera.localhost")).as_deref(),
+            Some("http://oriera.localhost")
+        );
+        assert_eq!(
+            cors_allow_origin(Some("http://127.0.0.1:52340")).as_deref(),
+            Some("http://127.0.0.1:52340")
+        );
+        assert_eq!(cors_allow_origin(Some("https://evil.com")), None);
+        assert_eq!(cors_allow_origin(None), None);
+    }
+
+    /// 在系统临时目录搭一个 root/sub/index.html 骨架，跑穿越探针矩阵。
+    #[test]
+    fn resolve_under_root_blocks_traversal_and_absolute() {
+        let root = std::env::temp_dir().join(format!(
+            "oriera-server-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub").join("index.html"), b"ok").unwrap();
+
+        // 正常相对路径（含目录 index 展开）放行
+        let ok = resolve_under_root(&root, "sub/index.html").expect("relative ok");
+        assert!(ok.ends_with("index.html"));
+        assert!(resolve_under_root(&root, "sub").is_some(), "dir -> index.html");
+
+        // Windows 盘符绝对路径整体替换 root —— v0.7.5 修复的核心探针
+        assert!(resolve_under_root(&root, "C:/Windows/win.ini").is_none());
+        assert!(resolve_under_root(&root, "C:\\Windows\\win.ini").is_none());
+        assert!(
+            resolve_under_root(&root, "//etc/passwd").is_none(),
+            "UNC/根相对形态"
+        );
+        // 经典 .. 穿越（正反斜杠）
+        assert!(resolve_under_root(&root, "sub/../../secret").is_none());
+        assert!(resolve_under_root(&root, "sub\\..\\..\\secret").is_none());
+        // root 外真实存在的文件（canonicalize 终检兜底）
+        let outside = std::env::temp_dir().join("oriera-server-test-outside.txt");
+        std::fs::write(&outside, b"x").unwrap();
+        let outside_str = outside.to_string_lossy().replace('\\', "/");
+        assert!(
+            resolve_under_root(&root, &outside_str).is_none(),
+            "root 外真实文件必须 404"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(&outside);
+    }
+
+    #[test]
+    fn cache_control_splits_immutable_assets() {
+        use std::path::PathBuf as P;
+        assert_eq!(cache_control_of(&P::from("a/b.glb")), "public, max-age=3600");
+        assert_eq!(cache_control_of(&P::from("a/b.PNG")), "public, max-age=3600");
+        assert_eq!(cache_control_of(&P::from("index.html")), "no-store");
+        assert_eq!(cache_control_of(&P::from("engine/kernel.js")), "no-store");
+        assert_eq!(cache_control_of(&P::from("data.json")), "no-store");
     }
 }
