@@ -1,5 +1,8 @@
 # OriEra Studio
 
+> 🛡️ 装了火绒安全？游戏窗口白屏看这里：[火绒兼容说明](docs/HUORONG.md)
+
+
 > **OriEra 世界引擎官方辅助工具** —— 双击打开，无需科学上网、无需 GitHub、无需命令行，让每一位探索者都能零门槛用上 [OriEra 世界引擎](https://github.com/OriEra-engine/engine)。
 
 **这是什么**：面向普通用户的桌面端工作台（Windows）。引擎本体在 [OriEra-engine/engine](https://github.com/OriEra-engine/engine)（Rust 11 层架构）；本仓库只做一件事——把引擎能力打包成人人可用的形态：内置引擎示例快照离线运行、五步生成自己的 AI 原生游戏原型。**本工具不替代引擎**，是引擎生态的上层易用性封装，后续引擎 L5/wgpu 渲染内核与 L7 原生推理落地后，本工具的注入层可直接对接。
