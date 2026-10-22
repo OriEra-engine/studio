@@ -14,6 +14,8 @@ mod sse;
 mod templates;
 
 use serde::Serialize;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -391,6 +393,45 @@ pub fn run() {
                 snapshot_version,
             });
             app.manage(AiTasks::default());
+
+            // 火绒兼容提醒（只弹一次）：其浏览器防护可能拦截游戏子窗口
+            {
+                let app2 = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    let mut s = crate::settings::load(&app2);
+                    if s.huorong_hint_shown {
+                        return;
+                    }
+                    let out = std::process::Command::new("tasklist")
+                        .args(["/FI", "IMAGENAME eq usysdiag.exe", "/NH"])
+                        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+                        .output();
+                    let huorong = out
+                        .map(|o| String::from_utf8_lossy(&o.stdout).contains("usysdiag"))
+                        .unwrap_or(false);
+                    if !huorong {
+                        return;
+                    }
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+                    app2
+                        .dialog()
+                        .message(
+                            "检测到火绒安全软件正在运行。
+
+火绒的浏览器防护可能拦截游戏窗口（表现为白屏）。
+建议：打开火绒 → 信任区 → 添加本程序；
+或直接使用项目卡片上的「🌐 浏览器」游玩（不受影响）。",
+                        )
+                        .title("OriEra Studio · 火绒兼容提示")
+                        .kind(MessageDialogKind::Warning)
+                        .buttons(MessageDialogButtons::Ok)
+                        .blocking_show();
+                    s.huorong_hint_shown = true;
+                    let _ = crate::settings::save(&app2, &s);
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
