@@ -458,6 +458,7 @@ pub fn run() {
             demos::list_demos,
             demos::open_demo,
             assets::generate_asset_command,
+            assets::generate_mesh_command,
             assets::list_assets,
             assets::delete_asset,
             assets::add_asset_to_project,
