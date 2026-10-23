@@ -114,16 +114,15 @@ function fmtDate(unix: string) {
           </template>
           <template #header-extra>
             <NSpace size="small" :wrap="false" align="center">
-              <NTag v-if="running.has(p.id)" type="success" size="tiny" round>运行中</NTag>
+              <span v-if="running.has(p.id)" class="oe-badge" style="color: var(--good)"><span class="status-dot on pulse"></span>运行中</span>
               <NTag size="tiny" round>{{ fmtDate(p.created) }}</NTag>
             </NSpace>
           </template>
           <p style="color: #8a93ad; font-size: 12.5px; min-height: 34px">{{ p.tagline }}</p>
           <NSpace size="small">
             <NButton size="small" type="primary" @click="runInBrowser(p)">{{ running.has(p.id) ? '🌐 聚焦' : '▶ 运行' }}</NButton>
-            <NButton size="small" secondary @click="run(p)">🪟 独立窗口</NButton>
             <NButton size="small" secondary @click="router.push(`/editor/${p.id}`)">✏️ 编辑</NButton>
-            <NButton size="small" secondary @click="runInBrowser(p)">🌐 浏览器</NButton>
+            <NButton size="small" secondary @click="run(p)">🪟 独立窗口</NButton>
             <NButton size="small" secondary @click="reveal(p)">打开目录</NButton>
             <NPopconfirm @positive-click="remove(p)">
               <template #trigger>
@@ -137,3 +136,8 @@ function fmtDate(unix: string) {
     </NGrid>
   </div>
 </template>
+
+<style scoped>
+.proj-card { transition: transform .12s ease, border-color .12s ease; }
+.proj-card:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+</style>

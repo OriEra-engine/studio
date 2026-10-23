@@ -1,21 +1,30 @@
-/* ===== OriEra Studio 设计令牌（Godot 工作台 × Meshy 暗色画廊参照） ===== */
+/* ===== OriEra Studio 设计令牌 v2（ZCode/Codex agent 工作台参照） =====
+ * 升级原则（对标现代 AI coding agent 界面）：
+ *  1. 克制的暗色层次：深底 + 浮起面板 + 发丝描边，层次靠灰阶不靠花色
+ *  2. 单 accent 体系：蓝为唯一交互主色，绿/橙/红只表达状态
+ *  3. 状态永远可见：在线/运行中/离线用状态点，技术值用等宽字体
+ */
 :root {
-  --bg: #0f1117;            /* 页面底 */
-  --bg-raise: #161a28;      /* 卡片/面板 */
-  --bg-deep: #10141f;       /* 更深一档（代码块/预览底） */
-  --bg-hover: #1a2440;      /* 悬停态 */
-  --line: #232a3d;          /* 常规描边 */
-  --line-strong: #2a3a5c;   /* 强调描边 */
-  --text: #e6e8ef;          /* 主文本 */
-  --text-2: #aeb6cc;        /* 次文本 */
-  --text-3: #8a90a6;        /* 弱文本 */
-  --accent: #7eb8ff;        /* 主题蓝 */
+  --bg: #0c0e15;            /* 页面底（更深一档，衬托浮起面板） */
+  --bg-raise: #141827;      /* 卡片/面板 */
+  --bg-deep: #0a0d14;       /* 代码块/预览底 */
+  --bg-hover: #1b2338;      /* 悬停态 */
+  --line: #1f2637;          /* 发丝描边 */
+  --line-strong: #2c3654;   /* 强调描边 */
+  --text: #e8eaf2;          /* 主文本 */
+  --text-2: #b2bacf;        /* 次文本 */
+  --text-3: #7d869d;        /* 弱文本 */
+  --accent: #7eb8ff;        /* 主题蓝（文本/图标用亮档） */
+  --accent-strong: #4f8ae8; /* 主题蓝（按钮/填充用饱和档） */
   --accent-deep: #2d5b9e;
   --good: #35d07f;
   --warn: #e8a35c;
   --danger: #ff8f8f;
   --radius: 12px;
   --radius-sm: 8px;
+  --mono: "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", monospace;
+  --topbar-h: 46px;
+  --sider-w: 208px;
 }
 
 * { box-sizing: border-box; }
@@ -24,24 +33,114 @@ body {
   font-family: "Segoe UI", "Microsoft YaHei", -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
+  font-size: 14px;
 }
 a { color: var(--accent); text-decoration: none; }
+::selection { background: rgba(126, 184, 255, .28); }
 
-.page { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
-.page-title { font-size: 22px; font-weight: 700; margin: 4px 0 4px; }
+/* 滚动条（agent 工作台式细滚动条） */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #232b40; border-radius: 8px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: #2f3a58; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.mono { font-family: var(--mono); font-size: .93em; }
+
+/* 底部留白 = FAB 安全区：悬浮球(bottom 22px + 58px 高)不再遮页面底部按钮 */
+.page { padding: 22px 26px 96px; max-width: 1240px; margin: 0 auto; }
+.page-title { font-size: 21px; font-weight: 700; margin: 4px 0 4px; letter-spacing: .2px; }
 .page-sub { color: var(--text-3); font-size: 13px; margin-bottom: 18px; }
 
-.hero {
-  border-radius: 14px;
-  padding: 28px 32px;
-  background: linear-gradient(135deg, #1a2340 0%, #12263a 55%, #0e1a2e 100%);
-  border: 1px solid var(--line-strong);
-  margin-bottom: 18px;
+/* ===== 状态点系统（运行中=脉冲绿 / 在线=绿 / 离线=灰 / 警告=橙） ===== */
+.status-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-3); flex: none; position: relative;
 }
-.hero h1 { margin: 0 0 8px; font-size: 26px; }
-.hero p { color: var(--text-2); margin: 0 0 16px; font-size: 14px; line-height: 1.7; }
+.status-dot.on { background: var(--good); }
+.status-dot.on.pulse { animation: dot-pulse 1.6s ease-out infinite; }
+@keyframes dot-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(53, 208, 127, .45); }
+  70% { box-shadow: 0 0 0 6px rgba(53, 208, 127, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(53, 208, 127, 0); }
+}
 
+/* ===== 状态徽章（顶栏/卡片通用：图标点+文本，无底色大色块） ===== */
+.oe-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-2);
+  border: 1px solid var(--line); background: var(--bg-raise);
+  border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  cursor: default; transition: border-color .12s ease, color .12s ease;
+}
+.oe-badge.clickable { cursor: pointer; }
+.oe-badge.clickable:hover { border-color: var(--line-strong); color: var(--text); }
+.oe-badge .mono { font-size: 11px; color: var(--text-2); }
+
+/* ===== 卡片 hover 浮起（画廊/项目卡通用） ===== */
 .demo-card { cursor: pointer; transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease; }
 .demo-card:hover { transform: translateY(-2px); border-color: #4a7dc9 !important; box-shadow: 0 8px 24px rgba(20, 40, 90, .35); }
 .demo-tag { font-size: 11px; color: #7fa8e0; }
 .demo-desc { color: var(--text-2); font-size: 12.5px; line-height: 1.6; min-height: 40px; }
+
+/* ===== 顶部状态栏（ZCode 顶栏式：页面名 + 模型徽章 + 引擎 + ⌘K） ===== */
+.oe-topbar {
+  height: var(--topbar-h); flex: none;
+  display: flex; align-items: center; gap: 10px; padding: 0 16px;
+  background: rgba(20, 24, 39, .82);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+}
+.oe-topbar-title { font-size: 13.5px; font-weight: 600; color: var(--text-2); letter-spacing: .3px; }
+.oe-topbar .spacer { flex: 1; }
+
+/* ===== 侧栏（手写导航：分组 + 选中 accent 左条） ===== */
+.oe-sider {
+  width: var(--sider-w); flex: none; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg-deep);
+  border-right: 1px solid var(--line);
+  transition: width .18s ease;
+  overflow: hidden;
+}
+.oe-sider.collapsed { width: 60px; }
+.oe-logo {
+  display: flex; align-items: center; gap: 9px; padding: 14px 14px 12px;
+  white-space: nowrap; overflow: hidden;
+}
+.oe-logo-mark {
+  width: 26px; height: 26px; flex: none; border-radius: 7px;
+  background: linear-gradient(135deg, #4f8ae8, #2d5b9e);
+  display: flex; align-items: center; justify-content: center;
+  color: #eaf3ff; font-weight: 800; font-size: 13px;
+  box-shadow: 0 2px 10px rgba(79, 138, 232, .35);
+}
+.oe-logo-name { font-weight: 800; font-size: 15px; letter-spacing: .3px; }
+.oe-logo-name em { font-style: normal; color: var(--accent); }
+.oe-nav { flex: 1; overflow-y: auto; padding: 4px 10px 10px; }
+.oe-nav-group { font-size: 10.5px; color: var(--text-3); letter-spacing: 1.5px; padding: 14px 8px 5px; white-space: nowrap; }
+.oe-nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; margin: 1px 0; border-radius: var(--radius-sm);
+  color: var(--text-2); font-size: 13px; text-decoration: none;
+  white-space: nowrap; position: relative;
+  transition: background .12s ease, color .12s ease;
+}
+.oe-nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.oe-nav-item.active { background: rgba(79, 138, 232, .16); color: var(--accent); }
+.oe-nav-item.active::before {
+  content: ""; position: absolute; left: -10px; top: 6px; bottom: 6px; width: 3px;
+  border-radius: 2px; background: var(--accent-strong);
+}
+.oe-nav-item svg { width: 17px; height: 17px; flex: none; opacity: .85; }
+.oe-nav-item.active svg { opacity: 1; }
+.oe-sider-foot {
+  padding: 10px 12px; border-top: 1px solid var(--line);
+  color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden;
+}
+.oe-sider-foot .btns { display: flex; gap: 6px; margin-top: 7px; }
+.oe-mini-btn {
+  flex: 1; background: var(--bg-raise); border: 1px solid var(--line); color: var(--text-2);
+  font-size: 11px; border-radius: 6px; padding: 4px 6px; cursor: pointer; font-family: inherit;
+  transition: border-color .12s ease, color .12s ease;
+}
+.oe-mini-btn:hover { border-color: var(--line-strong); color: var(--accent); }

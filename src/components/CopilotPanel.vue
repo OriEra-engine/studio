@@ -6,6 +6,10 @@ import type { CopilotTurn } from "../api";
 
 /**
  * 奥粒 Ori —— OriEra Studio 用户辅助 agent 的壳(形象 + 对话面板)。
+ * v2 对标 ZCode/Codex 的 agent 对话体验：
+ *  - assistant 消息全宽 markdown 流式渲染（代码块/列表/粗体/行内代码）
+ *  - 思考中显示状态行 + 计时；可随时停止（cancelAi）
+ *  - 每条回答可复制；代码块独立复制
  * v1 走 Tauri `copilot_chat`(L7 provider);失败/未配置 → 确定性规则应答(引擎 RuleProvider 哲学)。
  */
 
@@ -16,6 +20,7 @@ interface Msg {
   content: string;
   /** 规则模式应答标记 */
   rule?: boolean;
+  ts?: number;
 }
 
 const SYSTEM_PROMPT = [
@@ -35,8 +40,12 @@ const providerOnline = ref(false);
 const msgs = ref<Msg[]>([]);
 const listEl = ref<HTMLElement>();
 const inputEl = ref<HTMLTextAreaElement>();
-
+const elapsed = ref("");
+/** 当前流式任务 id（停止用） */
+let curTaskId = "";
 let typingTimer: number | undefined;
+let elapsedTimer: number | undefined;
+let busyStart = 0;
 
 const QUICK_ACTIONS: { label: string; text: string }[] = [
   { label: "🎮 带我做第一个游戏", text: "带我从零做一个游戏,我是新手" },
@@ -44,6 +53,66 @@ const QUICK_ACTIONS: { label: string; text: string }[] = [
   { label: "📝 剧情卡住了", text: "我的剧情写不下去了,帮我续写一个转折" },
   { label: "💡 你能做什么", text: "你能做什么?" },
 ];
+
+/* ---------- markdown-lite 渲染（零依赖，先转义再注入自有标签，模型输出不可执行） ---------- */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function inline(s: string): string {
+  let r = esc(s);
+  r = r.replace(/`([^`]+)`/g, '<code class="md-code">$1</code>');
+  r = r.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  return r;
+}
+function renderBlocks(text: string): string {
+  const lines = text.split("\n");
+  let html = "";
+  let para: string[] = [];
+  let list: { ordered: boolean; items: string[] } | null = null;
+  const flushPara = () => { if (para.length) { html += `<p>${para.map(inline).join("<br>")}</p>`; para = []; } };
+  const flushList = () => {
+    if (list) {
+      html += list.ordered
+        ? `<ol>${list.items.map(i => `<li>${inline(i)}</li>`).join("")}</ol>`
+        : `<ul>${list.items.map(i => `<li>${inline(i)}</li>`).join("")}</ul>`;
+      list = null;
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushPara(); flushList(); continue; }
+    const h = line.match(/^(#{1,4})\s+(.*)/);
+    if (h) { flushPara(); flushList(); const lv = Math.min(h[1].length + 2, 5); html += `<div class="md-h md-h${lv}">${inline(h[2])}</div>`; continue; }
+    const ul = line.match(/^\s*[-*•]\s+(.*)/);
+    const ol = line.match(/^\s*\d+[.、)]\s+(.*)/);
+    if (ul) { flushPara(); if (!list || list.ordered) { flushList(); list = { ordered: false, items: [] }; } list.items.push(ul[1]); continue; }
+    if (ol) { flushPara(); if (!list || !list.ordered) { flushList(); list = { ordered: true, items: [] }; } list.items.push(ol[1]); continue; }
+    if (/^>\s?/.test(line)) { flushPara(); flushList(); html += `<blockquote>${inline(line.replace(/^>\s?/, ""))}</blockquote>`; continue; }
+    para.push(line);
+  }
+  flushPara(); flushList();
+  return html;
+}
+/** 流式中未闭合的 ``` 也按代码块渲染（逐字浮现） */
+function renderMarkdown(src: string): string {
+  const parts = src.split("```");
+  let html = "";
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      let code = parts[i];
+      let lang = "";
+      const nl = code.indexOf("\n");
+      if (nl >= 0) {
+        const first = code.slice(0, nl).trim();
+        if (/^[\w-]{0,20}$/.test(first)) { lang = first; code = code.slice(nl + 1); }
+      }
+      html += `<div class="md-pre"><div class="md-pre-bar"><span>${esc(lang) || "代码"}</span><span class="md-pre-copy">复制</span></div><pre>${esc(code.replace(/\n$/, ""))}</pre></div>`;
+    } else {
+      html += renderBlocks(parts[i]);
+    }
+  }
+  return html;
+}
 
 /* ---------- 规则降级应答(同输入同输出) ---------- */
 function ruleReply(q: string): string {
@@ -60,7 +129,7 @@ function ruleReply(q: string): string {
   if (has("3d", "资产", "模型生成", "图片", "mesh", "tripo", "seedance"))
     return "生成 3D 资产是引擎 L8 能力(Tripo / Seedance 已在引擎侧落地,showcase 可见)。Studio 的生成中心排在 v0.4:届时这里能一句话生成 GLB 并热替换进场景。现在想看效果 → Demo 演示厅的 AI 咖啡馆。";
   if (has("快捷键", "键盘", "命令"))
-    return "键盘党福利:\n· Ctrl+K —— 命令面板,直达任何页面/动作\n· Ctrl+J —— 召唤/收起我\n· Esc —— 关掉弹层\n试试 Ctrl+K 输入「模型」?";
+    return "键盘党福利:\n· Ctrl+K —— 命令面板,直达任何页面/动作\n· Ctrl+J —— 召唤/收起我\n· Ctrl+B —— 折叠/展开左侧栏\n· Esc —— 关掉弹层\n试试 Ctrl+K 输入「模型」?";
   if (has("导出", "备份", "存档"))
     return "项目数据安全:\n· 「我的项目」→ 项目详情里有存档导出/导入\n· 剧情编辑器自动备份最近 10 版\n· 项目目录可一键打开(reveal)自己拷贝";
   return "这个问题我在离线规则模式下答不好 😅\n两条路:\n1. 「模型中心」配一个模型(免费档即可),我立刻变聪明\n2. 先用快捷指令:带做游戏 / 选模型 / 剧情卡住了";
@@ -79,6 +148,7 @@ function loadHistory() {
       {
         role: "assistant",
         content: "嗨,我是奥粒 ✨ 你的游戏搭子。想做游戏?说「带我做第一个游戏」,三分钟出成品。",
+        ts: Date.now(),
       },
     ];
   }
@@ -99,10 +169,26 @@ function stopTyping() {
     typingTimer = undefined;
   }
 }
+function stopElapsed() {
+  if (elapsedTimer !== undefined) {
+    clearInterval(elapsedTimer);
+    elapsedTimer = undefined;
+  }
+  elapsed.value = "";
+}
+function startElapsed() {
+  busyStart = Date.now();
+  elapsed.value = "0s";
+  stopElapsed();
+  elapsedTimer = window.setInterval(() => {
+    const s = Math.floor((Date.now() - busyStart) / 1000);
+    elapsed.value = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
+  }, 500);
+}
 
-/** 打字机式逐段显示(ZCode 式流感);看完落盘。 */
+/** 打字机式逐段显示(规则模式);看完落盘。 */
 function typeOut(full: string, rule: boolean) {
-  msgs.value.push({ role: "assistant", content: "", rule });
+  msgs.value.push({ role: "assistant", content: "", rule, ts: Date.now() });
   // 注意:必须经响应式代理更新,直接改原始对象不触发渲染
   const prox = msgs.value[msgs.value.length - 1];
   let i = 0;
@@ -113,6 +199,7 @@ function typeOut(full: string, rule: boolean) {
     if (i >= full.length) {
       stopTyping();
       busy.value = false;
+      stopElapsed();
       saveHistory();
     }
   }, 16);
@@ -123,8 +210,10 @@ async function send(text?: string) {
   if (!q || busy.value) return;
   stopTyping();
   input.value = "";
-  msgs.value.push({ role: "user", content: q });
+  autoGrow();
+  msgs.value.push({ role: "user", content: q, ts: Date.now() });
   busy.value = true;
+  startElapsed();
   scrollBottom();
 
   const history: CopilotTurn[] = msgs.value
@@ -133,15 +222,18 @@ async function send(text?: string) {
     .map((m) => ({ role: m.role, content: m.content }));
 
   try {
-    // 真流式：奥粒边想边说（Codex 同款体感）；失败回落规则应答
-    msgs.value.push({ role: "assistant", content: "" });
+    // 真流式：奥粒边想边说；失败回落规则应答
+    msgs.value.push({ role: "assistant", content: "", ts: Date.now() });
     const prox = msgs.value[msgs.value.length - 1];
     const finish = () => {
       busy.value = false;
+      stopElapsed();
+      curTaskId = "";
       if (prox.content) saveHistory();
       scrollBottom();
     };
-    await api.copilotChatStream(SYSTEM_PROMPT, history, q, ev => {
+    curTaskId = "";
+    const idP = api.copilotChatStream(SYSTEM_PROMPT, history, q, ev => {
       if (ev.event === "delta") {
         providerOnline.value = true;
         prox.content += ev.text;
@@ -162,10 +254,29 @@ async function send(text?: string) {
         finish();
       }
     });
+    idP.then(id => { if (busy.value) curTaskId = id; }).catch(() => { /* invoke 级失败走 catch */ });
+    await idP;
   } catch (e) {
     const detail = String(e);
     const hint = /模型中心|配置/.test(detail) ? "" : `\n\n(原因:${detail.slice(0, 90)})`;
     typeOut(ruleReply(q) + hint, true);
+  }
+}
+
+/** 停止当前回答（ZCode/Codex 式控制权） */
+async function stop() {
+  if (!busy.value) return;
+  if (curTaskId) {
+    try { await api.cancelAi(curTaskId); } catch { /* 后端兜底：事件流会自然结束 */ }
+  } else {
+    stopTyping();
+    busy.value = false;
+    stopElapsed();
+    const last = msgs.value[msgs.value.length - 1];
+    if (last?.role === "assistant" && !last.content) {
+      last.content = "（已停止）";
+      saveHistory();
+    }
   }
 }
 
@@ -177,9 +288,39 @@ function useQuick(a: { label: string; text: string }) {
 function goAndNote(path: string, note: string) {
   router.push(path);
   if (!open.value) open.value = true;
-  msgs.value.push({ role: "assistant", content: note });
+  msgs.value.push({ role: "assistant", content: note, ts: Date.now() });
   saveHistory();
   scrollBottom();
+}
+
+function copyText(text: string, ok?: () => void) {
+  try {
+    navigator.clipboard?.writeText(text);
+    ok?.();
+  } catch { /* 剪贴板不可用时静默 */ }
+}
+/** 整条回答复制（按钮反馈 ✓） */
+function copyMsg(e: MouseEvent, m: Msg) {
+  const btn = e.target as HTMLElement;
+  copyText(m.content, () => {
+    if (btn) {
+      btn.textContent = "✓";
+      setTimeout(() => (btn.textContent = "⎘"), 1000);
+    }
+  });
+}
+/** 代码块复制（事件委托） */
+function onContentClick(e: MouseEvent) {
+  const t = e.target as HTMLElement;
+  if (t.classList.contains("md-pre-copy")) {
+    const pre = t.closest(".md-pre")?.querySelector("pre");
+    if (pre) {
+      copyText(pre.textContent ?? "", () => {
+        t.textContent = "已复制";
+        setTimeout(() => (t.textContent = "复制"), 1200);
+      });
+    }
+  }
 }
 
 async function refreshStatus() {
@@ -206,15 +347,26 @@ function onOpenEvent() {
 }
 function onResetEvent() {
   stopTyping();
+  stopElapsed();
   busy.value = false;
+  curTaskId = "";
   localStorage.removeItem(HISTORY_KEY);
   msgs.value = [];
   loadHistory();
+  nextTick(() => inputEl.value?.focus());
 }
 function onKey(e: KeyboardEvent) {
   if (e.key === "Escape" && open.value) {
     open.value = false;
   }
+}
+
+/* 输入框自适应高度（composer 手感） */
+function autoGrow() {
+  const el = inputEl.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 150) + "px";
 }
 
 onMounted(() => {
@@ -226,6 +378,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   stopTyping();
+  stopElapsed();
   window.removeEventListener("oriera:copilot:open", onOpenEvent);
   window.removeEventListener("oriera:copilot:reset", onResetEvent);
   window.removeEventListener("keydown", onKey);
@@ -233,8 +386,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 悬浮吉祥物球 -->
+  <!-- 悬浮吉祥物球（面板打开时隐藏，避免双层入口） -->
   <div
+    v-if="!open"
     class="ori-fab" :class="{ busy }"
     role="button" tabindex="0" :aria-expanded="open" aria-label="奥粒,工作台助手(Ctrl+J 打开或收起)"
     @click="toggle" @keydown.enter.prevent="toggle" @keydown.space.prevent="toggle"
@@ -247,26 +401,21 @@ onBeforeUnmount(() => {
           <stop offset="100%" stop-color="#2e5fd0" />
         </radialGradient>
       </defs>
-      <!-- 轨道光环(思考时加速) -->
       <g class="ori-orbit">
         <circle cx="32" cy="34" r="27" fill="none" stroke="rgba(110,168,254,.35)" stroke-width="1.5" stroke-dasharray="4 7" />
         <circle cx="59" cy="34" r="2.4" fill="#6ea8fe" />
         <circle cx="12" cy="22" r="1.7" fill="#3ec8b0" />
       </g>
-      <!-- 天线 + 星尘 -->
       <line x1="32" y1="9" x2="32" y2="15" stroke="#7eb8ff" stroke-width="2" stroke-linecap="round" />
       <circle class="ori-star" cx="32" cy="7" r="3" fill="#ffd86b" />
-      <!-- 身体 -->
       <circle cx="32" cy="36" r="21" fill="url(#oriBody)" />
       <ellipse cx="26" cy="28" rx="7" ry="4.5" fill="rgba(255,255,255,.28)" />
-      <!-- 眼睛(会眨) -->
       <g class="ori-eyes">
         <circle cx="24.5" cy="34" r="4.6" fill="#f4f8ff" />
         <circle cx="39.5" cy="34" r="4.6" fill="#f4f8ff" />
         <circle cx="25.5" cy="35" r="2.1" fill="#12203c" />
         <circle cx="40.5" cy="35" r="2.1" fill="#12203c" />
       </g>
-      <!-- 笑 -->
       <path d="M26 44 Q32 49 38 44" stroke="#12203c" stroke-width="2.2" fill="none" stroke-linecap="round" />
     </svg>
     <span class="ori-status-dot" :class="providerOnline ? 'on' : 'off'"></span>
@@ -276,7 +425,7 @@ onBeforeUnmount(() => {
   <Transition name="ori-drawer">
     <div v-if="open" class="ori-panel" role="dialog" aria-label="奥粒助手">
       <div class="ori-head">
-        <svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true">
+        <svg viewBox="0 0 64 64" width="28" height="28" aria-hidden="true">
           <circle cx="32" cy="36" r="21" fill="#4f8ae8" />
           <circle cx="26.5" cy="34" r="4.2" fill="#f4f8ff" />
           <circle cx="38.5" cy="34" r="4.2" fill="#f4f8ff" />
@@ -288,39 +437,74 @@ onBeforeUnmount(() => {
         <div class="ori-title">
           <b>奥粒 Ori</b>
           <span class="ori-chip" :class="providerOnline ? 'on' : 'off'">
-            {{ busy ? "思考中…" : providerOnline ? providerLabel + " · 对话中" : "离线小奥 · 规则应答" }}
+            {{ busy ? "回答中…" : providerOnline ? providerLabel + " · 对话中" : "离线小奥 · 规则应答" }}
           </span>
         </div>
-        <button class="ori-close" title="收起 (Esc)" aria-label="收起奥粒面板" @click="open = false">✕</button>
+        <button class="ori-head-btn" title="新对话（清空记录）" aria-label="开始新对话" @click="onResetEvent">＋</button>
+        <button class="ori-head-btn" title="收起 (Esc)" aria-label="收起奥粒面板" @click="open = false">✕</button>
       </div>
 
-      <div class="ori-list" ref="listEl" role="log" aria-live="polite" aria-label="奥粒对话记录">
-        <div v-for="(m, i) in msgs" :key="i" class="ori-msg" :class="m.role">
-          <div class="ori-bubble">
-            <span v-if="m.rule && m.role === 'assistant'" class="ori-ruletag">规则模式</span>
-            {{ m.content }}<span v-if="busy && i === msgs.length - 1 && m.role === 'assistant'" class="ori-caret"></span>
+      <div class="ori-list" ref="listEl" role="log" aria-live="polite" aria-label="奥粒对话记录" @click="onContentClick">
+        <template v-for="(m, i) in msgs" :key="i">
+          <!-- 用户：右侧蓝泡 -->
+          <div v-if="m.role === 'user'" class="ori-msg user">
+            <div class="ori-bubble">{{ m.content }}</div>
           </div>
-        </div>
-        <div v-if="busy && (msgs.length === 0 || msgs[msgs.length - 1].role === 'user')" class="ori-msg assistant">
-          <div class="ori-bubble ori-dots"><i></i><i></i><i></i></div>
-        </div>
+          <!-- 奥粒：全宽 markdown 流（ZCode 式 transcript） -->
+          <div v-else class="ori-msg assistant">
+            <div class="ori-msg-head">
+              <svg viewBox="0 0 64 64" width="16" height="16" aria-hidden="true">
+                <circle cx="32" cy="36" r="24" fill="#4f8ae8" />
+                <circle cx="25" cy="34" r="5" fill="#f4f8ff" />
+                <circle cx="39" cy="34" r="5" fill="#f4f8ff" />
+                <circle cx="26" cy="35" r="2.2" fill="#12203c" />
+                <circle cx="40" cy="35" r="2.2" fill="#12203c" />
+              </svg>
+              <span class="ori-name">奥粒</span>
+              <span v-if="m.rule" class="ori-ruletag">规则模式</span>
+              <span class="ori-msg-time">{{ m.ts ? new Date(m.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "" }}</span>
+              <span class="ori-msg-act">
+                <button v-if="m.content && !(busy && i === msgs.length - 1)" class="ori-copy" title="复制全文" @click="copyMsg($event, m)">⎘</button>
+              </span>
+            </div>
+            <!-- 思考中（尚无内容）：状态行 + 计时 -->
+            <div v-if="!m.content" class="ori-thinking">
+              <span class="ori-spinner" aria-hidden="true"></span>
+              <span>思考中{{ elapsed ? " · " + elapsed : "" }}</span>
+            </div>
+            <div v-else class="ori-md" v-html="renderMarkdown(m.content)"></div>
+            <span v-if="busy && i === msgs.length - 1 && m.content" class="ori-caret"></span>
+          </div>
+        </template>
       </div>
 
-      <div class="ori-quick">
+      <div class="ori-quick" v-if="msgs.length <= 2">
         <button v-for="a in QUICK_ACTIONS" :key="a.label" @click="useQuick(a)">{{ a.label }}</button>
         <button class="ori-nav" @click="goAndNote('/new-game', '向导已打开 ✅ 五步走到黑,卡住随时叫我。')">➡️ 去新建游戏</button>
         <button class="ori-nav" @click="goAndNote('/models', '模型中心已打开 ✅ 拿不准就选免费档先跑通。')">➡️ 去模型中心</button>
       </div>
 
-      <div class="ori-inputrow">
+      <div class="ori-composer">
         <textarea
           ref="inputEl"
           v-model="input"
-          rows="2"
+          rows="1"
           placeholder="问奥粒…(Enter 发送,Shift+Enter 换行)"
+          @input="autoGrow"
           @keydown.enter.exact.prevent="send()"
         ></textarea>
-        <button class="ori-send" :disabled="busy || !input.trim()" aria-label="发送给奥粒" @click="send()">➤</button>
+        <div class="ori-composer-bar">
+          <span class="ori-chip small" :class="providerOnline ? 'on' : 'off'">
+            <span class="status-dot" :class="providerOnline ? 'on' : ''"></span>
+            {{ providerOnline ? providerLabel : "规则模式" }}
+          </span>
+          <span v-if="busy" class="ori-elapsed mono">{{ elapsed }}</span>
+          <span style="flex: 1"></span>
+          <button v-if="busy" class="ori-stop" aria-label="停止生成" title="停止" @click="stop">
+            <span class="ori-stop-sq"></span>停止
+          </button>
+          <button v-else class="ori-send" :disabled="!input.trim()" aria-label="发送给奥粒" @click="send()">➤</button>
+        </div>
       </div>
     </div>
   </Transition>
@@ -356,77 +540,135 @@ onBeforeUnmount(() => {
 
 .ori-status-dot {
   position: absolute; right: 5px; bottom: 7px; width: 9px; height: 9px;
-  border-radius: 50%; border: 2px solid #0f1117;
+  border-radius: 50%; border: 2px solid #0c0e15;
 }
 .ori-status-dot.on { background: #3fd68f; }
 .ori-status-dot.off { background: #8a90a6; }
 
 .ori-panel {
-  position: fixed; right: 0; top: 0; bottom: 0; width: 400px; max-width: 100vw;
+  position: fixed; right: 0; top: 0; bottom: 0; width: 420px; max-width: 100vw;
   z-index: 95; display: flex; flex-direction: column;
-  background: #141824; border-left: 1px solid #26304a;
+  background: #10131e; border-left: 1px solid #232c46;
   box-shadow: -12px 0 36px rgba(0, 0, 0, 0.45);
 }
 .ori-drawer-enter-active, .ori-drawer-leave-active { transition: transform 0.22s ease, opacity 0.22s ease; }
 .ori-drawer-enter-from, .ori-drawer-leave-to { transform: translateX(30px); opacity: 0; }
 
 .ori-head {
-  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
-  border-bottom: 1px solid #232d45; background: #171c2b;
+  display: flex; align-items: center; gap: 10px; padding: 11px 14px;
+  border-bottom: 1px solid #1f2637; background: #131726;
 }
 .ori-title { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ori-title b { font-size: 14px; }
 .ori-chip {
   font-size: 11px; padding: 1px 8px; border-radius: 9px;
-  border: 1px solid #2c3959; color: #9aa2b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px;
+  border: 1px solid #2c3654; color: #9aa2b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px;
+  display: inline-flex; align-items: center; gap: 5px;
 }
+.ori-chip.small { max-width: 170px; padding: 1px 7px; }
 .ori-chip.on { color: #3fd68f; border-color: #215437; }
 .ori-chip.off { color: #c9a6ff; border-color: #4a3a66; }
-.ori-close {
-  background: none; border: none; color: #8a90a6; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+.ori-head-btn {
+  background: none; border: none; color: #8a90a6; font-size: 14px; cursor: pointer;
+  padding: 4px 8px; border-radius: 6px; line-height: 1;
 }
-.ori-close:hover { color: #e6e8ef; background: #232d45; }
+.ori-head-btn:hover { color: #e6e8ef; background: #1f2a44; }
 
-.ori-list { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.ori-msg { display: flex; }
-.ori-msg.user { justify-content: flex-end; }
+.ori-list { flex: 1; overflow-y: auto; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 14px; }
+
+/* 用户消息：右侧蓝泡 */
+.ori-msg.user { display: flex; justify-content: flex-end; }
 .ori-bubble {
-  max-width: 86%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.65;
+  max-width: 84%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.65;
   white-space: pre-wrap; word-break: break-word;
+  background: #2e5fd0; color: #f0f5ff; border-bottom-right-radius: 4px;
 }
-.ori-msg.user .ori-bubble { background: #2e5fd0; color: #f0f5ff; border-bottom-right-radius: 4px; }
-.ori-msg.assistant .ori-bubble { background: #1c2334; border: 1px solid #273353; border-bottom-left-radius: 4px; }
-.ori-ruletag { font-size: 10px; color: #c9a6ff; border: 1px solid #4a3a66; border-radius: 7px; padding: 0 5px; margin-right: 6px; }
 
-.ori-caret { display: inline-block; width: 7px; height: 14px; background: #6ea8fe; margin-left: 2px; animation: ori-caret 0.9s steps(2) infinite; vertical-align: -2px; }
+/* 奥粒消息：全宽 transcript（ZCode 式） */
+.ori-msg.assistant { display: flex; flex-direction: column; }
+.ori-msg-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: #7d869d; }
+.ori-name { font-size: 12px; font-weight: 600; color: #9fd0ff; }
+.ori-msg-time { font-size: 10.5px; color: #5b6379; font-family: var(--mono, monospace); }
+.ori-msg-act { margin-left: auto; opacity: 0; transition: opacity .12s ease; }
+.ori-msg.assistant:hover .ori-msg-act { opacity: 1; }
+.ori-copy {
+  background: none; border: none; color: #8a90a6; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 5px;
+}
+.ori-copy:hover { color: #e6e8ef; background: #1f2a44; }
+.ori-ruletag { font-size: 10px; color: #c9a6ff; border: 1px solid #4a3a66; border-radius: 7px; padding: 0 5px; }
+
+/* markdown 渲染区 */
+.ori-md { font-size: 13px; line-height: 1.7; color: #d6dcec; word-break: break-word; }
+.ori-md :deep(p) { margin: 0 0 8px; }
+.ori-md :deep(p:last-child) { margin-bottom: 0; }
+.ori-md :deep(.md-h) { font-weight: 700; color: #e8eaf2; margin: 10px 0 6px; font-size: 13.5px; }
+.ori-md :deep(.md-h3) { font-size: 14.5px; }
+.ori-md :deep(ul), .ori-md :deep(ol) { margin: 2px 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
+.ori-md :deep(blockquote) {
+  margin: 4px 0 8px; padding: 6px 10px; border-left: 3px solid #4f8ae8;
+  background: rgba(79, 138, 232, .08); border-radius: 0 6px 6px 0; color: #b2bacf;
+}
+.ori-md :deep(.md-code) {
+  font-family: var(--mono, monospace); font-size: 12px; background: #0a0d14;
+  border: 1px solid #232c46; border-radius: 5px; padding: 1px 5px; color: #9fd0ff;
+}
+.ori-md :deep(.md-pre) {
+  margin: 6px 0 10px; border: 1px solid #232c46; border-radius: 9px; overflow: hidden; background: #0a0d14;
+}
+.ori-md :deep(.md-pre-bar) {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 10px; background: #131726; border-bottom: 1px solid #232c46;
+  font-size: 11px; color: #7d869d; font-family: var(--mono, monospace);
+}
+.ori-md :deep(.md-pre-copy) { cursor: pointer; border-radius: 4px; padding: 1px 7px; }
+.ori-md :deep(.md-pre-copy:hover) { color: #9fd0ff; background: #1f2a44; }
+.ori-md :deep(pre) {
+  margin: 0; padding: 10px 12px; overflow-x: auto;
+  font-family: var(--mono, monospace); font-size: 12px; line-height: 1.6; color: #cdd6ec;
+  white-space: pre;
+}
+
+/* 思考中状态行 */
+.ori-thinking { display: flex; align-items: center; gap: 8px; color: #7d869d; font-size: 12.5px; padding: 4px 0; }
+.ori-spinner {
+  width: 13px; height: 13px; border-radius: 50%; flex: none;
+  border: 2px solid #2c3654; border-top-color: #4f8ae8;
+  animation: ori-spin .8s linear infinite;
+}
+.ori-caret { display: inline-block; width: 7px; height: 14px; background: #6ea8fe; margin-top: 4px; animation: ori-caret 0.9s steps(2) infinite; align-self: flex-start; }
 @keyframes ori-caret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-
-.ori-dots { display: flex; gap: 4px; align-items: center; padding: 12px 14px; }
-.ori-dots i { width: 6px; height: 6px; border-radius: 50%; background: #6ea8fe; animation: ori-dot 1.1s infinite; }
-.ori-dots i:nth-child(2) { animation-delay: 0.18s; }
-.ori-dots i:nth-child(3) { animation-delay: 0.36s; }
-@keyframes ori-dot { 0%, 100% { opacity: 0.25; translate: 0 0; } 45% { opacity: 1; translate: 0 -3px; } }
 
 .ori-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 0; }
 .ori-quick button {
-  font-size: 11.5px; color: #aeb6cc; background: #1c2334; border: 1px solid #2c3959;
+  font-size: 11.5px; color: #b2bacf; background: #161b2c; border: 1px solid #2c3654;
   border-radius: 14px; padding: 3px 10px; cursor: pointer; transition: all 0.12s ease;
 }
-.ori-quick button:hover { color: #6ea8fe; border-color: #3a5f9e; }
+.ori-quick button:hover { color: #7eb8ff; border-color: #3a5f9e; }
 .ori-quick .ori-nav { color: #3fd68f; border-color: #215437; }
 
-.ori-inputrow { display: flex; gap: 8px; padding: 10px 14px 14px; align-items: flex-end; }
-.ori-inputrow textarea {
-  flex: 1; resize: none; background: #0f1117; color: #e6e8ef; border: 1px solid #2c3959;
-  border-radius: 10px; padding: 8px 10px; font-size: 13px; font-family: inherit; line-height: 1.5; outline: none;
+/* composer：输入 + 状态条 + 发送/停止 */
+.ori-composer { padding: 10px 14px 12px; }
+.ori-composer textarea {
+  width: 100%; resize: none; background: #0a0d14; color: #e8eaf2; border: 1px solid #2c3654;
+  border-radius: 11px; padding: 9px 12px; font-size: 13px; font-family: inherit; line-height: 1.55;
+  outline: none; max-height: 150px; transition: border-color .12s ease;
 }
-.ori-inputrow textarea:focus { border-color: #3a5f9e; }
+.ori-composer textarea:focus { border-color: #4f8ae8; }
+.ori-composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ori-elapsed { font-size: 11.5px; color: #7d869d; }
 .ori-send {
-  width: 38px; height: 38px; border-radius: 10px; border: 1px solid #2e5fd0;
-  background: #1d3a6e; color: #9fd0ff; font-size: 15px; cursor: pointer;
+  height: 30px; min-width: 52px; border-radius: 8px; border: 1px solid #4f8ae8;
+  background: #4f8ae8; color: #fff; font-size: 14px; cursor: pointer; transition: background .12s ease;
 }
-.ori-send:disabled { opacity: 0.35; cursor: default; }
-.ori-send:not(:disabled):hover { background: #2e5fd0; color: #fff; }
+.ori-send:disabled { opacity: .35; cursor: default; }
+.ori-send:not(:disabled):hover { background: #6ba1f2; }
+.ori-stop {
+  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px;
+  border-radius: 8px; border: 1px solid #a34d4d; background: #2a1418; color: #ff9aa8;
+  font-size: 12.5px; cursor: pointer; transition: background .12s ease;
+}
+.ori-stop:hover { background: #3a1a20; }
+.ori-stop-sq { width: 9px; height: 9px; border-radius: 2px; background: #ff9aa8; }
 
 @media (max-width: 520px) { .ori-panel { width: 100vw; } }
 </style>
