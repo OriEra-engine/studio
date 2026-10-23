@@ -15,6 +15,10 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // tauri 标配：不监视 src-tauri/target（构建产物 exe 落盘会让 watcher EBUSY 崩掉）
+    watch: {
+      ignored: ["**/src-tauri/target/**"],
+    },
   },
   build: {
     target: "chrome105",
