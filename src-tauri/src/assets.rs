@@ -181,10 +181,13 @@ fn rodin_multipart(prompt: &str) -> (String, Vec<u8>) {
         ("quality", "medium"),
     ] {
         body.extend_from_slice(
-            format!("--{BOUNDARY}\\r\\ncontent-disposition: form-data; name=\"\{name}\"\\r\\n\r\n\r\n{value}\\r\\n").as_bytes(),
+            format!(
+                "--{BOUNDARY}\r\ncontent-disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
         );
     }
-    body.extend_from_slice(format!("--{BOUNDARY}--\\r\\n").as_bytes());
+    body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
     (BOUNDARY.into(), body)
 }
 
