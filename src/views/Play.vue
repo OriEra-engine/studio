@@ -43,9 +43,9 @@ function openBrowser() {
 </template>
 
 <style scoped>
-.play { height: 100vh; display: flex; flex-direction: column; background: #0d1017; }
+.play { height: 100vh; display: flex; flex-direction: column; background: #0a0a0c; }
 .play-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px;
-  background: #131726; border-bottom: 1px solid #232a3d; color: #aeb6cc; }
-.play-name { font-size: 13px; color: #e6e8ef; }
-.play-frame { flex: 1; width: 100%; border: 0; background: #0d1017; }
+  background: #141419; border-bottom: 1px solid #202027; color: #a8a8b3; }
+.play-name { font-size: 13px; color: #e9e9ee; }
+.play-frame { flex: 1; width: 100%; border: 0; background: #0a0a0c; }
 </style>

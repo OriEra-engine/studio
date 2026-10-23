@@ -1,21 +1,21 @@
-/* ===== OriEra Studio 设计令牌 v2（ZCode/Codex agent 工作台参照） =====
- * 升级原则（对标现代 AI coding agent 界面）：
- *  1. 克制的暗色层次：深底 + 浮起面板 + 发丝描边，层次靠灰阶不靠花色
- *  2. 单 accent 体系：蓝为唯一交互主色，绿/橙/红只表达状态
- *  3. 状态永远可见：在线/运行中/离线用状态点，技术值用等宽字体
+/* ===== OriEra Studio 设计令牌 v3（ZCode 中性黑参照） =====
+ * 升级原则（对标 ZCode 黑色工作台）：
+ *  1. 中性黑底色，层次全靠灰阶（不再用海军蓝染色）
+ *  2. 彩色极度克制：蓝只做交互锚点（链接/主按钮/选中文字），绿/橙/红只表状态
+ *  3. 面板 = 近黑填充 + 1px 发丝灰边，平而克制
  */
 :root {
-  --bg: #0c0e15;            /* 页面底（更深一档，衬托浮起面板） */
-  --bg-raise: #141827;      /* 卡片/面板 */
-  --bg-deep: #0a0d14;       /* 代码块/预览底 */
-  --bg-hover: #1b2338;      /* 悬停态 */
-  --line: #1f2637;          /* 发丝描边 */
-  --line-strong: #2c3654;   /* 强调描边 */
-  --text: #e8eaf2;          /* 主文本 */
-  --text-2: #b2bacf;        /* 次文本 */
-  --text-3: #7d869d;        /* 弱文本 */
-  --accent: #7eb8ff;        /* 主题蓝（文本/图标用亮档） */
-  --accent-strong: #4f8ae8; /* 主题蓝（按钮/填充用饱和档） */
+  --bg: #0b0b0e;            /* 页面底：中性近黑 */
+  --bg-raise: #141418;      /* 卡片/面板 */
+  --bg-deep: #08080a;       /* 更深一档（侧栏/代码块底） */
+  --bg-hover: #1c1c22;      /* 悬停态 */
+  --line: #202027;          /* 发丝描边 */
+  --line-strong: #30303a;   /* 强调描边 */
+  --text: #e9e9ee;          /* 主文本 */
+  --text-2: #a8a8b3;        /* 次文本 */
+  --text-3: #71717c;        /* 弱文本 */
+  --accent: #7eb8ff;        /* 交互蓝（链接/选中文字，小面积使用） */
+  --accent-strong: #4f8ae8; /* 交互蓝（主按钮填充） */
   --accent-deep: #2d5b9e;
   --good: #35d07f;
   --warn: #e8a35c;
@@ -78,7 +78,7 @@ a { color: var(--accent); text-decoration: none; }
 
 /* ===== 卡片 hover 浮起（画廊/项目卡通用） ===== */
 .demo-card { cursor: pointer; transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease; }
-.demo-card:hover { transform: translateY(-2px); border-color: #4a7dc9 !important; box-shadow: 0 8px 24px rgba(20, 40, 90, .35); }
+.demo-card:hover { transform: translateY(-2px); border-color: #4a4a58 !important; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
 .demo-tag { font-size: 11px; color: #7fa8e0; }
 .demo-desc { color: var(--text-2); font-size: 12.5px; line-height: 1.6; min-height: 40px; }
 
@@ -86,7 +86,7 @@ a { color: var(--accent); text-decoration: none; }
 .oe-topbar {
   height: var(--topbar-h); flex: none;
   display: flex; align-items: center; gap: 10px; padding: 0 16px;
-  background: rgba(20, 24, 39, .82);
+  background: rgba(15, 15, 18, .88);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(8px);
 }
@@ -126,12 +126,9 @@ a { color: var(--accent); text-decoration: none; }
   transition: background .12s ease, color .12s ease;
 }
 .oe-nav-item:hover { background: var(--bg-hover); color: var(--text); }
-.oe-nav-item.active { background: rgba(79, 138, 232, .16); color: var(--accent); }
-.oe-nav-item.active::before {
-  content: ""; position: absolute; left: -10px; top: 6px; bottom: 6px; width: 3px;
-  border-radius: 2px; background: var(--accent-strong);
-}
-.oe-nav-item svg { width: 17px; height: 17px; flex: none; opacity: .85; }
+/* ZCode 式选中态：中性灰高亮 + 白字，不用彩色填充 */
+.oe-nav-item.active { background: #22222a; color: #f2f2f6; font-weight: 600; }
+.oe-nav-item svg { width: 17px; height: 17px; flex: none; opacity: .8; }
 .oe-nav-item.active svg { opacity: 1; }
 .oe-sider-foot {
   padding: 10px 12px; border-top: 1px solid var(--line);

@@ -118,7 +118,7 @@ function fmtDate(unix: string) {
               <NTag size="tiny" round>{{ fmtDate(p.created) }}</NTag>
             </NSpace>
           </template>
-          <p style="color: #8a93ad; font-size: 12.5px; min-height: 34px">{{ p.tagline }}</p>
+          <p style="color: #74747f; font-size: 12.5px; min-height: 34px">{{ p.tagline }}</p>
           <NSpace size="small">
             <NButton size="small" type="primary" @click="runInBrowser(p)">{{ running.has(p.id) ? '🌐 聚焦' : '▶ 运行' }}</NButton>
             <NButton size="small" secondary @click="router.push(`/editor/${p.id}`)">✏️ 编辑</NButton>
