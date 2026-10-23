@@ -124,15 +124,15 @@ const ready = computed(() => !!store.status?.provider_configured);
 </template>
 
 <style scoped>
-.qs-label { font-size: 12px; color: #8a93ad; margin: 12px 0 6px; }
+.qs-label { font-size: 12px; color: #74747f; margin: 12px 0 6px; }
 .qs-label:first-child { margin-top: 0; }
-.qs-hint { color: #5f6b8a; font-weight: 400; }
+.qs-hint { color: #55555f; font-weight: 400; }
 .qs-hint a { color: #7eb8ff; text-decoration: none; }
 .qs-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .qs-preset { background: #161a28; border: 1.5px solid #232a3d; border-radius: 10px; padding: 10px 12px; cursor: pointer; font-size: 13px; position: relative; }
-.qs-preset:hover { border-color: #3a5e9e; }
+.qs-preset:hover { border-color: #3a3a46; }
 .qs-preset.sel { border-color: #7eb8ff; background: #17223a; }
 .qs-preset:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 2px; }
 .qs-free { position: absolute; top: 8px; right: 8px; font-size: 10px; color: #35d07f; border: 1px solid #2a6e4d; border-radius: 8px; padding: 0 6px; }
-.qs-model { color: #8a93ad; font-size: 11px; margin-top: 4px; }
+.qs-model { color: #74747f; font-size: 11px; margin-top: 4px; }
 </style>

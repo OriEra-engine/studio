@@ -540,15 +540,15 @@ onBeforeUnmount(() => {
 
 .ori-status-dot {
   position: absolute; right: 5px; bottom: 7px; width: 9px; height: 9px;
-  border-radius: 50%; border: 2px solid #0c0e15;
+  border-radius: 50%; border: 2px solid #0b0b0e;
 }
 .ori-status-dot.on { background: #3fd68f; }
-.ori-status-dot.off { background: #8a90a6; }
+.ori-status-dot.off { background: #71717c; }
 
 .ori-panel {
   position: fixed; right: 0; top: 0; bottom: 0; width: 420px; max-width: 100vw;
   z-index: 95; display: flex; flex-direction: column;
-  background: #10131e; border-left: 1px solid #232c46;
+  background: #0e0e12; border-left: 1px solid #232329;
   box-shadow: -12px 0 36px rgba(0, 0, 0, 0.45);
 }
 .ori-drawer-enter-active, .ori-drawer-leave-active { transition: transform 0.22s ease, opacity 0.22s ease; }
@@ -556,23 +556,23 @@ onBeforeUnmount(() => {
 
 .ori-head {
   display: flex; align-items: center; gap: 10px; padding: 11px 14px;
-  border-bottom: 1px solid #1f2637; background: #131726;
+  border-bottom: 1px solid #202027; background: #141419;
 }
 .ori-title { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ori-title b { font-size: 14px; }
 .ori-chip {
   font-size: 11px; padding: 1px 8px; border-radius: 9px;
-  border: 1px solid #2c3654; color: #9aa2b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px;
+  border: 1px solid #2c2c36; color: #a0a0ab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px;
   display: inline-flex; align-items: center; gap: 5px;
 }
 .ori-chip.small { max-width: 170px; padding: 1px 7px; }
 .ori-chip.on { color: #3fd68f; border-color: #215437; }
 .ori-chip.off { color: #c9a6ff; border-color: #4a3a66; }
 .ori-head-btn {
-  background: none; border: none; color: #8a90a6; font-size: 14px; cursor: pointer;
+  background: none; border: none; color: #71717c; font-size: 14px; cursor: pointer;
   padding: 4px 8px; border-radius: 6px; line-height: 1;
 }
-.ori-head-btn:hover { color: #e6e8ef; background: #1f2a44; }
+.ori-head-btn:hover { color: #e9e9ee; background: #20202a; }
 
 .ori-list { flex: 1; overflow-y: auto; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 14px; }
 
@@ -586,53 +586,53 @@ onBeforeUnmount(() => {
 
 /* 奥粒消息：全宽 transcript（ZCode 式） */
 .ori-msg.assistant { display: flex; flex-direction: column; }
-.ori-msg-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: #7d869d; }
+.ori-msg-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: #74747f; }
 .ori-name { font-size: 12px; font-weight: 600; color: #9fd0ff; }
 .ori-msg-time { font-size: 10.5px; color: #5b6379; font-family: var(--mono, monospace); }
 .ori-msg-act { margin-left: auto; opacity: 0; transition: opacity .12s ease; }
 .ori-msg.assistant:hover .ori-msg-act { opacity: 1; }
 .ori-copy {
-  background: none; border: none; color: #8a90a6; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 5px;
+  background: none; border: none; color: #71717c; cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 5px;
 }
-.ori-copy:hover { color: #e6e8ef; background: #1f2a44; }
+.ori-copy:hover { color: #e9e9ee; background: #20202a; }
 .ori-ruletag { font-size: 10px; color: #c9a6ff; border: 1px solid #4a3a66; border-radius: 7px; padding: 0 5px; }
 
 /* markdown 渲染区 */
-.ori-md { font-size: 13px; line-height: 1.7; color: #d6dcec; word-break: break-word; }
+.ori-md { font-size: 13px; line-height: 1.7; color: #d4d4dc; word-break: break-word; }
 .ori-md :deep(p) { margin: 0 0 8px; }
 .ori-md :deep(p:last-child) { margin-bottom: 0; }
 .ori-md :deep(.md-h) { font-weight: 700; color: #e8eaf2; margin: 10px 0 6px; font-size: 13.5px; }
 .ori-md :deep(.md-h3) { font-size: 14.5px; }
 .ori-md :deep(ul), .ori-md :deep(ol) { margin: 2px 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
 .ori-md :deep(blockquote) {
-  margin: 4px 0 8px; padding: 6px 10px; border-left: 3px solid #4f8ae8;
-  background: rgba(79, 138, 232, .08); border-radius: 0 6px 6px 0; color: #b2bacf;
+  margin: 4px 0 8px; padding: 6px 10px; border-left: 3px solid #3a3a44;
+  background: rgba(255, 255, 255, .04); border-radius: 0 6px 6px 0; color: #b2bacf;
 }
 .ori-md :deep(.md-code) {
-  font-family: var(--mono, monospace); font-size: 12px; background: #0a0d14;
-  border: 1px solid #232c46; border-radius: 5px; padding: 1px 5px; color: #9fd0ff;
+  font-family: var(--mono, monospace); font-size: 12px; background: #09090b;
+  border: 1px solid #232329; border-radius: 5px; padding: 1px 5px; color: #9fd0ff;
 }
 .ori-md :deep(.md-pre) {
-  margin: 6px 0 10px; border: 1px solid #232c46; border-radius: 9px; overflow: hidden; background: #0a0d14;
+  margin: 6px 0 10px; border: 1px solid #232329; border-radius: 9px; overflow: hidden; background: #09090b;
 }
 .ori-md :deep(.md-pre-bar) {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 4px 10px; background: #131726; border-bottom: 1px solid #232c46;
-  font-size: 11px; color: #7d869d; font-family: var(--mono, monospace);
+  padding: 4px 10px; background: #141419; border-bottom: 1px solid #232329;
+  font-size: 11px; color: #74747f; font-family: var(--mono, monospace);
 }
 .ori-md :deep(.md-pre-copy) { cursor: pointer; border-radius: 4px; padding: 1px 7px; }
-.ori-md :deep(.md-pre-copy:hover) { color: #9fd0ff; background: #1f2a44; }
+.ori-md :deep(.md-pre-copy:hover) { color: #9fd0ff; background: #20202a; }
 .ori-md :deep(pre) {
   margin: 0; padding: 10px 12px; overflow-x: auto;
-  font-family: var(--mono, monospace); font-size: 12px; line-height: 1.6; color: #cdd6ec;
+  font-family: var(--mono, monospace); font-size: 12px; line-height: 1.6; color: #c9c9d2;
   white-space: pre;
 }
 
 /* 思考中状态行 */
-.ori-thinking { display: flex; align-items: center; gap: 8px; color: #7d869d; font-size: 12.5px; padding: 4px 0; }
+.ori-thinking { display: flex; align-items: center; gap: 8px; color: #74747f; font-size: 12.5px; padding: 4px 0; }
 .ori-spinner {
   width: 13px; height: 13px; border-radius: 50%; flex: none;
-  border: 2px solid #2c3654; border-top-color: #4f8ae8;
+  border: 2px solid #2c2c36; border-top-color: #4f8ae8;
   animation: ori-spin .8s linear infinite;
 }
 .ori-caret { display: inline-block; width: 7px; height: 14px; background: #6ea8fe; margin-top: 4px; animation: ori-caret 0.9s steps(2) infinite; align-self: flex-start; }
@@ -640,22 +640,22 @@ onBeforeUnmount(() => {
 
 .ori-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px 0; }
 .ori-quick button {
-  font-size: 11.5px; color: #b2bacf; background: #161b2c; border: 1px solid #2c3654;
+  font-size: 11.5px; color: #b2bacf; background: #17171c; border: 1px solid #2c2c36;
   border-radius: 14px; padding: 3px 10px; cursor: pointer; transition: all 0.12s ease;
 }
-.ori-quick button:hover { color: #7eb8ff; border-color: #3a5f9e; }
+.ori-quick button:hover { color: #7eb8ff; border-color: #3a3a46; }
 .ori-quick .ori-nav { color: #3fd68f; border-color: #215437; }
 
 /* composer：输入 + 状态条 + 发送/停止 */
 .ori-composer { padding: 10px 14px 12px; }
 .ori-composer textarea {
-  width: 100%; resize: none; background: #0a0d14; color: #e8eaf2; border: 1px solid #2c3654;
+  width: 100%; resize: none; background: #09090b; color: #e8eaf2; border: 1px solid #2c2c36;
   border-radius: 11px; padding: 9px 12px; font-size: 13px; font-family: inherit; line-height: 1.55;
   outline: none; max-height: 150px; transition: border-color .12s ease;
 }
 .ori-composer textarea:focus { border-color: #4f8ae8; }
 .ori-composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.ori-elapsed { font-size: 11.5px; color: #7d869d; }
+.ori-elapsed { font-size: 11.5px; color: #74747f; }
 .ori-send {
   height: 30px; min-width: 52px; border-radius: 8px; border: 1px solid #4f8ae8;
   background: #4f8ae8; color: #fff; font-size: 14px; cursor: pointer; transition: background .12s ease;

@@ -159,16 +159,15 @@ function fmtDate(unix: string) {
 </template>
 
 <style scoped>
-/* ---- prompt-first hero（Codex 式首页 composer） ---- */
+/* ---- prompt-first hero（ZCode 中性黑：灰阶层次 + 极淡顶部提亮） ---- */
 .hero-v2 {
   border-radius: 16px;
   padding: 34px 34px 26px;
   margin-bottom: 18px;
   background:
-    radial-gradient(1200px 300px at 20% -60%, rgba(79, 138, 232, .16), transparent 60%),
-    radial-gradient(800px 260px at 90% -80%, rgba(126, 184, 255, .10), transparent 60%),
-    linear-gradient(160deg, #151a2c 0%, #101524 55%, #0d1220 100%);
-  border: 1px solid var(--line-strong);
+    radial-gradient(1100px 280px at 30% -70%, rgba(255, 255, 255, .045), transparent 60%),
+    linear-gradient(160deg, #17171c 0%, #111114 55%, #0d0d10 100%);
+  border: 1px solid var(--line);
 }
 .hero-v2 h1 { margin: 0 0 6px; font-size: 27px; letter-spacing: .3px; }
 .hero-v2 h1 .grad {
@@ -179,10 +178,10 @@ function fmtDate(unix: string) {
 
 .hero-composer {
   display: flex; gap: 10px; align-items: stretch;
-  background: #0a0d14; border: 1px solid var(--line-strong); border-radius: 14px;
+  background: #0a0a0c; border: 1px solid var(--line-strong); border-radius: 14px;
   padding: 8px 8px 8px 4px; transition: border-color .15s ease, box-shadow .15s ease;
 }
-.hero-composer:focus-within { border-color: #4f8ae8; box-shadow: 0 0 0 3px rgba(79, 138, 232, .15); }
+.hero-composer:focus-within { border-color: #4a4a58; box-shadow: 0 0 0 3px rgba(255, 255, 255, .05); }
 .hero-composer textarea {
   flex: 1; resize: none; background: none; border: none; outline: none;
   color: var(--text); font-family: inherit; font-size: 14.5px; line-height: 1.6;

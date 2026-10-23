@@ -146,17 +146,17 @@ defineExpose({ show, hide });
 .cp-fade-enter-active, .cp-fade-leave-active { transition: opacity 0.14s ease; }
 .cp-fade-enter-from, .cp-fade-leave-to { opacity: 0; }
 .cp-box {
-  width: 560px; max-width: calc(100vw - 32px); background: #161b28; border: 1px solid #2c3959;
+  width: 560px; max-width: calc(100vw - 32px); background: #161b28; border: 1px solid #2c2c36;
   border-radius: 12px; overflow: hidden; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
 }
-.cp-inputrow { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #232d45; }
+.cp-inputrow { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #232329; }
 .cp-glyph { color: #6ea8fe; font-size: 15px; }
 .cp-inputrow input {
-  flex: 1; background: none; border: none; outline: none; color: #e6e8ef; font-size: 14px; font-family: inherit;
+  flex: 1; background: none; border: none; outline: none; color: #e9e9ee; font-size: 14px; font-family: inherit;
 }
-.cp-inputrow input::placeholder { color: #8a90a6; }
-.cp-kbd { font-size: 10.5px; color: #8a90a6; border: 1px solid #2c3959; border-radius: 5px; padding: 1px 6px; }
-.cp-empty { padding: 22px 16px; color: #8a90a6; font-size: 12.5px; text-align: center; }
+.cp-inputrow input::placeholder { color: #71717c; }
+.cp-kbd { font-size: 10.5px; color: #71717c; border: 1px solid #2c2c36; border-radius: 5px; padding: 1px 6px; }
+.cp-empty { padding: 22px 16px; color: #71717c; font-size: 12.5px; text-align: center; }
 .cp-list { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow-y: auto; }
 .cp-list li {
   display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
@@ -165,8 +165,8 @@ defineExpose({ show, hide });
 .cp-list li.active { background: #223055; }
 .cp-list li.active .cp-title { color: #cfe4ff; }
 .cp-title { color: #dbe2f2; white-space: nowrap; }
-.cp-hint { flex: 1; color: #8a90a6; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cp-keys { font-size: 10.5px; color: #8a90a6; border: 1px solid #2c3959; border-radius: 5px; padding: 1px 6px; }
+.cp-hint { flex: 1; color: #71717c; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-keys { font-size: 10.5px; color: #71717c; border: 1px solid #2c2c36; border-radius: 5px; padding: 1px 6px; }
 .cp-keys.cur { color: #3fd68f; border-color: #215437; }
-.cp-foot { padding: 8px 14px; border-top: 1px solid #232d45; color: #8a90a6; font-size: 11px; }
+.cp-foot { padding: 8px 14px; border-top: 1px solid #232329; color: #71717c; font-size: 11px; }
 </style>

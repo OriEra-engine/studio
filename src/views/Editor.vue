@@ -272,7 +272,7 @@ async function exportHtml() {
 
       <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center">
         <NButton type="primary" :loading="saving" @click="save">💾 保存剧情</NButton>
-        <span style="color: #8a90a6; font-size: 12px">保存前旧版自动备份；保存后运行窗口自动刷新出新剧情</span>
+        <span style="color: #71717c; font-size: 12px">保存前旧版自动备份；保存后运行窗口自动刷新出新剧情</span>
       </div>
         </NSpin>
       </div>
@@ -303,28 +303,28 @@ async function exportHtml() {
 .wb { display: flex; gap: 14px; margin-top: 14px; align-items: stretch; }
 .wb-left { flex: 1 1 480px; min-width: 0; max-width: 620px; }
 .wb-right { flex: 1.15 1 420px; min-width: 340px; display: flex; flex-direction: column;
-  background: var(--bg-deep, #10141f); border: 1px solid var(--line, #232a3d); border-radius: 12px; overflow: hidden; }
+  background: var(--bg-deep, #0e0e12); border: 1px solid var(--line, #202027); border-radius: 12px; overflow: hidden; }
 .wb-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  background: #131726; border-bottom: 1px solid var(--line, #232a3d); font-size: 12.5px; color: #aeb6cc; }
+  background: #141419; border-bottom: 1px solid var(--line, #202027); font-size: 12.5px; color: #a8a8b3; }
 .wb-dot { width: 8px; height: 8px; border-radius: 50%; background: #35d07f; box-shadow: 0 0 8px #35d07f; }
-.wb-tip { color: #5f6b8a; font-size: 11px; }
-.wb-frame { flex: 1; width: 100%; border: 0; background: #0d1017; }
-.wb-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #5f6b8a; font-size: 13px; }
+.wb-tip { color: #55555f; font-size: 11px; }
+.wb-frame { flex: 1; width: 100%; border: 0; background: #0a0a0c; }
+.wb-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #55555f; font-size: 13px; }
 @media (max-width: 1100px) {
   .wb { flex-direction: column; }
   .wb-left { max-width: none; }
   .wb-right { min-height: 62vh; }
 }
-.beat-editor { background: #161a28; border: 1px solid #232a3d; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.beat-editor { background: #141418; border: 1px solid #202027; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .beat-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
-.beat-no { color: #7c86a3; font-size: 12px; width: 20px; text-align: center; flex: none; }
+.beat-no { color: #6f6f7a; font-size: 12px; width: 20px; text-align: center; flex: none; }
 .ai-row { display: flex; gap: 8px; margin-top: 8px; }
-.choice-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px; background: #131726; border: 1px dashed #2a3a5c; border-radius: 8px; }
+.choice-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px; background: #141419; border: 1px dashed #30303a; border-radius: 8px; }
 .choice-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.diff-panel { background: #10141f; border: 1px solid #2a3a5c; border-radius: 8px; padding: 10px 12px; margin-top: 2px; }
+.diff-panel { background: #0e0e12; border: 1px solid #30303a; border-radius: 8px; padding: 10px 12px; margin-top: 2px; }
 .diff-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 720px) { .diff-cols { grid-template-columns: 1fr; } }
-.diff-cap { font-size: 11px; color: #7c86a3; margin-bottom: 5px; }
+.diff-cap { font-size: 11px; color: #6f6f7a; margin-bottom: 5px; }
 .diff-cap-new { color: #35d07f; }
 .diff-text { font-size: 12.5px; line-height: 1.75; color: #cdd6ec; margin: 0; white-space: pre-wrap; word-break: break-word; }
 .d-del { background: #3d1d24; color: #ff9aa8; text-decoration: line-through; border-radius: 3px; padding: 0 1px; }
