@@ -12,6 +12,14 @@ pub struct AssetMeta {
     pub file: String,   // 形如 assets/1737500000-a1b2.png（对页面是 /assets/...）
     pub prompt: String,
     pub created: String,
+    /// 素材类别：image（插画，M1）| mesh（3D 模型，Rodin）。旧 meta 无此
+    /// 字段时默认 image——全部历史资产都是插画。
+    #[serde(default = "default_kind")]
+    pub kind: String,
+}
+
+fn default_kind() -> String {
+    "image".into()
 }
 
 fn assets_dir(state: &tauri::State<'_, crate::AppState>) -> std::path::PathBuf {
@@ -126,6 +134,7 @@ pub async fn generate_asset(
         file: format!("assets/{file}"),
         prompt: prompt.chars().take(120).collect(),
         created: ts.to_string(),
+        kind: "image".into(),
     };
     let mut list = read_meta(&state);
     list.insert(0, meta.clone());
@@ -146,6 +155,203 @@ pub async fn generate_asset_command(
 #[tauri::command]
 pub fn list_assets(state: tauri::State<'_, crate::AppState>) -> Vec<AssetMeta> {
     read_meta(&state)
+}
+
+// ====================== M2 供给侧：Hyper3D Rodin 文生 3D ======================
+//
+// wire 逐条核实 docs.hyper3d.ai（2026-10-23，与引擎 oriera-genai/rodin.rs
+// 同一契约）：POST /rodin（multipart+Bearer，201 含顶层 uuid 与
+// jobs.subscription_key 两个不同标识符）→ POST /status（subscription_key）
+// 状态 Waiting/Generating/Done/Failed → POST /download（顶层 uuid）list[]
+// 按 .glb 取签名 URL（会过期，立即 GET，不带 Authorization）。
+//
+// key 纪律：Rodin Key 由前端传入（localStorage 记忆），只进本函数内存，
+// 不写配置、不写日志、不进 meta.json。
+
+const RODIN_POLL_SECS: u64 = 5;
+const RODIN_MAX_POLLS: u32 = 60; // 5 分钟上限（生成通常 1-3 分钟）
+
+fn rodin_multipart(prompt: &str) -> (String, Vec<u8>) {
+    const BOUNDARY: &str = "oriera-rodin-f3a9";
+    let mut body = Vec::new();
+    for (name, value) in [
+        ("prompt", prompt),
+        ("geometry_file_format", "glb"),
+        ("tier", "Low"),
+        ("quality", "medium"),
+    ] {
+        body.extend_from_slice(
+            format!(
+                "--{BOUNDARY}\r\ncontent-disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+    (BOUNDARY.into(), body)
+}
+
+/// Hyper3D Rodin 文生 3D：prompt → GLB 字节 → 存入资产库（kind=mesh）。
+pub async fn generate_mesh(
+    state: tauri::State<'_, crate::AppState>,
+    prompt: String,
+    key: String,
+    base: Option<String>,
+) -> Result<AssetMeta, String> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err("需要 Hyper3D API Key（hyper3d.ai 控制台申请，国内站选 hyper3d.cn）".into());
+    }
+    let base = base
+        .filter(|b| !b.trim().is_empty())
+        .unwrap_or_else(|| "https://api.hyper3d.com/api/v2".into())
+        .trim_end_matches('/')
+        .to_string();
+    let prompt = prompt.trim().to_string();
+    if prompt.is_empty() {
+        return Err("先描述你想要的 3D 模型".into());
+    }
+
+    let client = reqwest::Client::new();
+    let (boundary, body) = rodin_multipart(&prompt);
+    let resp = client
+        .post(format!("{base}/rodin"))
+        .header("Authorization", format!("Bearer {key}"))
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .timeout(std::time::Duration::from_secs(60))
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("创建 Rodin 任务失败：{e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        let short: String = text.chars().take(300).collect();
+        let hint = match status.as_u16() {
+            401 => "（Key 无效或未开通 API 权限）",
+            429 => "（触发限流，稍后再试）",
+            _ => "",
+        };
+        return Err(format!("Rodin 返回 {}{}：{}", status.as_u16(), hint, short));
+    }
+    let created: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("解析创建响应失败：{e}"))?;
+    let uuid = created["uuid"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("Rodin 未受理任务：{}", text.chars().take(200).collect::<String>()))?
+        .to_string();
+    let subkey = created["jobs"]["subscription_key"]
+        .as_str()
+        .ok_or_else(|| "Rodin 响应缺 jobs.subscription_key".to_string())?
+        .to_string();
+
+    // 轮询状态：任一 Failed 即失败；全 Done 才进下载。
+    let mut done = false;
+    for _ in 0..RODIN_MAX_POLLS {
+        tokio::time::sleep(std::time::Duration::from_secs(RODIN_POLL_SECS)).await;
+        let resp = client
+            .post(format!("{base}/status"))
+            .header("Authorization", format!("Bearer {key}"))
+            .json(&serde_json::json!({ "subscription_key": subkey }))
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| format!("查询状态失败：{e}"))?;
+        let st: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("解析状态失败：{e}"))?;
+        let jobs = st["jobs"]
+            .as_array()
+            .ok_or_else(|| "Rodin 状态响应缺 jobs 数组".to_string())?;
+        let mut all_done = true;
+        for j in jobs {
+            match j["status"].as_str() {
+                Some("Done") => {}
+                Some("Waiting") | Some("Generating") => all_done = false,
+                Some(other) => return Err(format!("Rodin 任务失败：{other}")),
+                None => return Err("Rodin 状态响应缺 status 字段".into()),
+            }
+        }
+        if all_done && !jobs.is_empty() {
+            done = true;
+            break;
+        }
+    }
+    if !done {
+        return Err(format!(
+            "生成超时（超 {} 次轮询）——任务可能仍在排队，稍后重试",
+            RODIN_MAX_POLLS
+        ));
+    }
+
+    // 下载：body 用顶层 uuid（不是 subscription_key）。
+    let resp = client
+        .post(format!("{base}/download"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "task_uuid": uuid }))
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| format!("请求下载清单失败：{e}"))?;
+    let dl: serde_json::Value = resp.json().await.map_err(|e| format!("解析下载清单失败：{e}"))?;
+    let glb_url = dl["list"]
+        .as_array()
+        .and_then(|list| {
+            list.iter().find_map(|e| {
+                let name = e["name"].as_str()?;
+                if name.to_ascii_lowercase().ends_with(".glb") {
+                    e["url"].as_str().map(str::to_string)
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| "Rodin 下载清单中没有 .glb 条目".to_string())?;
+
+    // 签名 URL 会过期：立即取回（不带鉴权头）。
+    let bytes = client
+        .get(&glb_url)
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await
+        .map_err(|e| format!("下载 GLB 失败：{e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("下载 GLB 内容失败：{e}"))?
+        .to_vec();
+
+    // 落盘 + 入库（GLB 可能几 MB——页面按 mesh 类别渲染占位卡）。
+    let dir = assets_dir(&state);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = now_ts();
+    let file = format!("{ts}-rodin.glb");
+    std::fs::write(dir.join(&file), &bytes).map_err(|e| format!("写入 GLB 失败：{e}"))?;
+    let meta = AssetMeta {
+        id: format!("a{ts}"),
+        file: format!("assets/{file}"),
+        prompt: prompt.chars().take(120).collect(),
+        created: ts.to_string(),
+        kind: "mesh".into(),
+    };
+    let mut list = read_meta(&state);
+    list.insert(0, meta.clone());
+    write_meta(&state, &list)?;
+    Ok(meta)
+}
+
+#[tauri::command]
+pub async fn generate_mesh_command(
+    state: tauri::State<'_, crate::AppState>,
+    prompt: String,
+    key: String,
+    base: Option<String>,
+) -> Result<AssetMeta, String> {
+    generate_mesh(state, prompt, key, base).await
 }
 
 #[tauri::command]

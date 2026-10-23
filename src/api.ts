@@ -196,7 +196,13 @@ export const api = {
   generateAsset: (prompt: string, model?: string) =>
     invoke<{ id: string; file: string; prompt: string; created: string }>("generate_asset_command", { prompt, model: model ?? null }),
   listAssets: () =>
-    invoke<{ id: string; file: string; prompt: string; created: string }[]>("list_assets"),
+    invoke<{ id: string; file: string; prompt: string; created: string; kind?: string }[]>("list_assets"),
+  generateMesh: (prompt: string, key: string, base?: string) =>
+    invoke<{ id: string; file: string; prompt: string; created: string; kind: string }>("generate_mesh_command", {
+      prompt,
+      key,
+      base: base ?? null,
+    }),
   deleteAsset: (id: string) => invoke<void>("delete_asset", { id }),
   addAssetToProject: (assetId: string, projectId: string) =>
     invoke<void>("add_asset_to_project", { assetId, projectId }),
