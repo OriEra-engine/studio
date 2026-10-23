@@ -71,6 +71,23 @@ for (const d of srcDirs) {
   }
 }
 
+// ---------- contracts/golden 单一来源同步（#98 双端 fixture） ----------
+// 快照里的 kernel.test.mjs 与引擎共读同一份 golden JSON；契约文件必须
+// 随快照分发，否则快照测试因相对路径不可达而假红。
+const goldenSrc = path.join(engineRoot, "contracts", "golden");
+const goldenDst = path.join(repoRoot, "engine-snapshot", "contracts", "golden");
+const goldenNames = fs.existsSync(goldenSrc)
+  ? fs.readdirSync(goldenSrc).filter((f) => f.endsWith(".json"))
+  : [];
+const goldenContent = (root, f) =>
+  fs.readFileSync(path.join(root, f)).toString("utf8").replace(/\r\n/g, "\n");
+for (const f of goldenNames) {
+  const dst = path.join(goldenDst, f);
+  if (!fs.existsSync(dst)) drift.push(`- 新文件：contracts/golden/${f}`);
+  else if (goldenContent(goldenSrc, f) !== goldenContent(goldenDst, f))
+    drift.push(`- 内容不同：contracts/golden/${f}`);
+}
+
 // ---------- demos.rs 元数据核对（编辑性，WARN 不拦门） ----------
 const demosRs = fs.readFileSync(path.join(repoRoot, "src-tauri", "src", "demos.rs"), "utf8");
 const warnings = [];
@@ -103,6 +120,11 @@ for (const d of srcDirs) {
     else fs.copyFileSync(path.join(srcRoot, d, f), dst);
     files++;
   }
+}
+for (const f of goldenNames) {
+  fs.mkdirSync(goldenDst, { recursive: true });
+  fs.writeFileSync(path.join(goldenDst, f), goldenContent(goldenSrc, f));
+  files++;
 }
 fs.writeFileSync(
   path.join(repoRoot, "engine-snapshot", "VERSION.json"),
