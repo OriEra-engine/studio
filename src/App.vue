@@ -13,7 +13,7 @@ const route = useRoute();
 const collapsed = ref(localStorage.getItem("oe.siderCollapsed") === "1");
 const palette = ref<InstanceType<typeof CommandPalette>>();
 
-/* 唯一 accent 体系：naive 全家（按钮/标签/输入框）与自绘组件同源取色 */
+/* ZCode 中性黑：naive 全家与自绘组件同一套灰阶；蓝只保留在主按钮/链接 */
 const themeOverrides: GlobalThemeOverrides = {
   common: {
     primaryColor: "#4f8ae8",
@@ -26,13 +26,14 @@ const themeOverrides: GlobalThemeOverrides = {
     infoColorSuppl: "#4f8ae8",
     borderRadius: "8px",
     borderRadiusSmall: "6px",
-    cardColor: "#141827",
-    modalColor: "#161b2c",
-    popoverColor: "#181d2e",
-    borderColor: "#2c3654",
-    dividerColor: "#1f2637",
-    inputColor: "#0a0d14",
-    tableColor: "#141827",
+    cardColor: "#141418",
+    modalColor: "#16161b",
+    popoverColor: "#1a1a20",
+    borderColor: "#30303a",
+    dividerColor: "#202027",
+    inputColor: "#0a0a0c",
+    tableColor: "#141418",
+    bodyColor: "#0b0b0e",
   },
 };
 

@@ -280,7 +280,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 
     <!-- 推荐方案 -->
     <NCard v-if="rec" :title="`🧠 ${rec.headline}`" size="small" style="margin-bottom: 14px">
-      <p style="color: #9aa2b8; font-size: 13px; line-height: 1.7; margin: 0 0 14px">{{ rec.detail }}</p>
+      <p style="color: #a0a0ab; font-size: 13px; line-height: 1.7; margin: 0 0 14px">{{ rec.detail }}</p>
       <NGrid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="c in rec.cloud" :key="c.kind" span="3 m:1">
           <div class="rec-card" :class="{ sel: form.kind === c.kind }" @click="pickCloud(c.kind, c.model, c.base)">
@@ -361,7 +361,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
           </div>
         </NGi>
       </NGrid>
-      <p style="color: #8a90a6; font-size: 11.5px; margin: 12px 0 0">
+      <p style="color: #71717c; font-size: 11.5px; margin: 12px 0 0">
         价格与免费额度以各厂商定价页为准(引擎不背书价格);任何 OpenAI 兼容端点也可在下方「其他 OpenAI 兼容」自由填写。
       </p>
     </NCard>
@@ -369,7 +369,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
     <!-- 任务槽位(v0.7.3 已接入运行时:对话/导演槽生效;行为/审校预留) -->
     <NCard size="small" style="margin-bottom: 14px">
       <template #header>🧭 任务槽位 <NTag size="tiny" type="success" round style="margin-left: 6px" :bordered="false">已接入运行时</NTag></template>
-      <p style="color: #9aa2b8; font-size: 12.5px; line-height: 1.7; margin: 0 0 12px">
+      <p style="color: #a0a0ab; font-size: 12.5px; line-height: 1.7; margin: 0 0 12px">
         按「任务」而非全局选模型:对话走 npc_dialog 槽、剧情推进走 director 槽(游戏与咖啡馆 demo 已生效);
         行为生成/生成审校为预留槽位。Key 留空=同厂商继承全局 Key(XLite 一 Key 多模型最顺手),
         跨厂商需填该槽自己的 Key,未填则运行时诚实回退全局模型。槽位表存本机(<code>oriera.routing.v1</code>),重开游戏生效。
@@ -428,14 +428,14 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       </NSpace>
       <div v-if="pulling">
         <NProgress :percentage="pullPercent ?? 0" processing indicator-placement="inside" />
-        <p style="color: #7c86a3; font-size: 12px; margin: 6px 0 0">{{ pullStatus }}</p>
+        <p style="color: #6f6f7a; font-size: 12px; margin: 6px 0 0">{{ pullStatus }}</p>
       </div>
-      <div v-if="gpuVram" style="margin-top: 8px; font-size: 12px; color: #8a93ad">
+      <div v-if="gpuVram" style="margin-top: 8px; font-size: 12px; color: #74747f">
         🎮 显存：{{ (gpuVram[0]/1024).toFixed(1) }} / {{ (gpuVram[1]/1024).toFixed(1) }} GB
         <NTag v-if="gpuVram[1] && gpuVram[0]/gpuVram[1] > 0.85" type="warning" size="tiny" round style="margin-left: 6px">占用偏高</NTag>
       </div>
       <div v-if="ollama?.models.length" style="margin-top: 10px">
-        <div style="font-size: 12px; color: #7c86a3; margin-bottom: 8px">本机模型（点击使用 / ✕ 删除）：</div>
+        <div style="font-size: 12px; color: #6f6f7a; margin-bottom: 8px">本机模型（点击使用 / ✕ 删除）：</div>
         <NSpace size="small">
           <div v-for="m in ollama.models" :key="m.name" class="model-pill">
             <span style="cursor: pointer" @click="useOllamaModel(m.name)">{{ m.name }}（{{ m.size_gb.toFixed(1) }}GB）</span>
@@ -465,7 +465,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
             </div>
             <div class="fld"><label>模型名称</label><NInput v-model:value="form.model" placeholder="例如 glm-4-flash" /></div>
             <div class="fld"><label>API Base URL</label><NInput v-model:value="form.base" placeholder="https://..." /></div>
-            <div class="fld"><label>API Key<span style="color:#8a90a6">（存入系统凭据管理器，不落盘）</span></label>
+            <div class="fld"><label>API Key<span style="color:#71717c">（存入系统凭据管理器，不落盘）</span></label>
               <NInput v-model:value="form.key" type="password" show-password-on="click" placeholder="粘贴密钥" /></div>
           </NSpace>
         </NGi>
@@ -491,32 +491,32 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 </template>
 
 <style scoped>
-.hw-item { background: #161a28; border-radius: 10px; padding: 10px 14px; }
-.hw-k { font-size: 11px; color: #7c86a3; margin-bottom: 4px; }
+.hw-item { background: #141418; border-radius: 10px; padding: 10px 14px; }
+.hw-k { font-size: 11px; color: #6f6f7a; margin-bottom: 4px; }
 .hw-v { font-size: 13px; color: #cdd6ec; }
-.rec-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 14px; cursor: pointer; height: 100%; transition: border-color .12s; }
-.rec-card:hover { border-color: #3a5e9e; }
-.rec-card.sel { border-color: #7eb8ff; background: #17223a; }
-.model-pill { display: inline-flex; align-items: center; gap: 8px; background: #161a28; border: 1px solid #2a3a5c; border-radius: 20px; padding: 4px 12px; font-size: 12px; }
-.model-pill:hover { border-color: #3a5e9e; }
-.model-del { cursor: pointer; color: #7c86a3; font-size: 11px; }
+.rec-card { background: #141418; border: 1.5px solid #202027; border-radius: 12px; padding: 14px; cursor: pointer; height: 100%; transition: border-color .12s; }
+.rec-card:hover { border-color: #3a3a46; }
+.rec-card.sel { border-color: #7eb8ff; background: #1a1a20; }
+.model-pill { display: inline-flex; align-items: center; gap: 8px; background: #141418; border: 1px solid #30303a; border-radius: 20px; padding: 4px 12px; font-size: 12px; }
+.model-pill:hover { border-color: #3a3a46; }
+.model-del { cursor: pointer; color: #6f6f7a; font-size: 11px; }
 .model-del:hover { color: #ff8f8f; }
 .rec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13.5px; }
-.rec-note { font-size: 12px; color: #8a93ad; line-height: 1.6; margin-bottom: 10px; }
+.rec-note { font-size: 12px; color: #74747f; line-height: 1.6; margin-bottom: 10px; }
 .rec-actions { display: flex; gap: 8px; }
 .rec-card:focus-visible, .model-pill-mini:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 2px; }
 .model-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
-.model-pill-mini { font-size: 11px; color: #aeb6cc; background: #10141f; border: 1px solid #2a3a5c; border-radius: 10px; padding: 1px 8px; cursor: pointer; }
-.model-pill-mini:hover { border-color: #3a5e9e; color: #9fd0ff; }
-.model-pill-mini.on { border-color: #7eb8ff; color: #9fd0ff; background: #17223a; }
+.model-pill-mini { font-size: 11px; color: #a8a8b3; background: #0e0e12; border: 1px solid #30303a; border-radius: 10px; padding: 1px 8px; cursor: pointer; }
+.model-pill-mini:hover { border-color: #3a3a46; color: #9fd0ff; }
+.model-pill-mini.on { border-color: #7eb8ff; color: #9fd0ff; background: #1a1a20; }
 .live-tag { color: #7ce38b; border-style: dashed; cursor: default; }
-.slot-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 12px; height: 100%; }
+.slot-card { background: #141418; border: 1.5px solid #202027; border-radius: 12px; padding: 12px; height: 100%; }
 .slot-card.slot-off { opacity: .55; }
 .slot-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-size: 13.5px; }
-.slot-id { font-size: 10.5px; color: #8a90a6; font-family: Consolas, monospace; }
-.slot-duty { font-size: 11.5px; color: #8a93ad; margin-bottom: 8px; }
-.slot-why { font-size: 11px; color: #8a90a6; margin-top: 8px; line-height: 1.55; }
+.slot-id { font-size: 10.5px; color: #71717c; font-family: Consolas, monospace; }
+.slot-duty { font-size: 11.5px; color: #74747f; margin-bottom: 8px; }
+.slot-why { font-size: 11px; color: #71717c; margin-top: 8px; line-height: 1.55; }
 .slot-fb { font-size: 10.5px; color: #e6a23c; margin-top: 6px; }
-.fld label { display: block; font-size: 12px; color: #8a93ad; margin-bottom: 6px; }
+.fld label { display: block; font-size: 12px; color: #74747f; margin-bottom: 6px; }
 .fld { margin-bottom: 10px; }
 </style>

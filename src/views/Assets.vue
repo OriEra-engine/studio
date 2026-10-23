@@ -119,7 +119,7 @@ onMounted(refresh);
       <template #header>✨ 生成插画</template>
       <template #header-extra>
         <NSpace size="small" align="center">
-          <span style="font-size: 12px; color: #8a90a6">挂到项目</span>
+          <span style="font-size: 12px; color: #71717c">挂到项目</span>
           <NSelect
             v-model:value="targetProject" size="small" style="width: 220px"
             :options="projects.map(p => ({ label: p.name, value: p.id }))"
@@ -137,7 +137,7 @@ onMounted(refresh);
         <NButton type="primary" :loading="generating" @click="generate">
           {{ generating ? "生成中（约 10-20 秒）…" : "✨ 生成插画" }}
         </NButton>
-        <span style="font-size: 12px; color: #8a90a6">
+        <span style="font-size: 12px; color: #71717c">
           智谱 CogView · cogview-3-flash 免费档 · 需在模型中心配置智谱 Key
         </span>
       </NSpace>
@@ -166,7 +166,7 @@ onMounted(refresh);
           {{ meshGenerating ? "生成中（约 1-3 分钟）…" : "🧊 生成 3D 模型" }}
         </NButton>
       </NSpace>
-      <p style="font-size: 12px; color: #8a90a6; margin: 8px 0 0">
+      <p style="font-size: 12px; color: #71717c; margin: 8px 0 0">
         生成 GLB 模型入库；挂进场景随素材中心 M2（换肤/角色槽）跟进。
       </p>
     </NCard>
@@ -210,8 +210,8 @@ onMounted(refresh);
 <style scoped>
 .asset-card :deep(.n-card-cover) { height: 160px; overflow: hidden; }
 .asset-thumb { width: 100%; height: 160px; object-fit: cover; display: block; }
-.asset-empty { display: flex; align-items: center; justify-content: center; color: #5f6b8a; font-size: 12px; background: #10141f; }
-.asset-mesh { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 160px; background: linear-gradient(160deg, #16233f, #10141f); }
-.asset-prompt { font-size: 12px; color: #8a90a6; line-height: 1.5; margin: 0 0 8px;
+.asset-empty { display: flex; align-items: center; justify-content: center; color: #55555f; font-size: 12px; background: #0e0e12; }
+.asset-mesh { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 160px; background: linear-gradient(160deg, #16233f, #0e0e12); }
+.asset-prompt { font-size: 12px; color: #71717c; line-height: 1.5; margin: 0 0 8px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>

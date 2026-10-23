@@ -79,7 +79,7 @@ function hueOf(seed: string): number {
 }
 function packStyle(id: string) {
   const h = hueOf(id);
-  return { background: `linear-gradient(160deg, hsl(${h} 45% 20%) 0%, #161a28 78%)` };
+  return { background: `linear-gradient(160deg, hsl(${h} 45% 20%) 0%, #141418 78%)` };
 }
 
 function pickPack(id: string) {
@@ -231,7 +231,7 @@ const canNext = computed(() => {
     <!-- 第一步：玩法 -->
     <template v-if="step === 1">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
-        <span style="color: #7c86a3; font-size: 12.5px">
+        <span style="color: #6f6f7a; font-size: 12.5px">
           内置 {{ packs.length }} 个玩法包{{ userPackCount ? ` · 已加载你的 ${userPackCount} 个` : '' }}
         </span>
         <NButton size="small" secondary @click="importPack">📦 导入玩法包</NButton>
@@ -252,7 +252,7 @@ const canNext = computed(() => {
       </NGrid>
       <NCard v-if="pack" size="small" style="margin-top: 16px">
         <b>{{ pack.emoji }} {{ pack.name }}</b> — {{ pack.desc }}
-        <div style="color: #8a93ad; font-size: 12.5px; margin-top: 8px">核心循环：{{ pack.core_loop.join(' → ') }}</div>
+        <div style="color: #74747f; font-size: 12.5px; margin-top: 8px">核心循环：{{ pack.core_loop.join(' → ') }}</div>
       </NCard>
     </template>
 
@@ -292,7 +292,7 @@ const canNext = computed(() => {
                 ✨ {{ aiStreaming ? '生成中…' : providerReady ? 'AI 生成定制剧情' : 'AI 定制（先在第 3 步配置模型）' }}
               </NButton>
               <NButton v-if="aiStreaming" size="small" quaternary type="error" @click="stopAi">■ 停止</NButton>
-              <span style="color: #8a90a6; font-size: 12px">使用模型：{{ providerModel || '未配置' }}</span>
+              <span style="color: #71717c; font-size: 12px">使用模型：{{ providerModel || '未配置' }}</span>
             </div>
             <p v-if="frameworkId !== 'pack-default' && appliedFramework !== frameworkId" style="color: #e8a35c; font-size: 12px; margin: 10px 0 0">
               ⚠️ 已选「{{ framework?.name }}」但尚未应用——下方节拍仍是模板默认（三幕式）。点上方「AI 生成」后生效。
@@ -355,8 +355,8 @@ const canNext = computed(() => {
               <NCheckbox v-model:checked="agentSel[a.name]" style="margin-right: 8px" />
               <b>{{ a.name }}</b> <NTag size="tiny" round style="margin-left: 6px">{{ a.role }}</NTag>
             </template>
-            <p style="color: #9aa2b8; font-size: 12.5px; line-height: 1.65">{{ a.persona }}</p>
-            <p style="color: #7c86a3; font-size: 12px; margin-top: 8px">情绪：{{ a.mood }}</p>
+            <p style="color: #a0a0ab; font-size: 12.5px; line-height: 1.65">{{ a.persona }}</p>
+            <p style="color: #6f6f7a; font-size: 12px; margin-top: 8px">情绪：{{ a.mood }}</p>
             <p class="first-line">「{{ a.first_line }}」</p>
           </NCard>
         </NGi>
@@ -383,7 +383,7 @@ const canNext = computed(() => {
               🚀 生成游戏原型并运行
             </NButton>
           </NSpin>
-          <p style="color: #8a90a6; font-size: 12px">
+          <p style="color: #71717c; font-size: 12px">
             生成后自动在新窗口运行；也可到「我的项目」随时再次打开。原型 = Three.js 3D 场景 + AI NPC + 剧情导演，可在项目目录继续改造。
           </p>
         </NSpace>
@@ -400,33 +400,33 @@ const canNext = computed(() => {
 </template>
 
 <style scoped>
-.stream-pane { background: #10141f; border: 1px solid #232a3d; border-radius: 10px; padding: 12px 14px; }
-.stream-text { font-family: inherit; font-size: 12.5px; color: #aeb6cc; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 260px; overflow-y: auto; }
-.stream-hint { color: #5f6b8a; font-size: 11.5px; margin: 8px 0 0; }
+.stream-pane { background: #0e0e12; border: 1px solid #202027; border-radius: 10px; padding: 12px 14px; }
+.stream-text { font-family: inherit; font-size: 12.5px; color: #a8a8b3; line-height: 1.7; white-space: pre-wrap; word-break: break-word; margin: 0; max-height: 260px; overflow-y: auto; }
+.stream-hint { color: #55555f; font-size: 11.5px; margin: 8px 0 0; }
 .pack-card:focus-visible, .fw-item:focus-visible, .theme-chip:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 2px; }
-.pack-card { background: #161a28; border: 1.5px solid #232a3d; border-radius: 12px; padding: 14px 12px; cursor: pointer; height: 100%; transition: all .12s; }
-.pack-card:hover { border-color: #3a5e9e; transform: translateY(-2px); }
-.pack-card.sel { border-color: #7eb8ff; background: #17223a; }
+.pack-card { background: #141418; border: 1.5px solid #202027; border-radius: 12px; padding: 14px 12px; cursor: pointer; height: 100%; transition: all .12s; }
+.pack-card:hover { border-color: #3a3a46; transform: translateY(-2px); }
+.pack-card.sel { border-color: #7eb8ff; background: #1a1a20; }
 .pack-emoji { font-size: 26px; margin-bottom: 6px; }
 .pack-name { font-weight: 700; font-size: 14px; }
-.pack-tagline { color: #8a93ad; font-size: 11.5px; margin: 4px 0 8px; line-height: 1.5; }
+.pack-tagline { color: #74747f; font-size: 11.5px; margin: 4px 0 8px; line-height: 1.5; }
 .pack-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-.fw-item { background: #161a28; border: 1.5px solid #232a3d; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; font-size: 13px; }
-.fw-item:hover { border-color: #3a5e9e; }
-.fw-item.sel { border-color: #7eb8ff; background: #17223a; }
-.fw-desc { color: #8a93ad; font-size: 11.5px; line-height: 1.55; margin-top: 4px; }
+.fw-item { background: #141418; border: 1.5px solid #202027; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; font-size: 13px; }
+.fw-item:hover { border-color: #3a3a46; }
+.fw-item.sel { border-color: #7eb8ff; background: #1a1a20; }
+.fw-desc { color: #74747f; font-size: 11.5px; line-height: 1.55; margin-top: 4px; }
 .fw-phases { color: #5f7ba8; font-size: 10.5px; margin-top: 6px; }
-.beat-line { padding: 8px 0; border-bottom: 1px dashed #232a3d; font-size: 13px; display: flex; gap: 10px; align-items: baseline; }
+.beat-line { padding: 8px 0; border-bottom: 1px dashed #202027; font-size: 13px; display: flex; gap: 10px; align-items: baseline; }
 .beat-line:last-child { border-bottom: none; }
-.beat-ph { color: #7c86a3; font-size: 11px; flex: none; width: 70px; }
-.beat-ds { color: #8a93ad; font-size: 12px; }
+.beat-ph { color: #6f6f7a; font-size: 11px; flex: none; width: 70px; }
+.beat-ds { color: #74747f; font-size: 12px; }
 .agentoff { opacity: .45; }
 .first-line { color: #9fc3ff; font-size: 12.5px; margin-top: 10px; line-height: 1.6; }
-.fld-label { display: block; font-size: 12px; color: #8a93ad; margin-bottom: 6px; }
-.summary { font-size: 13px; color: #9aa2b8; line-height: 2.1; background: #161a28; border-radius: 10px; padding: 14px 16px; }
-.theme-chip { background: #161a28; border: 1.5px solid #232a3d; border-radius: 10px; padding: 10px 18px; cursor: pointer; text-align: center; }
-.theme-chip:hover { border-color: #3a5e9e; }
-.theme-chip.sel { border-color: #7eb8ff; background: #17223a; }
+.fld-label { display: block; font-size: 12px; color: #74747f; margin-bottom: 6px; }
+.summary { font-size: 13px; color: #a0a0ab; line-height: 2.1; background: #141418; border-radius: 10px; padding: 14px 16px; }
+.theme-chip { background: #141418; border: 1.5px solid #202027; border-radius: 10px; padding: 10px 18px; cursor: pointer; text-align: center; }
+.theme-chip:hover { border-color: #3a3a46; }
+.theme-chip.sel { border-color: #7eb8ff; background: #1a1a20; }
 .theme-name { font-size: 13.5px; font-weight: 700; }
-.theme-desc { font-size: 11px; color: #7c86a3; margin-top: 3px; }
+.theme-desc { font-size: 11px; color: #6f6f7a; margin-top: 3px; }
 </style>

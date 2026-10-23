@@ -138,7 +138,7 @@ cargo run -p oriera-pc`;
 
     <NCard title="🧑‍💻 开发者模式" size="small" style="margin-bottom: 14px">
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px">
-        <p style="color: #9aa2b8; font-size: 13px; line-height: 1.8; margin: 0">
+        <p style="color: #a0a0ab; font-size: 13px; line-height: 1.8; margin: 0">
           开启后，新打开的 demo / 游戏窗口会自动附带 DevTools（检查元素、看控制台）。
           所有窗口可用 <b>F5</b> 刷新（改了项目文件后刷新即生效）。
         </p>
@@ -148,7 +148,7 @@ cargo run -p oriera-pc`;
 
     <NCard title="📮 反馈直达引擎仓库" size="small" style="margin-bottom: 14px">
       <template #header-extra><NTag type="info" size="small" round>github.com/OriEra-engine/engine</NTag></template>
-      <p style="color: #9aa2b8; font-size: 13px; line-height: 1.8; margin: 0 0 10px">
+      <p style="color: #a0a0ab; font-size: 13px; line-height: 1.8; margin: 0 0 10px">
         使用中遇到问题、有功能建议，直接从这里反馈给 OriEra 世界引擎仓库。
         提交时会自动附带环境信息（版本 / 系统 / GPU），方便定位问题。
       </p>
@@ -167,8 +167,8 @@ cargo run -p oriera-pc`;
             {{ fbHasPat ? '直提通道：已配置（点击管理）' : '协作者？配置直提通道' }}
           </NButton>
         </NSpace>
-        <div v-if="fbShowPat" style="background: #0d1017; border: 1px solid #232a3d; border-radius: 10px; padding: 12px">
-          <p style="color: #7c86a3; font-size: 12px; line-height: 1.7; margin: 0 0 8px">
+        <div v-if="fbShowPat" style="background: #0a0a0c; border: 1px solid #202027; border-radius: 10px; padding: 12px">
+          <p style="color: #6f6f7a; font-size: 12px; line-height: 1.7; margin: 0 0 8px">
             配置 GitHub Personal Access Token（需对 OriEra-engine/engine 有建 issue 权限）后，
             反馈将一键直提仓库，不再跳浏览器。Token 只存本机凭据管理器，不随项目/反馈外泄。
           </p>
@@ -191,7 +191,7 @@ cargo run -p oriera-pc`;
     </NCard>
 
     <NCard title="🛠️ 引擎源码开发引导（Rust）" size="small" style="margin-bottom: 14px">
-      <p style="color: #9aa2b8; font-size: 13px; line-height: 1.8; margin: 0 0 12px">
+      <p style="color: #a0a0ab; font-size: 13px; line-height: 1.8; margin: 0 0 12px">
         进阶用户可获取引擎 Rust 源码、参与引擎开发。全程走国内镜像（rsproxy / gitee），
         <b>无需科学上网</b>。需要约 10GB 磁盘与一定命令行基础。
       </p>
@@ -199,7 +199,7 @@ cargo run -p oriera-pc`;
     </NCard>
 
     <NCard title="ℹ️ 关于" size="small">
-      <p style="color: #8a93ad; font-size: 12.5px; line-height: 1.8; margin: 0">
+      <p style="color: #74747f; font-size: 12.5px; line-height: 1.8; margin: 0">
         OriEra Studio v{{ APP_VERSION }} —— OriEra 世界引擎的开箱即用桌面工作台。<br />
         生成的游戏原型为 Three.js 3D 场景 + AI NPC + 剧情导演系统的「可运行原型」，
         引擎完整渲染内核（L5/wgpu）仍在路线图中，届时原型可平滑升级。
@@ -220,8 +220,8 @@ cargo run -p oriera-pc`;
 
 <style scoped>
 .kv { display: flex; gap: 12px; font-size: 13px; align-items: baseline; }
-.kv span { color: #7c86a3; width: 70px; flex: none; }
+.kv span { color: #6f6f7a; width: 70px; flex: none; }
 .kv code { font-size: 12px; color: #9fc3ff; word-break: break-all; }
-.dev-script { background: #0d1017; border: 1px solid #232a3d; border-radius: 10px; padding: 14px;
+.dev-script { background: #0a0a0c; border: 1px solid #202027; border-radius: 10px; padding: 14px;
   font-size: 12px; line-height: 1.7; color: #cdd6ec; overflow-x: auto; white-space: pre-wrap; }
 </style>
