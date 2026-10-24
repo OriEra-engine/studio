@@ -203,6 +203,14 @@ export const api = {
       key,
       base: base ?? null,
     }),
+  generateVideo: (prompt: string, key: string, base?: string, model?: string, ratio?: string) =>
+    invoke<{ id: string; file: string; prompt: string; created: string; kind: string }>("generate_video_command", {
+      prompt,
+      key,
+      base: base ?? null,
+      model: model ?? null,
+      ratio: ratio ?? null,
+    }),
   deleteAsset: (id: string) => invoke<void>("delete_asset", { id }),
   addAssetToProject: (assetId: string, projectId: string) =>
     invoke<void>("add_asset_to_project", { assetId, projectId }),

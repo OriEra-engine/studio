@@ -22,6 +22,12 @@ const meshPrompt = ref("");
 const rodinKey = ref(localStorage.getItem("oe.rodinKey") || "");
 const rodinBase = ref(localStorage.getItem("oe.rodinBase") || "");
 const meshGenerating = ref(false);
+// Seedance 文生视频（key 只进 localStorage 与本次请求，不入配置文件）
+const videoPrompt = ref("");
+const arkKey = ref(localStorage.getItem("oe.arkKey") || "");
+const videoModel = ref<string>("doubao-seedance-2-0-mini-260615");
+const videoRatio = ref<string>("16:9");
+const videoGenerating = ref(false);
 const assets = ref<AssetMeta[]>([]);
 const port = ref<number | null>(null);
 const projects = ref<ProjectMeta[]>([]);
@@ -82,6 +88,24 @@ async function generateMesh() {
     message.error(String(e));
   } finally {
     meshGenerating.value = false;
+  }
+}
+
+async function generateVideo() {
+  const p = videoPrompt.value.trim();
+  if (!p) return message.warning("先描述你想要的镜头（例如：雨夜地铁站台空镜，镜头缓推，霓虹反射在湿地面上）");
+  if (!arkKey.value.trim()) return message.warning("先填入火山方舟 API Key（console.volcengine.com/ark 控制台创建）");
+  videoGenerating.value = true;
+  try {
+    localStorage.setItem("oe.arkKey", arkKey.value.trim());
+    const meta = await api.generateVideo(p, arkKey.value.trim(), undefined, videoModel.value, videoRatio.value);
+    message.success("视频已生成并入库（MP4，无水印）");
+    videoPrompt.value = "";
+    await refresh();
+  } catch (e) {
+    message.error(String(e));
+  } finally {
+    videoGenerating.value = false;
   }
 }
 
@@ -171,6 +195,41 @@ onMounted(refresh);
       </p>
     </NCard>
 
+    <NCard size="small" style="margin-bottom: 16px">
+      <template #header>🎬 生成视频（火山方舟 Seedance）</template>
+      <NInput
+        v-model:value="videoPrompt" type="textarea" :rows="2"
+        placeholder="描述镜头：例如「深夜空旷地铁站台，雨从通风口斜飘，镜头缓慢下摇，湿地面反射霓虹，电影感青蓝色调」"
+        @keydown.enter.exact.prevent="generateVideo"
+      />
+      <NSpace style="margin-top: 10px" align="center" :wrap="false">
+        <NInput
+          v-model:value="arkKey" type="password" show-password-on="click"
+          placeholder="方舟 API Key（只存在本机浏览器）" style="max-width: 250px"
+        />
+        <NSelect
+          v-model:value="videoModel" size="small" style="width: 200px"
+          :options="[
+            { label: '2.0-mini 草稿档（约¥2.5/5s）', value: 'doubao-seedance-2-0-mini-260615' },
+            { label: '2.5 高光档（约¥8.4/5s）', value: 'doubao-seedance-2-5-260628' },
+          ]"
+        />
+        <NSelect
+          v-model:value="videoRatio" size="small" style="width: 110px"
+          :options="[
+            { label: '16:9 横屏', value: '16:9' },
+            { label: '9:16 竖屏', value: '9:16' },
+          ]"
+        />
+        <NButton type="primary" :loading="videoGenerating" @click="generateVideo">
+          {{ videoGenerating ? "生成中（实测约 1.5-3.5 分钟）…" : "🎬 生成视频" }}
+        </NButton>
+      </NSpace>
+      <p style="font-size: 12px; color: #71717c; margin: 8px 0 0">
+        5 秒 720p 无水印 MP4 入库；开通 Seedance 需方舟账户余额 ≥200 元（wire 实测见 interfilm/docs/R0-report.md）。
+      </p>
+    </NCard>
+
     <NSpin :show="false">
       <NEmpty v-if="assets.length === 0" description="还没有资产——在上面输入描述生成第一张吧" style="margin: 40px 0" />
       <NGrid v-else :cols="4" :x-gap="14" :y-gap="14" responsive="screen" item-responsive>
@@ -181,12 +240,14 @@ onMounted(refresh);
                 <span style="font-size: 34px">🧊</span>
                 <span style="font-size: 11px; color: #6fd3a0">GLB · {{ a.file.split('/').pop() }}</span>
               </div>
+              <video v-else-if="a.kind === 'video' && port" :src="assetUrl(a.file)"
+                class="asset-thumb" controls preload="metadata" muted />
               <img v-else-if="port" :src="assetUrl(a.file)" class="asset-thumb" :alt="a.prompt" loading="lazy" />
               <div v-else class="asset-thumb asset-empty">内置服务未就绪</div>
             </template>
             <p class="asset-prompt" :title="a.prompt">{{ a.prompt }}</p>
             <NSpace size="small" justify="end">
-              <template v-if="a.kind !== 'mesh'">
+              <template v-if="a.kind !== 'mesh' && a.kind !== 'video'">
                 <NSelect
                   size="tiny" style="width: 130px" placeholder="挂到项目"
                   :options="projects.map(p => ({ label: p.name, value: p.id }))"
@@ -194,6 +255,7 @@ onMounted(refresh);
                 />
                 <NButton size="tiny" :loading="busyId === a.id" @click="addToProject(a)">挂载</NButton>
               </template>
+              <NTag v-else-if="a.kind === 'video'" size="tiny" type="warning" round>视频镜头</NTag>
               <NTag v-else size="tiny" type="success" round>3D 模型</NTag>
               <NPopconfirm @positive-click="remove(a)">
                 <template #trigger><NButton size="tiny" quaternary type="error">删除</NButton></template>
