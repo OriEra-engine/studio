@@ -74,6 +74,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { key: "new-game", to: "/new-game", label: "新建游戏", activeNames: ["new-game"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' },
       { key: "demos", to: "/demos", label: "Demo 演示厅", activeNames: ["demos"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg>' },
       { key: "projects", to: "/projects", label: "我的项目", activeNames: ["projects", "editor"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>' },
+      { key: "film", to: "/film", label: "影游工坊", activeNames: ["film"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 5v14M17 5v14M2 12h20"/></svg>' },
     ],
   },
   {

@@ -109,6 +109,38 @@ async function generateVideo() {
   }
 }
 
+// 批量镜头量产：每行一个 prompt，串行生成 + 成本估算（实测价位 mini≈¥2.5 / 2.5≈¥8.4 每 5s@720p）
+const batchText = ref("");
+const batchModel = ref<string>("doubao-seedance-2-0-mini-260615");
+const batchRatio = ref<string>("16:9");
+const batchRunning = ref(false);
+const batchDone = ref(0);
+const batchFail = ref<string[]>([]);
+const batchCost = ref(0);
+const UNIT: Record<string, number> = {
+  "doubao-seedance-2-0-mini-260615": 2.5,
+  "doubao-seedance-2-5-260628": 8.4,
+};
+async function runBatch() {
+  const lines = batchText.value.split("\n").map(x => x.trim()).filter(Boolean);
+  if (!lines.length) return message.warning("每行粘贴一个镜头描述");
+  if (!arkKey.value.trim()) return message.warning("先填入火山方舟 API Key");
+  localStorage.setItem("oe.arkKey", arkKey.value.trim());
+  batchRunning.value = true; batchDone.value = 0; batchFail.value = []; batchCost.value = 0;
+  for (const [i, line] of lines.entries()) {
+    try {
+      await api.generateVideo(line, arkKey.value.trim(), undefined, batchModel.value, batchRatio.value);
+      batchDone.value++;
+      batchCost.value += UNIT[batchModel.value] ?? 0;
+    } catch (e) {
+      batchFail.value.push(`第${i + 1}行: ${String(e).slice(0, 80)}`);
+    }
+    await refresh();
+  }
+  batchRunning.value = false;
+  message.success(`批量完成：${batchDone.value}/${lines.length} 条入库，估算 ≈¥${batchCost.value.toFixed(1)}`);
+}
+
 async function addToProject(a: AssetMeta) {
   if (!targetProject.value) return message.warning("先在右上角选择目标项目");
   busyId.value = a.id;
@@ -227,6 +259,33 @@ onMounted(refresh);
       </NSpace>
       <p style="font-size: 12px; color: #71717c; margin: 8px 0 0">
         5 秒 720p 无水印 MP4 入库；开通 Seedance 需方舟账户余额 ≥200 元（wire 实测见 interfilm/docs/R0-report.md）。
+      </p>
+    </NCard>
+
+    <NCard size="small" style="margin-bottom: 16px">
+      <template #header>🎞️ 批量镜头量产</template>
+      <NInput
+        v-model:value="batchText" type="textarea" :rows="4"
+        placeholder="每行一个镜头，例如：\n深夜空旷地铁站台，雨从通风口斜飘，镜头缓慢下摇\n车厢尽头黑衣人剪影，黑伞拄地，暖黄顶灯闪烁"
+      />
+      <NSpace style="margin-top: 10px" align="center" :wrap="false">
+        <NSelect v-model:value="batchModel" size="small" style="width: 200px"
+          :options="[
+            { label: '2.0-mini 草稿档（≈¥2.5/条）', value: 'doubao-seedance-2-0-mini-260615' },
+            { label: '2.5 高光档（≈¥8.4/条，闲时约55%）', value: 'doubao-seedance-2-5-260628' },
+          ]" />
+        <NSelect v-model:value="batchRatio" size="small" style="width: 110px"
+          :options="[{ label: '16:9 横屏', value: '16:9' }, { label: '9:16 竖屏', value: '9:16' }]" />
+        <NButton type="primary" :loading="batchRunning" @click="runBatch">
+          {{ batchRunning ? `生成中 ${batchDone.value}…（每条约 2-4 分钟）` : "🎞️ 开跑批量" }}
+        </NButton>
+        <span v-if="batchCost" style="font-size: 12px; color: #ff9a3c">已入账 ≈¥{{ batchCost.toFixed(1) }}</span>
+      </NSpace>
+      <div v-if="batchFail.length" style="font-size: 12px; color: #e5484d; margin-top: 6px">
+        失败 {{ batchFail.length }} 条：{{ batchFail.slice(0, 3).join("；") }}
+      </div>
+      <p style="font-size: 12px; color: #71717c; margin: 8px 0 0">
+        串行提交防限流；夜间闲时跑 2.5 档约省 45%。单条失败自动继续，结束汇总。
       </p>
     </NCard>
 
