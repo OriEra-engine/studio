@@ -134,3 +134,54 @@ pub async fn import_gameplay_pack(app: AppHandle) -> Result<String, String> {
         .join("、");
     Ok(format!("已导入玩法包：{label}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 评审 R2 PM-P0：内置包曾因 last-platform-filmgame 的 story_beats
+    /// 写成字符串数组（其余模板为 {phase,title,desc}）导致向导第 5 步
+    /// 被 serde 拒——金路径断裂且内置包从不跑 validate_pack。此测试把
+    /// 全部内置包钉进 CI：任何形状漂移立即红。
+    #[test]
+    fn every_builtin_pack_passes_validate_pack() {
+        let v: Value = serde_json::from_str(BUILTIN).expect("templates-builtin.json 合法 JSON");
+        let packs = v["gameplay"].as_array().expect("gameplay 数组");
+        assert!(packs.len() >= 17, "内置包数量异常: {}", packs.len());
+        for p in packs {
+            validate_pack(p).unwrap_or_else(|e| {
+                panic!("内置包 {} 校验失败: {e}", p["id"].as_str().unwrap_or("?"))
+            });
+        }
+        let fw = v["story_frameworks"].as_array().expect("story_frameworks 数组");
+        assert!(!fw.is_empty(), "story_frameworks 不得为空");
+    }
+
+    /// 双源漂移陷阱（QA-P1）：内置 JSON 与前端 gameplay-packs.ts 的包 id
+    /// 集合必须一致——export-templates.mjs 以 ts 为真源重打包，缺 id 即
+    /// 静默删模板。
+    #[test]
+    fn builtin_ids_match_frontend_packs() {
+        let v: Value = serde_json::from_str(BUILTIN).unwrap();
+        let mut rust_ids: Vec<String> = v["gameplay"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p["id"].as_str().map(str::to_string))
+            .collect();
+        rust_ids.sort();
+        // 前端单源在仓库内相对路径（src/data/gameplay-packs.ts）
+        let ts = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../src/data/gameplay-packs.ts"
+        ))
+        .expect("读 gameplay-packs.ts");
+        let mut ts_ids: Vec<String> = ts
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("id: ""))
+            .filter_map(|l| l.split('"').next().map(str::to_string))
+            .collect();
+        ts_ids.sort();
+        assert_eq!(rust_ids, ts_ids, "内置 JSON 与前端包 id 集合漂移");
+    }
+}
