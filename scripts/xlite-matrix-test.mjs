@@ -1,11 +1,20 @@
 // XLite × OriEra 引擎全模型矩阵测试
 // 用真实 kernel.js HttpChatProvider（与游戏运行时同一代码路径）逐模型调用，
 // 通过包装 globalThis.fetch 捕获每请求的 usage 与延迟。
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 
-const KERNEL = "C:/Users/Lenovo/.zcode/workspace/default/oriera-studio/engine-snapshot/examples/11-ai-cafe/engine/kernel.js";
-const KEY = "sk-REDACTED";
+// Key 由使用者本地注入，不写入仓库：
+//   PowerShell:  $env:XLITE_API_KEY = "你的key"
+//   Git Bash:    export XLITE_API_KEY=你的key
+const KEY = process.env.XLITE_API_KEY ?? "";
+if (!KEY) {
+  console.error("缺少 XLite API Key：请先在本地设置环境变量 XLITE_API_KEY 再运行。");
+  process.exit(1);
+}
+// 引擎内核默认取本仓库内快照，可用 XLITE_KERNEL 覆盖。
+const KERNEL = process.env.XLITE_KERNEL
+  ?? fileURLToPath(new URL("../engine-snapshot/examples/11-ai-cafe/engine/kernel.js", import.meta.url));
 const BASE = "https://xlite.dezai.com/v1";
 
 // ---- 捕获层：记录每个请求的裸数据 ----
@@ -152,5 +161,5 @@ console.log("\n（引擎 stats.token 计数走 wire 里的 usage.total_tokens �
   wire.reduce((a, w) => a + (w.usage?.total || 0), 0), "）");
 
 import { writeFileSync } from "node:fs";
-writeFileSync("C:/Users/Lenovo/.zcode/workspace/default/oriera-studio/scripts/xlite-matrix-report.json", JSON.stringify({ report, wire }, null, 1));
+writeFileSync(fileURLToPath(new URL("./xlite-matrix-report.json", import.meta.url)), JSON.stringify({ report, wire }, null, 1));
 console.log("\n完整报告: scripts/xlite-matrix-report.json");

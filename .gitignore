@@ -8,3 +8,7 @@ portable/
 scripts/xlite-matrix-report*.json
 scripts/proxy-vs-direct.json
 out/
+
+# 本地密钥与环境文件，不入仓
+.env
+.env.local
