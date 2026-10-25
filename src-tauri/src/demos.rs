@@ -43,10 +43,80 @@ pub fn catalog() -> Vec<DemoInfo> {
         .collect()
 }
 
+/// 用户 demo 清单（%APPDATA%/cn.oriera.studio/demos/<id>/demo.json）。
+/// 与内置同字段 + entry（入口相对路径，默认 index.html）——影游工作流的
+/// 导出 zip 解压进来配一份 manifest 即可上架 Demo 厅。
+#[derive(Debug, Clone, serde::Deserialize)]
+struct UserDemo {
+    title: String,
+    desc: String,
+    tag: String,
+    #[serde(default)]
+    featured: bool,
+    #[serde(default = "default_entry")]
+    entry: String,
+}
+
+fn default_entry() -> String {
+    "index.html".into()
+}
+
+pub fn user_demos_dir(app: &AppHandle) -> std::path::PathBuf {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("demos")
+}
+
+fn user_entry(app: &AppHandle, id: &str) -> Option<String> {
+    let manifest = user_demos_dir(app).join(id).join("demo.json");
+    let text = std::fs::read_to_string(manifest).ok()?;
+    let ud: UserDemo = serde_json::from_str(&text).ok()?;
+    Some(ud.entry.trim_matches('/').to_string())
+}
+
+/// 内置 + 用户合并目录。用户 id 与内置冲突时内置优先（不可被覆盖）。
+fn catalog_merged(app: &AppHandle) -> Vec<DemoInfo> {
+    let mut out = catalog();
+    out.extend(scan_user_dir(&user_demos_dir(app), &out));
+    out
+}
+
+fn scan_user_dir(dir: &std::path::Path, builtin: &[DemoInfo]) -> Vec<DemoInfo> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    entries.sort();
+    let mut out = Vec::new();
+    for path in entries {
+        let Some(id) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !path.is_dir() || builtin.iter().any(|b| b.id == id) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(path.join("demo.json")) else {
+            continue;
+        };
+        let Ok(ud) = serde_json::from_str::<UserDemo>(&text) else {
+            continue;
+        };
+        out.push(DemoInfo {
+            id: id.to_string(),
+            title: ud.title,
+            desc: ud.desc,
+            tag: ud.tag,
+            featured: ud.featured,
+        });
+    }
+    out
+}
 
 #[tauri::command]
-pub fn list_demos() -> Vec<DemoInfo> {
-    catalog()
+pub fn list_demos(app: AppHandle) -> Vec<DemoInfo> {
+    catalog_merged(&app)
 }
 
 #[tauri::command]
@@ -55,21 +125,23 @@ pub fn open_demo(
     state: State<'_, crate::AppState>,
     folder: String,
 ) -> Result<(), String> {
-    // 目录名白名单校验，杜绝路径穿越
-    let valid = catalog().iter().any(|d| d.id == folder);
-    if !valid {
+    // 白名单校验（内置表 + 用户 manifest），杜绝路径穿越
+    let merged = catalog_merged(&app);
+    let Some(demo) = merged.iter().find(|d| d.id == folder) else {
         return Err(format!("unknown demo: {folder}"));
+    };
+
+    // 用户 demo（manifest 有 entry 者）走 /demos/{id}/{entry}；内置走引擎快照
+    let user_entry = user_entry(&app, &folder);
+    let url: tauri::Url = if let Some(entry) = &user_entry {
+        format!("http://oriera.localhost/demos/{}/{}", folder, entry)
+    } else {
+        format!("http://oriera.localhost/examples/{}/", folder)
     }
+    .parse()
+    .map_err(|e| format!("bad url: {e}"))?;
 
-    let url: tauri::Url = format!("http://oriera.localhost/examples/{}/", folder)
-        .parse()
-        .map_err(|e| format!("bad url: {e}"))?;
-
-    let title = catalog()
-        .iter()
-        .find(|d| d.id == folder)
-        .map(|d| format!("OriEra · {}", d.title))
-        .unwrap_or_else(|| "OriEra Demo".to_string());
+    let title = format!("OriEra · {}", demo.title);
 
     let label = format!("demo-{folder}");
     // 已存在同名窗口则先关闭，保证注入脚本重新生效
@@ -77,10 +149,18 @@ pub fn open_demo(
         let _ = w.close();
     }
 
-    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.clone()))
-        .title(&title)
-        .inner_size(1280.0, 860.0)
-        .min_inner_size(960.0, 640.0);
+    // 用户上传多为竖屏影游（工作流导出物），给手机比例窗口
+    let mut builder = if user_entry.is_some() {
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.clone()))
+            .title(&title)
+            .inner_size(560.0, 940.0)
+            .min_inner_size(420.0, 720.0)
+    } else {
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.clone()))
+            .title(&title)
+            .inner_size(1280.0, 860.0)
+            .min_inner_size(960.0, 640.0)
+    };
     // 同 open_project：不挂 initialization_script，避免新版 WebView2 吞初始导航
     let win = builder.build().map_err(|e| e.to_string())?;
     // 同 open_project：新版 WebView2 下显式补导航，防 about:blank 空窗
@@ -91,6 +171,71 @@ pub fn open_demo(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_root(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("oriera-demos-test-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn user_demo_manifest_defaults_entry() {
+        let json = r#"{"title":"末班站台","desc":"互动影游","tag":"影游"}"#;
+        let ud: UserDemo = serde_json::from_str(json).unwrap();
+        assert_eq!(ud.entry, "index.html");
+        assert!(!ud.featured);
+        let json2 = r#"{"title":"x","desc":"y","tag":"t","featured":true,"entry":"player/"}"#;
+        let ud2: UserDemo = serde_json::from_str(json2).unwrap();
+        assert_eq!(ud2.entry, "player/");
+        assert!(ud2.featured);
+    }
+
+    #[test]
+    fn user_demo_scan_merges_skips_builtin_and_broken() {
+        let root = tmp_root("scan");
+        let d = root.join("demos");
+        // 正常用户 demo
+        std::fs::create_dir_all(d.join("last-platform")).unwrap();
+        std::fs::write(
+            d.join("last-platform").join("demo.json"),
+            r#"{"title":"末班站台","desc":"互动影游样例","tag":"互动影游 · 旗舰","featured":true,"entry":"player/"}"#,
+        )
+        .unwrap();
+        // 坏 manifest：跳过不致命
+        std::fs::create_dir_all(d.join("broken")).unwrap();
+        std::fs::write(d.join("broken").join("demo.json"), "{ not json").unwrap();
+        // 无 manifest 目录：跳过
+        std::fs::create_dir_all(d.join("no-manifest")).unwrap();
+
+        let merged = scan_user_dir(&d, &catalog());
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].id, "last-platform");
+        assert!(merged[0].featured);
+        assert_eq!(merged[0].tag, "互动影游 · 旗舰");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 与内置冲突的用户 id 被让位：内置不可覆盖。
+    #[test]
+    fn user_demo_cannot_shadow_builtin() {
+        let root = tmp_root("shadow");
+        let d = root.join("demos");
+        std::fs::create_dir_all(d.join("11-ai-cafe")).unwrap();
+        std::fs::write(
+            d.join("11-ai-cafe").join("demo.json"),
+            r#"{"title":"冒牌咖啡馆","desc":"x","tag":"t"}"#,
+        )
+        .unwrap();
+        let merged = scan_user_dir(&d, &catalog());
+        assert!(merged.iter().all(|m| m.id != "11-ai-cafe"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
 /// 用系统默认浏览器打开 demo（webview 子窗口受 WebView2 运行时兼容性影响时兜底）。
 #[tauri::command]
 pub fn open_demo_in_browser(
@@ -99,11 +244,14 @@ pub fn open_demo_in_browser(
     folder: String,
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let valid = catalog().iter().any(|d| d.id == folder);
-    if !valid {
+    let user_entry = user_entry(&app, &folder);
+    if catalog_merged(&app).iter().all(|d| d.id != folder) {
         return Err(format!("unknown demo: {folder}"));
     }
-    let url = format!("http://127.0.0.1:{}/examples/{}/", state.port, folder);
+    let url = match &user_entry {
+        Some(entry) => format!("http://127.0.0.1:{}/demos/{}/{}", state.port, folder, entry),
+        None => format!("http://127.0.0.1:{}/examples/{}/", state.port, folder),
+    };
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| format!("打开浏览器失败：{e}"))
