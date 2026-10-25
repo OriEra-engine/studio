@@ -73,7 +73,15 @@ fn user_entry(app: &AppHandle, id: &str) -> Option<String> {
     let manifest = user_demos_dir(app).join(id).join("demo.json");
     let text = std::fs::read_to_string(manifest).ok()?;
     let ud: UserDemo = serde_json::from_str(&text).ok()?;
-    Some(ud.entry.trim_matches('/').to_string())
+    Some(normalize_entry(&ud.entry))
+}
+
+/// 目录形态（无扩展名）补尾斜杠：ServeDir 对无斜杠目录发 307 时 Location
+/// 会丢 nest 前缀（/demos/last-platform/player → 127.0.0.1:…/last-platform/…），
+/// 自定义协议窗口跟随即 404。文件形态（含 .）原样返回。
+fn normalize_entry(entry: &str) -> String {
+    let e = entry.trim_matches('/');
+    if e.contains('.') { e.to_string() } else { format!("{e}/") }
 }
 
 /// 内置 + 用户合并目录。用户 id 与内置冲突时内置优先（不可被覆盖）。
@@ -192,6 +200,11 @@ mod tests {
         let ud2: UserDemo = serde_json::from_str(json2).unwrap();
         assert_eq!(ud2.entry, "player/");
         assert!(ud2.featured);
+        // 治本：目录形态补尾斜杠（307 丢前缀坑），文件形态原样
+        assert_eq!(normalize_entry("player/"), "player/");
+        assert_eq!(normalize_entry("player"), "player/");
+        assert_eq!(normalize_entry("/player/"), "player/");
+        assert_eq!(normalize_entry("player/index.html"), "player/index.html");
     }
 
     #[test]
