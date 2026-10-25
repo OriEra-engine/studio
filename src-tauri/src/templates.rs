@@ -178,8 +178,8 @@ mod tests {
         .expect("读 gameplay-packs.ts");
         let mut ts_ids: Vec<String> = ts
             .lines()
-            .filter_map(|l| l.trim().strip_prefix("id: ""))
-            .filter_map(|l| l.split('"').next().map(str::to_string))
+            .filter_map(|l| l.trim().strip_prefix("id: "))
+            .filter_map(|l| l.split('"').nth(1).map(str::to_string))
             .collect();
         ts_ids.sort();
         assert_eq!(rust_ids, ts_ids, "内置 JSON 与前端包 id 集合漂移");
