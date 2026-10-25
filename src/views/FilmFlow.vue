@@ -3,12 +3,13 @@
 // 管线沉淀自《末班站台》实战（interfilm/）；状态落项目 film/flow.json 跨会话可续作。
 import { computed, onMounted, ref, watch } from "vue";
 import {
-  NAlert, NButton, NCard, NInput, NSelect, NSpace, NSteps, NStep, NTag, useMessage,
+  NAlert, NButton, NCard, NInput, NSelect, NSpace, NSteps, NStep, NTag, useDialog, useMessage,
 } from "naive-ui";
 import { api, type FilmFlow, type ProjectMeta } from "../api";
 import { FilmStory } from "../lib/filmStory";
 
 const message = useMessage();
+const dialog = useDialog();
 
 /* ── 项目挂载 ── */
 const projects = ref<ProjectMeta[]>([]);
@@ -77,6 +78,8 @@ const SPEAKERS = [
 
 onMounted(async () => {
   projects.value = await api.listProjects();
+  // W6：预算口径与 Assets.vue 一致——当月支出取素材中心 meta 的 cost_est 合计
+  try { monthAssets.value = await api.listAssets(); } catch { /* 浏览器降级：视为 0 */ }
   if (projects.value.length === 0) return;
   project.value = projects.value[0].id;
   const flow = await api.filmFlowLoad(project.value);
@@ -133,6 +136,44 @@ function check() {
 }
 const storyGreen = computed(() => checked.value && findings.value.length === 0);
 
+/* ── W6 成本护栏（复用 Assets.vue 的预算确认模式）：读 oe.monthlyBudget 与素材
+   中心当月支出（meta 的 cost_est 按落月合计），超预算的付费生成入口先弹确认——
+   护栏不是锁，确认后照常继续。覆盖 Seedance 镜头（genShot/genAllShots）与
+   豆包 TTS（genVo/genAllVo）两个真实花钱入口；Step5 导出是本地 zip 组装、
+   不调任何付费 API，故不设预算确认。 ── */
+interface CostAsset { created: string; cost_est?: string | null }
+const monthAssets = ref<CostAsset[]>([]);
+function inCurrentMonth(a: CostAsset): boolean {
+  const d = new Date(Number(a.created) * 1000);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
+const monthSpend = computed(() =>
+  monthAssets.value.reduce((sum, a) => {
+    if (!a.cost_est || !inCurrentMonth(a)) return sum;
+    const v = parseFloat(a.cost_est.replace(/[^\d.]/g, ""));
+    return Number.isNaN(v) ? sum : sum + v;
+  }, 0)
+);
+const monthlyBudget = ref<number | null>(null);
+{
+  const saved = Number(localStorage.getItem("oe.monthlyBudget"));
+  if (Number.isFinite(saved) && saved > 0) monthlyBudget.value = saved;
+}
+const overBudget = computed(
+  () => monthlyBudget.value !== null && monthSpend.value >= monthlyBudget.value
+);
+function budgetConfirm(run: () => void) {
+  if (!overBudget.value) { run(); return; }
+  const d = dialog.warning({
+    title: "本月 AI 支出已超预算",
+    content: `素材中心当月已支出 ¥${monthSpend.value.toFixed(2)} / 预算 ¥${monthlyBudget.value!.toFixed(2)}——确认继续本次生成？（护栏不是锁）`,
+    positiveText: "继续生成",
+    negativeText: "取消",
+    onPositiveClick: () => { d.destroy(); run(); },
+  });
+}
+
 /* ── Step3 镜头清单（story.shots 扫描） ── */
 interface Shot { id: string; frame: string; motion: string; dur: number; status: string }
 const shots = computed<Shot[]>(() => {
@@ -177,12 +218,19 @@ async function genShot(shot: Shot) {
     clipMsg.value = "";
   }
 }
+/* W6：单条/批量生成入口都先过预算确认；批量确认一次后内部直跑，不逐条重复弹窗 */
+function askGenShot(shot: Shot) {
+  budgetConfirm(() => { genShot(shot); });
+}
 async function genAllShots() {
   for (const s of shots.value) {
     if (clips.value[s.id]) continue;
     await genShot(s);
     if (!clips.value[s.id] && clipBusy.value) break; // 失败中断，避免连环烧钱
   }
+}
+function askGenAllShots() {
+  budgetConfirm(() => { genAllShots(); });
 }
 
 /* ── Step4 配音清单（shots.vo 扫描 + 结局旁白） ── */
@@ -231,6 +279,13 @@ async function genVo(item: VoItem) {
   } catch (e) {
     message.error(`${item.id} 失败：${String(e).slice(0, 120)}`);
   } finally { voBusy.value = ""; }
+}
+/* W6：TTS 也是付费生成——单条与批量入口同样过预算确认 */
+function askGenVo(item: VoItem) {
+  budgetConfirm(() => { genVo(item); });
+}
+function askGenAllVo() {
+  budgetConfirm(() => { genAllVo(); });
 }
 async function genAllVo() {
   for (const v of voItems.value) {
@@ -345,7 +400,7 @@ function go(next: number) {
           { label: '2.5 高光档（≈¥8.4/条，闲时约55%）', value: 'doubao-seedance-2-5-260628' }]" />
         <NSelect v-model:value="clipRatio" size="small" style="width: 110px" :options="[
           { label: '9:16 竖屏', value: '9:16' }, { label: '16:9 横屏', value: '16:9' }]" />
-        <NButton size="small" type="primary" :loading="!!clipBusy" @click="genAllShots">
+        <NButton size="small" type="primary" :loading="!!clipBusy" @click="askGenAllShots">
           ▶ 跑全部缺片（{{ shots.filter(s => !clips[s.id]).length }} 条 · 估 ¥{{ clipCost.toFixed(1) }}）
         </NButton>
       </NSpace>
@@ -362,7 +417,7 @@ function go(next: number) {
             <div style="font-size: 13px">{{ s.id }} · {{ s.frame.slice(0, 42) }}{{ s.frame.length > 42 ? "…" : "" }}</div>
             <div style="font-size: 11px; color: #71717c">{{ s.motion }} · {{ s.dur }}s</div>
           </div>
-          <NButton size="tiny" :loading="clipBusy === s.id" @click="genShot(s)">
+          <NButton size="tiny" :loading="clipBusy === s.id" @click="askGenShot(s)">
             {{ clips[s.id] ? "重生成" : "生成" }}
           </NButton>
         </div>
@@ -375,7 +430,7 @@ function go(next: number) {
       <NSpace style="margin-bottom: 12px" align="center" :wrap="false">
         <NInput v-model:value="ttsKey" type="password" show-password-on="click" size="small"
           placeholder="豆包语音 API Key（console.volcengine.com/speech/new）" style="max-width: 260px" />
-        <NButton size="small" type="primary" :loading="!!voBusy" @click="genAllVo">
+        <NButton size="small" type="primary" :loading="!!voBusy" @click="askGenAllVo">
           ▶ 合成全部（{{ voItems.filter(v => !voDone[v.id]).length }} 条待做）
         </NButton>
       </NSpace>
@@ -391,7 +446,7 @@ function go(next: number) {
               :options="SPEAKERS" filterable tag
               @update:value="(val: string) => setSpeaker(v.role, val)" />
           </div>
-          <NButton size="tiny" :loading="voBusy === v.id" @click="genVo(v)">合成</NButton>
+          <NButton size="tiny" :loading="voBusy === v.id" @click="askGenVo(v)">合成</NButton>
         </div>
         <p v-if="voItems.length === 0" style="font-size: 12px; color: #71717c; padding: 8px 0">
           剧情里还没有台词 —— 在 story 的镜头里写 vo 字段（如 "lin: 谢谢。……你也会等这一班吗？"）后回来。

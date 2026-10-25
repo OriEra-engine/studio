@@ -205,6 +205,10 @@ pub fn create_project(
     .map_err(|e| e.to_string())?;
     std::fs::write(dir.join("README.md"), readme).map_err(|e| e.to_string())?;
 
+    // W1 影游体验批：story_beats 引用 clips/*.mp4 的项目，把内置占位片随项目落盘
+    // （「开箱有影」——正式镜头内容仍走素材中心 Seedance 生成后落 /assets/）
+    write_placeholder_clips(&dir, &spec.story.beats);
+
     Ok(ProjectMeta {
         id: id.clone(),
         name: spec.project_name,
@@ -213,6 +217,41 @@ pub fn create_project(
         dir: dir.to_string_lossy().into_owned(),
         url: format!("/projects/{id}/"),
     })
+}
+
+/// W1 影游体验批：程序化占位片随项目落盘。
+/// 模板 story_beats 引用 clips/*.mp4（相对路径 → runtime 按 /projects/{id}/ 解析）时，
+/// 把编译进二进制的占位 mp4 写进项目目录，让新项目「开箱有影」、视频腿真实可播；
+/// 正式镜头内容仍走素材中心 Seedance 生成后落 /assets/（GeneratedAsset 语义不变）。
+fn write_placeholder_clips(dir: &std::path::Path, beats: &[StoryBeat]) {
+    const PLACEHOLDERS: &[(&str, &[u8])] = &[
+        (
+            "clips/rain-intro.mp4",
+            include_bytes!("../runtime/assets/clips/rain-intro.mp4"),
+        ),
+        (
+            "clips/confrontation.mp4",
+            include_bytes!("../runtime/assets/clips/confrontation.mp4"),
+        ),
+    ];
+    let wants_clips = beats.iter().any(|b| {
+        b.extra
+            .get("video")
+            .and_then(|v| v.as_str())
+            .map_or(false, |v| v.starts_with("clips/"))
+    });
+    if !wants_clips {
+        return;
+    }
+    for (rel, bytes) in PLACEHOLDERS {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&path, bytes) {
+            eprintln!("[oriera] 占位片 {rel} 落盘失败: {e}（运行时按素材缺失自动跳过）");
+        }
+    }
 }
 
 fn chrono_now() -> String {

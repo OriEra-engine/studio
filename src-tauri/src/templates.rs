@@ -185,18 +185,21 @@ mod tests {
         assert_eq!(rust_ids, ts_ids, "内置 JSON 与前端包 id 集合漂移");
     }
 
-    /// settle 规则只支持两种形态："*" 通配 或 "变量>=非负整数"（与 runtime 一致）。
+    /// settle 规则只支持这些形态："*" 通配、"变量>=非负整数"，以及 W3 第二判据
+    /// "A>=n && B>=m"（逐段求值取与，与 runtime evalRule 一致）。
     fn valid_settle_rule(rule: &Value) -> bool {
         match rule.as_str() {
             Some("*") => true,
-            Some(s) => match s.trim().split_once(">=") {
-                Some((var, num)) => {
-                    !var.is_empty()
-                        && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                        && num.trim().parse::<u64>().is_ok()
+            Some(s) => s.trim().split("&&").all(|part| {
+                match part.trim().split_once(">=") {
+                    Some((var, num)) => {
+                        !var.is_empty()
+                            && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                            && num.trim().parse::<u64>().is_ok()
+                    }
+                    None => false,
                 }
-                None => false,
-            },
+            }),
             _ => false,
         }
     }
@@ -256,6 +259,18 @@ mod tests {
             }
         }
 
+        // W1 影游体验批：第 0/2 拍补了带 video 的氛围拍——必须是相对路径形态
+        //（runtime W4 白名单只放行相对路径与 /assets/、/projects/ 前缀），
+        // 且与 runtime/assets/clips/ 下的内置占位片同名（create_project 随项目落盘）
+        for (i, want) in [(0usize, "clips/rain-intro.mp4"), (2usize, "clips/confrontation.mp4")] {
+            assert_eq!(
+                beats[i]["video"].as_str(),
+                Some(want),
+                "第 {} 拍 video 应为占位片相对路径 {want}",
+                i + 1
+            );
+        }
+
         // 末拍 ending 节点：ending=true + settle 对象（值全为合法规则，且兜底 "*" 存在）
         let last = beats.last().unwrap();
         assert_eq!(last["ending"].as_bool(), Some(true), "末拍必须 ending=true");
@@ -266,13 +281,38 @@ mod tests {
         for (branch, rule) in settle {
             assert!(
                 valid_settle_rule(rule),
-                "settle.{branch} = {rule} 不是合法规则（只支持 \"*\" 与 \"变量>=数值\"）"
+                "settle.{branch} = {rule} 不是合法规则（支持 \"*\"、\"变量>=数值\" 与 \"&&\" 复合）"
             );
         }
         assert!(
             settle.values().any(|r| r.as_str() == Some("*")),
             "settle 必须含 \"*\" 兜底分支，避免规则全不命中时无结局"
         );
+        // W3：trust 接入 settle——win 规则必须是「affinity>=2 && trust>=1」复合第二判据
+        assert_eq!(
+            settle["win"].as_str(),
+            Some("affinity>=2 && trust>=1"),
+            "win 规则应含 trust 第二判据（&& 复合）"
+        );
+
+        // W3 差分评语：ending_lines 支持「分支@规则」键——@前必须是 settle 已声明分支，
+        // @后必须是合法规则（且不许是 "*"——通配差分没有意义，直接写基础分支即可）
+        if let Some(lines) = last["ending_lines"].as_object() {
+            for (k, v) in lines {
+                assert!(v.is_string(), "ending_lines.{k} 必须是字符串");
+                if let Some(at) = k.find('@') {
+                    let (branch, rule) = (&k[..at], &k[at + 1..]);
+                    assert!(
+                        settle.contains_key(branch),
+                        "差分评语键 {k} 的分支未在 settle 声明"
+                    );
+                    assert!(
+                        rule != "*" && valid_settle_rule(&Value::String(rule.to_string())),
+                        "差分评语键 {k} 的规则非法"
+                    );
+                }
+            }
+        }
 
         // 全部包：可选扩展字段一旦出现，类型必须与 runtime 约定一致
         for p in packs {
