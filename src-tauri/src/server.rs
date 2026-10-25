@@ -149,6 +149,8 @@ fn build_router(
     app: AppHandle,
 ) -> Router {
     let examples = ServeDir::new(snapshot_examples).append_index_html_on_directories(true);
+    let demos = ServeDir::new(projects_dir.parent().map(|p| p.join("demos")).unwrap_or_default())
+        .append_index_html_on_directories(true);
     let assets = ServeDir::new(projects_dir.parent().map(|p| p.join("assets")).unwrap_or_default())
         .append_index_html_on_directories(true);
     let projects = ServeDir::new(projects_dir).append_index_html_on_directories(true);
@@ -186,6 +188,7 @@ fn build_router(
             }),
         )
         .nest_service("/examples", examples)
+        .nest_service("/demos", demos)
         .nest_service("/assets", assets)
         .nest_service("/projects", projects)
         .route("/proxy/{alias}/{*path}", any(proxy_passthrough))
@@ -378,6 +381,16 @@ pub fn serve_content(
         (state.snapshot_examples.clone(), r.to_string())
     } else if let Some(r) = path.strip_prefix("/projects/") {
         (state.projects_dir.clone(), r.to_string())
+    } else if let Some(r) = path.strip_prefix("/demos/") {
+        // 用户上传 demo（app_data/demos，与 projects 平级）
+        (
+            state
+                .projects_dir
+                .parent()
+                .map(|p| p.join("demos"))
+                .unwrap_or_default(),
+            r.to_string(),
+        )
     } else {
         return not_found();
     };
