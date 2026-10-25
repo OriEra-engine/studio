@@ -184,4 +184,120 @@ mod tests {
         ts_ids.sort();
         assert_eq!(rust_ids, ts_ids, "内置 JSON 与前端包 id 集合漂移");
     }
+
+    /// settle 规则只支持两种形态："*" 通配 或 "变量>=非负整数"（与 runtime 一致）。
+    fn valid_settle_rule(rule: &Value) -> bool {
+        match rule.as_str() {
+            Some("*") => true,
+            Some(s) => match s.trim().split_once(">=") {
+                Some((var, num)) => {
+                    !var.is_empty()
+                        && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        && num.trim().parse::<u64>().is_ok()
+                }
+                None => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// #120 影游可执行腿：末班站台的 countdown/ending/settle 字段与 runtime
+    /// （runtime/index.html）的约定钉进 CI；同时校验所有包的扩展字段一旦出现
+    /// 必须是 runtime 认得的类型（runtime 按字段存在性守卫，缺省走旧路径）。
+    #[test]
+    fn film_template_runtime_legs_shapes() {
+        let v: Value = serde_json::from_str(BUILTIN).unwrap();
+        let packs = v["gameplay"].as_array().unwrap();
+        let film = packs
+            .iter()
+            .find(|p| p["id"] == "last-platform-filmgame")
+            .expect("影游模板 last-platform-filmgame 存在");
+
+        // economy 必须是资源数组：向导 economyNames.map 与 Rust Vec<EconomyResource>
+        // 反序列化都依赖数组形状（旧的对象形 {"变量": "..."} 会让创建项目直接失败）
+        assert!(film["economy"].is_array(), "影游模板 economy 必须是数组");
+
+        let beats = film["story_beats"].as_array().unwrap();
+        assert!(beats.len() >= 5, "影游模板至少 5 拍");
+
+        // 「选择一 / 选择三」两拍：countdown = 8（秒）且 choices 非空、label 必填
+        for i in [1usize, 3] {
+            assert_eq!(
+                beats[i]["countdown"].as_i64(),
+                Some(8),
+                "第 {} 拍 countdown 应为 8",
+                i + 1
+            );
+            let chs = beats[i]["choices"]
+                .as_array()
+                .unwrap_or_else(|| panic!("第 {} 拍倒计时必须有 choices", i + 1));
+            assert!(!chs.is_empty(), "第 {} 拍 choices 不能为空", i + 1);
+            for c in chs {
+                assert!(c["label"].is_string(), "choice.label 必须是字符串");
+            }
+        }
+
+        // choice effect 形如「变量名±整数」（runtime parseEffect / 变量袋共用该形态）
+        for b in beats {
+            for c in b["choices"].as_array().unwrap_or(&vec![]) {
+                if let Some(eff) = c["effect"].as_str() {
+                    let t = eff.trim();
+                    let (name, sign, num) = match t.rfind(['+', '-']) {
+                        Some(idx) => (&t[..idx], &t[idx..idx + 1], &t[idx + 1..]),
+                        None => panic!("effect {eff:?} 缺少 +/-"),
+                    };
+                    assert!(
+                        !name.is_empty()
+                            && (sign == "+" || sign == "-")
+                            && num.parse::<u64>().is_ok(),
+                        "effect {eff:?} 形状应为「变量名±整数」"
+                    );
+                }
+            }
+        }
+
+        // 末拍 ending 节点：ending=true + settle 对象（值全为合法规则，且兜底 "*" 存在）
+        let last = beats.last().unwrap();
+        assert_eq!(last["ending"].as_bool(), Some(true), "末拍必须 ending=true");
+        let settle = last["settle"]
+            .as_object()
+            .expect("settle 必须是对象（分支名 → 规则）");
+        assert!(!settle.is_empty(), "settle 不能为空");
+        for (branch, rule) in settle {
+            assert!(
+                valid_settle_rule(rule),
+                "settle.{branch} = {rule} 不是合法规则（只支持 \"*\" 与 \"变量>=数值\"）"
+            );
+        }
+        assert!(
+            settle.values().any(|r| r.as_str() == Some("*")),
+            "settle 必须含 \"*\" 兜底分支，避免规则全不命中时无结局"
+        );
+
+        // 全部包：可选扩展字段一旦出现，类型必须与 runtime 约定一致
+        for p in packs {
+            for b in p["story_beats"].as_array().unwrap_or(&vec![]) {
+                if !b["countdown"].is_null() {
+                    assert!(
+                        b["countdown"].is_number() && b["countdown"].as_f64().unwrap() > 0.0,
+                        "包 {} 某拍 countdown 必须是正数",
+                        p["id"].as_str().unwrap_or("?")
+                    );
+                }
+                if !b["ending"].is_null() {
+                    assert!(b["ending"].is_boolean(), "包 {} 某拍 ending 必须是布尔", p["id"].as_str().unwrap_or("?"));
+                }
+                if !b["video"].is_null() {
+                    assert!(b["video"].is_string(), "包 {} 某拍 video 必须是字符串", p["id"].as_str().unwrap_or("?"));
+                }
+                if !b["settle"].is_null() {
+                    assert!(
+                        b["settle"].as_object().map(|o| o.values().all(valid_settle_rule)).unwrap_or(false),
+                        "包 {} 某拍 settle 形状非法",
+                        p["id"].as_str().unwrap_or("?")
+                    );
+                }
+            }
+        }
+    }
 }
