@@ -7,3 +7,4 @@ portable/
 .DS_Store
 scripts/xlite-matrix-report*.json
 scripts/proxy-vs-direct.json
+out/
