@@ -451,7 +451,7 @@ pub async fn generate_video(
         println!("[assets] 续查在途视频任务 {}（不重复创建）", pending.task_id);
         pending.task_id.clone()
     } else {
-        create_video_task(&client, &base, &key, &model, &ratio, &prompt, &state)?
+        create_video_task(&client, &base, &key, &model, &ratio, &prompt, &state).await?
     };
 
     // 轮询：queued|running 继续；succeeded 取 video_url；failed/cancelled 报错。
