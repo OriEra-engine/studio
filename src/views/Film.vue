@@ -2,8 +2,12 @@
 // 影游工坊 —— P1 建游的影游入口：剧情图编辑 + 一键体检（L9 内核镜像）+ 导出
 // kernel = src/lib/filmStory.js（与 engine oriera-agent/story.rs 逐句对照）
 import { computed, ref } from "vue";
-import { NButton, NCard, NInput, NSelect, NSpace, NTag, useMessage } from "naive-ui";
+import { NButton, NCard, NInput, NRadioButton, NRadioGroup, NSelect, NSpace, NTag, useMessage } from "naive-ui";
 import { FilmStory } from "../lib/filmStory";
+import FilmFlow from "./FilmFlow.vue";
+
+// 双模式：向导（新手默认，五步走完整制作管线）/ 工坊（专家直编）
+const mode = ref<"flow" | "shop">("flow");
 
 const message = useMessage();
 
@@ -77,8 +81,16 @@ const nodes = computed(() => {
 <template>
   <div class="page">
     <h2 class="page-title">🎬 影游工坊</h2>
-    <p class="page-sub">剧情图单源真源：编辑 story.json → 一键体检（死路/可达/变量/默认臂）→ 导出给量产管线。体检内核与引擎 L9 逐句同源。</p>
+    <div style="margin-bottom: 12px">
+      <NRadioGroup v-model:value="mode" size="small">
+        <NRadioButton value="flow">🧭 工作流（推荐）</NRadioButton>
+        <NRadioButton value="shop">🛠 工坊（专家）</NRadioButton>
+      </NRadioGroup>
+    </div>
+    <FilmFlow v-if="mode === 'flow'" />
+    <p v-if="mode === 'shop'" class="page-sub">剧情图单源真源：编辑 story.json → 一键体检（死路/可达/变量/默认臂）→ 导出给量产管线。体检内核与引擎 L9 逐句同源。</p>
 
+    <template v-if="mode === 'shop'">
     <NCard size="small" style="margin-bottom: 16px">
       <template #header>剧本（story.json）</template>
       <template #header-extra>
@@ -134,6 +146,7 @@ const nodes = computed(() => {
         <span style="font-size:12px;color:#71717c">播放器把指令渲染为雨量/警灯/张力峰值</span>
       </NSpace>
     </NCard>
+    </template>
   </div>
 </template>
 

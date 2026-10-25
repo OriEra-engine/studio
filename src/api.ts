@@ -113,6 +113,17 @@ export interface TemplateLib {
   broken: [string, string][];
 }
 
+/** 影游工作流状态（Rust FilmFlowState 一一对应） */
+export interface FilmFlow {
+  step: number;
+  locks: { protagonist: string; supporting: string; style: string };
+  story: string;
+  voices: { role: string; speaker: string }[];
+  clips: Record<string, string>;
+  vo: Record<string, string>;
+  exported_zip?: string | null;
+}
+
 export interface ProjectDetail {
   game: Record<string, unknown>;
   story: { framework?: string; premise: string; beats: StoryBeat[] };
@@ -214,6 +225,16 @@ export const api = {
   deleteAsset: (id: string) => invoke<void>("delete_asset", { id }),
   addAssetToProject: (assetId: string, projectId: string) =>
     invoke<void>("add_asset_to_project", { assetId, projectId }),
+
+  // 影游工作流（状态落盘 / 豆包 TTS-2.0 配音 / 组装导出）
+  filmFlowLoad: (project: string) =>
+    invoke<FilmFlow | null>("film_flow_load", { project }),
+  filmFlowSave: (project: string, flow: FilmFlow) =>
+    invoke<void>("film_flow_save", { project, flow }),
+  ttsDoubao: (project: string, key: string, speaker: string, text: string, voId: string) =>
+    invoke<string>("tts_doubao", { project, key, speaker, text, voId }),
+  exportFilm: (project: string, flow: FilmFlow) =>
+    invoke<string>("export_film", { project, flow }),
 
   /** 正在运行的项目 id（运行中徽标） */
   runningProjects: () => invoke<string[]>("running_projects"),
