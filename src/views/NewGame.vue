@@ -194,9 +194,12 @@ async function generate() {
       theme: theme.value,
     });
     created.value = meta;
-    message.success(`「${meta.name}」已生成！`);
+    message.success(`「${meta.name}」已生成！即将进入你的世界……`);
     refreshStatus(); // 仪表盘项目计数即时 +1
+    // F1（PLAN-godot-fusion）：Godot F5 体验——向导完成即自动进入
+    // 游玩路由（浏览器直开），省一次手动导航；编辑器仍可从项目卡进入。
     await api.openProject(meta.id);
+    router.push(`/play/${meta.id}`);
   } catch (e) {
     message.error(`生成失败：${e}`);
   } finally {
