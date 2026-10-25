@@ -354,6 +354,158 @@ pub async fn generate_mesh_command(
     generate_mesh(state, prompt, key, base).await
 }
 
+// ====================== 影游供给侧：火山方舟 Seedance 文生视频 ======================
+//
+// wire 按 R0/M1 实测（2026-10-24/25，interfilm/docs/R0-report.md，与引擎
+// oriera-genai/seedance.rs 同一契约）：POST {base}/api/v3/contents/
+// generations/tasks（Bearer + JSON：model/content[text]/ratio/duration/
+// watermark:false——水印必须显式关）→ {id}；GET tasks/{id} 轮询 status
+// queued|running|succeeded|failed|cancelled；succeeded 取
+// content.video_url（公网签名 URL，立即 GET 且不带 Authorization）。
+// 实测耗时 82~212s/条（5s 720p），计费 ~108.9k tokens/条（mini 档）。
+//
+// key 纪律：与 Rodin 同族——方舟 Key 由前端传入（localStorage 记忆），
+// 只进本函数内存，不写配置、不写日志、不进 meta.json。
+
+const SEEDANCE_POLL_SECS: u64 = 10;
+const SEEDANCE_MAX_POLLS: u32 = 90; // 15 分钟上限（实测 1.5~3.5 分钟）
+const SEEDANCE_DEFAULT_MODEL: &str = "doubao-seedance-2-0-mini-260615"; // 草稿档（¥2.50/5s@720p 实测）
+
+/// 火山方舟 Seedance 文生视频：prompt → MP4 字节 → 资产库（kind=video）。
+pub async fn generate_video(
+    state: tauri::State<'_, crate::AppState>,
+    prompt: String,
+    key: String,
+    base: Option<String>,
+    model: Option<String>,
+    ratio: Option<String>,
+) -> Result<AssetMeta, String> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err("需要火山方舟 API Key（console.volcengine.com/ark 控制台创建）".into());
+    }
+    let base = base
+        .filter(|b| !b.trim().is_empty())
+        .unwrap_or_else(|| "https://ark.cn-beijing.volces.com".into())
+        .trim_end_matches('/')
+        .to_string();
+    let prompt = prompt.trim().to_string();
+    if prompt.is_empty() {
+        return Err("先描述你想要的镜头（例如：雨夜地铁站台，镜头缓推，霓虹反射在湿地面上）".into());
+    }
+    let model = model
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| SEEDANCE_DEFAULT_MODEL.into());
+    let ratio = ratio.filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "16:9".into());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/api/v3/contents/generations/tasks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "model": model,
+            "content": [ { "type": "text", "text": prompt } ],
+            "ratio": ratio,
+            "duration": 5,
+            "watermark": false
+        }))
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| format!("创建 Seedance 任务失败：{e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| format!("读取响应失败：{e}"))?;
+    if !status.is_success() {
+        let short: String = text.chars().take(300).collect();
+        let hint = match status.as_u16() {
+            401 => "（Key 无效）",
+            403 => "（该模型未开通：方舟控制台 → 开通管理 → 开通 Seedance 系列需余额 ≥200 元）",
+            429 => "（触发限流，稍后再试）",
+            _ => "",
+        };
+        return Err(format!("Seedance 返回 {}{}：{}", status.as_u16(), hint, short));
+    }
+    let created: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("解析创建响应失败：{e}"))?;
+    let task_id = created["id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("方舟未受理任务：{}", text.chars().take(200).collect::<String>()))?
+        .to_string();
+
+    // 轮询：queued|running 继续；succeeded 取 video_url；failed/cancelled 报错。
+    let video_url = {
+        let mut hit: Option<String> = None;
+        for _ in 0..SEEDANCE_MAX_POLLS {
+            tokio::time::sleep(std::time::Duration::from_secs(SEEDANCE_POLL_SECS)).await;
+            let resp = client
+                .get(format!("{base}/api/v3/contents/generations/tasks/{task_id}"))
+                .header("Authorization", format!("Bearer {key}"))
+                .timeout(std::time::Duration::from_secs(30))
+                .send()
+                .await
+                .map_err(|e| format!("查询状态失败：{e}"))?;
+            let v: serde_json::Value = resp.json().await.map_err(|e| format!("解析状态失败：{e}"))?;
+            match v["status"].as_str().unwrap_or_default() {
+                "queued" | "running" => {}
+                "succeeded" => {
+                    hit = v["content"]["video_url"].as_str().map(str::to_string);
+                    break;
+                }
+                other => {
+                    let detail = v["error"]["message"].as_str().unwrap_or("无详情");
+                    return Err(format!("生成失败（{other}）：{detail}"));
+                }
+            }
+        }
+        hit.ok_or_else(|| {
+            format!("生成超时（超 {} 次轮询）——任务可能仍在排队，稍后在方舟控制台查看", SEEDANCE_MAX_POLLS)
+        })?
+    };
+
+    // 公网签名 URL：立即取回（不带鉴权头，会过期）。
+    let bytes = client
+        .get(&video_url)
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await
+        .map_err(|e| format!("下载视频失败：{e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("读取视频内容失败：{e}"))?
+        .to_vec();
+
+    // 落盘 + 入库（页面按 video 类别用 <video> 渲染）。
+    let dir = assets_dir(&state);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = now_ts();
+    let file = format!("{ts}-seedance.mp4");
+    std::fs::write(dir.join(&file), &bytes).map_err(|e| format!("写入 MP4 失败：{e}"))?;
+    let meta = AssetMeta {
+        id: format!("a{ts}"),
+        file: format!("assets/{file}"),
+        prompt: prompt.chars().take(120).collect(),
+        created: ts.to_string(),
+        kind: "video".into(),
+    };
+    let mut list = read_meta(&state);
+    list.insert(0, meta.clone());
+    write_meta(&state, &list)?;
+    Ok(meta)
+}
+
+#[tauri::command]
+pub async fn generate_video_command(
+    state: tauri::State<'_, crate::AppState>,
+    prompt: String,
+    key: String,
+    base: Option<String>,
+    model: Option<String>,
+    ratio: Option<String>,
+) -> Result<AssetMeta, String> {
+    generate_video(state, prompt, key, base, model, ratio).await
+}
+
 #[tauri::command]
 pub fn delete_asset(
     state: tauri::State<'_, crate::AppState>,
