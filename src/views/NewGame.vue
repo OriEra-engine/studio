@@ -23,6 +23,17 @@ const {
 } = toRefs(wizard);
 const beats: StoryBeat[] = wizard.beats;
 
+// W5：AI 定制退化明示——aiGenerate 整体替换 beats 后，若全部节拍都缺
+// countdown/ending/video 字段，说明 AI 输出不含影游三腿，明确告知「纯文游」，
+// 避免玩家以为选了影游模板就有倒计时/结局/正片。重新选模板/框架即复位。
+const aiBeatsApplied = ref(false);
+const aiPureText = computed(
+  () =>
+    aiBeatsApplied.value &&
+    beats.length > 0 &&
+    beats.every((b) => !b.countdown && !b.ending && !b.video),
+);
+
 // ---- 模板库（Rust 合并内置+用户包；纯浏览器环境回退到静态数据）----
 const packs = ref<GameplayPack[]>([...FALLBACK_PACKS]);
 const frameworks = ref<StoryFramework[]>([...FALLBACK_FRAMEWORKS]);
@@ -88,6 +99,7 @@ function pickPack(id: string) {
   premise.value = p.story_premise;
   beats.splice(0, beats.length, ...p.story_beats.map(b => ({ ...b })));
   frameworkId.value = "pack-default";
+  aiBeatsApplied.value = false; // 回到模板节拍，W5 提示复位
   p.agents.forEach(a => (agentSel.value[a.name] = true));
   projectName.value = `我的${p.name}`;
 }
@@ -98,6 +110,7 @@ function pickFramework(id: string) {
     premise.value = pack.value.story_premise;
     beats.splice(0, beats.length, ...pack.value.story_beats.map(b => ({ ...b })));
     appliedFramework.value = "pack-default";
+    aiBeatsApplied.value = false; // 回到模板节拍，W5 提示复位
   }
 }
 
@@ -144,6 +157,7 @@ async function aiGenerate() {
           premise.value = story.premise;
           beats.splice(0, beats.length, ...story.beats);
           appliedFramework.value = frameworkId.value;
+          aiBeatsApplied.value = true; // W5：AI 已整体替换节拍，检查是否纯文游
           aiBusy.value = false;
           aiStreaming.value = false;
           aiStreamText.value = "";
@@ -302,6 +316,9 @@ const canNext = computed(() => {
             </p>
           </NCard>
           <NCard :title="`剧情预览（${beats.length} 拍）`" size="small">
+            <NAlert v-if="aiPureText" type="warning" style="margin-bottom: 12px">
+              AI 定制版为纯文游（影游倒计时/结局/视频腿未包含）
+            </NAlert>
             <div v-if="aiStreaming" class="stream-pane">
               <pre class="stream-text">{{ aiStreamText }}▍</pre>
               <p class="stream-hint">AI 正在逐字创作——首次点击约 1 秒内出字。生成完成自动替换预览，可随时「停止」。</p>
