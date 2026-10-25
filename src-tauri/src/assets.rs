@@ -497,7 +497,7 @@ pub async fn generate_video(
 }
 
 /// 创建 Seedance 任务并落 pending（防双倍扣费）。
-fn create_video_task(
+async fn create_video_task(
     client: &reqwest::Client,
     base: &str,
     key: &str,
