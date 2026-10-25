@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   NButton, NCard, NGrid, NGi, NInput, NTag, NSpace, NEmpty, NPopconfirm,
-  NSelect, useMessage, NSpin,
+  NSelect, useMessage, NSpin, NPopover, NInputNumber,
 } from "naive-ui";
 import { api, type ProjectMeta } from "../api";
 
@@ -12,6 +12,7 @@ interface AssetMeta {
   prompt: string;
   created: string;
   kind?: string; // image（插画）| mesh（3D 模型，Rodin）；旧数据缺省 = image
+  cost_est?: string | null; // 估算成本（如 "¥2.50"）；空 = 未登记牌价（Rodin，不发明数字）
 }
 
 const message = useMessage();
@@ -34,6 +35,54 @@ const projects = ref<ProjectMeta[]>([]);
 const targetProject = ref<string | null>(null);
 const busyId = ref("");
 
+// ===== 成本护栏：本月支出条 + 预算上限（护栏不是锁——超预算确认后仍可生成） =====
+// 口径：meta.json 的 cost_est 按 created 时间戳落在当月的才计入合计；
+// Rodin 无公开牌价（cost_est 为空）显示条数但不计入合计。
+function inCurrentMonth(a: AssetMeta): boolean {
+  const d = new Date(Number(a.created) * 1000);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
+const monthSpend = computed(() =>
+  assets.value.reduce((sum, a) => {
+    if (!a.cost_est || !inCurrentMonth(a)) return sum;
+    const v = parseFloat(a.cost_est.replace(/[^\d.]/g, ""));
+    return Number.isNaN(v) ? sum : sum + v;
+  }, 0)
+);
+const monthUnpriced = computed(
+  () => assets.value.filter((a) => !a.cost_est && inCurrentMonth(a)).length
+);
+// 预算存 localStorage（数字元）；0 / 空 = 不设上限
+const monthlyBudget = ref<number | null>(null);
+const savedBudget = Number(localStorage.getItem("oe.monthlyBudget"));
+if (Number.isFinite(savedBudget) && savedBudget > 0) monthlyBudget.value = savedBudget;
+const budgetDraft = ref<number | null>(monthlyBudget.value);
+const overBudget = computed(
+  () => monthlyBudget.value !== null && monthSpend.value >= monthlyBudget.value
+);
+const budgetLabel = computed(() => (monthlyBudget.value ? `¥${monthlyBudget.value.toFixed(2)}` : "未设"));
+const overBudgetMsg = computed(
+  () => `本月 AI 支出已超预算（¥${monthSpend.value.toFixed(2)}/${budgetLabel.value}），确认继续？`
+);
+function saveBudget() {
+  const v = budgetDraft.value;
+  if (v !== null && Number.isFinite(v) && v > 0) {
+    monthlyBudget.value = v;
+    localStorage.setItem("oe.monthlyBudget", String(v));
+    message.success(`本月预算已设为 ¥${v.toFixed(2)}`);
+  } else {
+    monthlyBudget.value = null;
+    localStorage.removeItem("oe.monthlyBudget");
+    message.success("预算已清除（不设上限）");
+  }
+}
+// 超预算时点生成：弹受控 NPopconfirm 确认，确认后照常继续
+const askImage = ref(false);
+const askMesh = ref(false);
+const askVideo = ref(false);
+const askBatch = ref(false);
+
 function assetUrl(file: string): string {
   return port.value ? `http://127.0.0.1:${port.value}/${file}` : "";
 }
@@ -51,7 +100,25 @@ async function refresh() {
   } catch { /* 降级 */ }
 }
 
-async function generate() {
+// 生成入口：超预算先弹确认（NPopconfirm），确认后直接开跑——护栏不是锁
+function generate() {
+  if (overBudget.value) { askImage.value = true; return; }
+  doGenerate();
+}
+function generateMesh() {
+  if (overBudget.value) { askMesh.value = true; return; }
+  doGenerateMesh();
+}
+function generateVideo() {
+  if (overBudget.value) { askVideo.value = true; return; }
+  doGenerateVideo();
+}
+function runBatch() {
+  if (overBudget.value) { askBatch.value = true; return; }
+  doRunBatch();
+}
+
+async function doGenerate() {
   const p = prompt.value.trim();
   if (!p) return message.warning("先描述你想要的插画（例如：雨夜咖啡馆窗边的猫，赛博朋克霓虹）");
   generating.value = true;
@@ -72,7 +139,7 @@ async function generate() {
   }
 }
 
-async function generateMesh() {
+async function doGenerateMesh() {
   const p = meshPrompt.value.trim();
   if (!p) return message.warning("先描述你想要的 3D 模型（例如：一个圆润的机器人咖啡杯，低多边形风格）");
   if (!rodinKey.value.trim()) return message.warning("先填入 Hyper3D API Key（hyper3d.ai 控制台申请）");
@@ -91,7 +158,7 @@ async function generateMesh() {
   }
 }
 
-async function generateVideo() {
+async function doGenerateVideo() {
   const p = videoPrompt.value.trim();
   if (!p) return message.warning("先描述你想要的镜头（例如：雨夜地铁站台空镜，镜头缓推，霓虹反射在湿地面上）");
   if (!arkKey.value.trim()) return message.warning("先填入火山方舟 API Key（console.volcengine.com/ark 控制台创建）");
@@ -121,7 +188,7 @@ const UNIT: Record<string, number> = {
   "doubao-seedance-2-0-mini-260615": 2.5,
   "doubao-seedance-2-5-260628": 8.4,
 };
-async function runBatch() {
+async function doRunBatch() {
   const lines = batchText.value.split("\n").map(x => x.trim()).filter(Boolean);
   if (!lines.length) return message.warning("每行粘贴一个镜头描述");
   if (!arkKey.value.trim()) return message.warning("先填入火山方舟 API Key");
@@ -190,9 +257,15 @@ onMounted(refresh);
         @keydown.enter.exact.prevent="generate"
       />
       <NSpace style="margin-top: 10px" align="center">
-        <NButton type="primary" :loading="generating" @click="generate">
-          {{ generating ? "生成中（约 10-20 秒）…" : "✨ 生成插画" }}
-        </NButton>
+        <NPopconfirm :show="askImage" @positive-click="() => { askImage = false; doGenerate(); }"
+          @update:show="(v: boolean) => { if (!v) askImage = false; }">
+          <template #trigger>
+            <NButton type="primary" :loading="generating" @click="generate">
+              {{ generating ? "生成中（约 10-20 秒）…" : "✨ 生成插画" }}
+            </NButton>
+          </template>
+          {{ overBudgetMsg }}
+        </NPopconfirm>
         <span style="font-size: 12px; color: #71717c">
           智谱 CogView · cogview-3-flash 免费档 · 需在模型中心配置智谱 Key
         </span>
@@ -218,9 +291,15 @@ onMounted(refresh);
             { label: '国内站 hyper3d.cn', value: 'https://hyper3d.cn/api/v2' },
           ]" placeholder="站点"
         />
-        <NButton type="primary" :loading="meshGenerating" @click="generateMesh">
-          {{ meshGenerating ? "生成中（约 1-3 分钟）…" : "🧊 生成 3D 模型" }}
-        </NButton>
+        <NPopconfirm :show="askMesh" @positive-click="() => { askMesh = false; doGenerateMesh(); }"
+          @update:show="(v: boolean) => { if (!v) askMesh = false; }">
+          <template #trigger>
+            <NButton type="primary" :loading="meshGenerating" @click="generateMesh">
+              {{ meshGenerating ? "生成中（约 1-3 分钟）…" : "🧊 生成 3D 模型" }}
+            </NButton>
+          </template>
+          {{ overBudgetMsg }}
+        </NPopconfirm>
       </NSpace>
       <p style="font-size: 12px; color: #71717c; margin: 8px 0 0">
         生成 GLB 模型入库；挂进场景随素材中心 M2（换肤/角色槽）跟进。
@@ -253,9 +332,15 @@ onMounted(refresh);
             { label: '9:16 竖屏', value: '9:16' },
           ]"
         />
-        <NButton type="primary" :loading="videoGenerating" @click="generateVideo">
-          {{ videoGenerating ? "生成中（实测约 1.5-3.5 分钟）…" : "🎬 生成视频" }}
-        </NButton>
+        <NPopconfirm :show="askVideo" @positive-click="() => { askVideo = false; doGenerateVideo(); }"
+          @update:show="(v: boolean) => { if (!v) askVideo = false; }">
+          <template #trigger>
+            <NButton type="primary" :loading="videoGenerating" @click="generateVideo">
+              {{ videoGenerating ? "生成中（实测约 1.5-3.5 分钟）…" : "🎬 生成视频" }}
+            </NButton>
+          </template>
+          {{ overBudgetMsg }}
+        </NPopconfirm>
       </NSpace>
       <p style="font-size: 12px; color: #71717c; margin: 8px 0 0">
         5 秒 720p 无水印 MP4 入库；开通 Seedance 需方舟账户余额 ≥200 元（wire 实测见 interfilm/docs/R0-report.md）。
@@ -276,9 +361,15 @@ onMounted(refresh);
           ]" />
         <NSelect v-model:value="batchRatio" size="small" style="width: 110px"
           :options="[{ label: '16:9 横屏', value: '16:9' }, { label: '9:16 竖屏', value: '9:16' }]" />
-        <NButton type="primary" :loading="batchRunning" @click="runBatch">
-          {{ batchRunning ? `生成中 ${batchDone.value}…（每条约 2-4 分钟）` : "🎞️ 开跑批量" }}
-        </NButton>
+        <NPopconfirm :show="askBatch" @positive-click="() => { askBatch = false; doRunBatch(); }"
+          @update:show="(v: boolean) => { if (!v) askBatch = false; }">
+          <template #trigger>
+            <NButton type="primary" :loading="batchRunning" @click="runBatch">
+              {{ batchRunning ? `生成中 ${batchDone.value}…（每条约 2-4 分钟）` : "🎞️ 开跑批量" }}
+            </NButton>
+          </template>
+          {{ overBudgetMsg }}
+        </NPopconfirm>
         <span v-if="batchCost" style="font-size: 12px; color: #ff9a3c">已入账 ≈¥{{ batchCost.toFixed(1) }}</span>
       </NSpace>
       <div v-if="batchFail.length" style="font-size: 12px; color: #e5484d; margin-top: 6px">
@@ -288,6 +379,27 @@ onMounted(refresh);
         串行提交防限流；夜间闲时跑 2.5 档约省 45%。单条失败自动继续，结束汇总。
       </p>
     </NCard>
+
+    <div class="spend-bar">
+      <span>
+        本月 AI 支出 <b :class="{ over: overBudget }">¥{{ monthSpend.toFixed(2) }}</b> / 预算 {{ budgetLabel }}
+        <span v-if="monthUnpriced" style="color: #71717c">
+          （另有 {{ monthUnpriced }} 条 3D 未登记牌价，未计入）
+        </span>
+      </span>
+      <NPopover trigger="click" placement="bottom-end"
+        @update:show="(v: boolean) => { if (v) budgetDraft = monthlyBudget; }">
+        <template #trigger>
+          <NButton size="tiny" quaternary type="primary">预算</NButton>
+        </template>
+        <NSpace align="center" :wrap="false">
+          <NInputNumber v-model:value="budgetDraft" size="small" :min="0" :show-button="false"
+            placeholder="每月预算（元）" style="width: 150px" />
+          <NButton size="small" type="primary" @click="saveBudget">保存</NButton>
+        </NSpace>
+        <p class="spend-tip">填 0 或留空 = 不设上限；超预算仅弹确认，不阻止生成。</p>
+      </NPopover>
+    </div>
 
     <NSpin :show="false">
       <NEmpty v-if="assets.length === 0" description="还没有资产——在上面输入描述生成第一张吧" style="margin: 40px 0" />
@@ -329,6 +441,11 @@ onMounted(refresh);
 </template>
 
 <style scoped>
+.spend-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 10px; font-size: 13px; color: #d8d8de; }
+.spend-bar b { color: #6fd3a0; }
+.spend-bar b.over { color: #e5484d; }
+.spend-tip { font-size: 12px; color: #71717c; margin: 8px 0 0; }
 .asset-card :deep(.n-card-cover) { height: 160px; overflow: hidden; }
 .asset-thumb { width: 100%; height: 160px; object-fit: cover; display: block; }
 .asset-empty { display: flex; align-items: center; justify-content: center; color: #55555f; font-size: 12px; background: #0e0e12; }

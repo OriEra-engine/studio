@@ -16,10 +16,27 @@ pub struct AssetMeta {
     /// 字段时默认 image——全部历史资产都是插画。
     #[serde(default = "default_kind")]
     pub kind: String,
+    /// 成本护栏：估算花费（如 "¥2.50"）。None = 无公开牌价（Rodin 按
+    /// UNREGISTERED 语义诚实不发明数字），旧 meta 兼容缺省 None。
+    #[serde(default)]
+    pub cost_est: Option<String>,
+    /// Seedance succeeded 响应的 usage.completion_tokens（后续 #122 接账本用）。
+    #[serde(default)]
+    pub usage_tokens: Option<u64>,
 }
 
 fn default_kind() -> String {
     "image".into()
+}
+
+/// Seedance 单条估算成本（2026-10 实测口径：5s@720p，mini 草稿档 ≈¥2.50，
+/// 全量/高光档 ≈¥7.50，按 model 名推断）。Rodin 无公开牌价 → cost_est = None。
+fn seedance_cost_est(model: &str) -> String {
+    if model.contains("mini") {
+        "¥2.50".into()
+    } else {
+        "¥7.50".into()
+    }
 }
 
 fn assets_dir(state: &tauri::State<'_, crate::AppState>) -> std::path::PathBuf {
@@ -135,6 +152,9 @@ pub async fn generate_asset(
         prompt: prompt.chars().take(120).collect(),
         created: ts.to_string(),
         kind: "image".into(),
+        // cogview-3-flash 免费档：真实花费 ¥0
+        cost_est: Some("¥0".into()),
+        usage_tokens: None,
     };
     let mut list = read_meta(&state);
     list.insert(0, meta.clone());
@@ -337,6 +357,9 @@ pub async fn generate_mesh(
         prompt: prompt.chars().take(120).collect(),
         created: ts.to_string(),
         kind: "mesh".into(),
+        // Rodin 无公开牌价：cost_est = None（诚实不发明数字，对齐引擎 UNREGISTERED 语义）
+        cost_est: None,
+        usage_tokens: None,
     };
     let mut list = read_meta(&state);
     list.insert(0, meta.clone());
@@ -454,8 +477,8 @@ pub async fn generate_video(
         create_video_task(&client, &base, &key, &model, &ratio, &prompt, &state).await?
     };
 
-    // 轮询：queued|running 继续；succeeded 取 video_url；failed/cancelled 报错。
-    let video_url = poll_video_task(&client, &base, &key, &task_id).await?;
+    // 轮询：queued|running 继续；succeeded 取 video_url + usage；failed/cancelled 报错。
+    let (video_url, usage_tokens) = poll_video_task(&client, &base, &key, &task_id).await?;
 
     // 公网签名 URL：立即取回（不带鉴权头，会过期）。
     let bytes = client
@@ -489,6 +512,9 @@ pub async fn generate_video(
         prompt: prompt.chars().take(120).collect(),
         created: ts.to_string(),
         kind: "video".into(),
+        // 成本护栏：Seedance 按 2026-10 实测口径估（mini ¥2.50 / 其余 ¥7.50 每条）
+        cost_est: Some(seedance_cost_est(&model)),
+        usage_tokens,
     };
     let mut list = read_meta(&state);
     list.insert(0, meta.clone());
@@ -554,12 +580,13 @@ async fn create_video_task(
 }
 
 /// 轮询 Seedance 任务到终态（带网络抖动容忍，评审 R2 性能 P1）。
+/// 成功返回 (video_url, usage.completion_tokens)——usage 顺手记账（#122 接账本用）。
 async fn poll_video_task(
     client: &reqwest::Client,
     base: &str,
     key: &str,
     task_id: &str,
-) -> Result<String, String> {
+) -> Result<(String, Option<u64>), String> {
     let mut blips = 0u32;
     for _ in 0..SEEDANCE_MAX_POLLS {
         tokio::time::sleep(std::time::Duration::from_secs(SEEDANCE_POLL_SECS)).await;
@@ -595,7 +622,11 @@ async fn poll_video_task(
             "queued" | "running" => {}
             "succeeded" => {
                 let url = v["content"]["video_url"].as_str().map(str::to_string);
-                return url.ok_or_else(|| "任务成功但响应缺 video_url".to_string());
+                // usage.completion_tokens：计费口径（R0 实测 ~108.9k tokens/条 mini）
+                let usage = v["usage"]["completion_tokens"].as_u64();
+                return url
+                    .map(|u| (u, usage))
+                    .ok_or_else(|| "任务成功但响应缺 video_url".to_string());
             }
             other => {
                 let detail = v["error"]["message"].as_str().unwrap_or("无详情");

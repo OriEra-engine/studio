@@ -203,19 +203,19 @@ export const api = {
   /** 用系统浏览器打开项目（webview 子窗口兼容性兜底） */
   openProjectInBrowser: (id: string) => invoke<void>("open_project_in_browser", { id }),
 
-  // AI 素材中心
+  // AI 素材中心（cost_est：估算成本如 "¥2.50"，null = 无公开牌价如 Rodin）
   generateAsset: (prompt: string, model?: string) =>
-    invoke<{ id: string; file: string; prompt: string; created: string }>("generate_asset_command", { prompt, model: model ?? null }),
+    invoke<{ id: string; file: string; prompt: string; created: string; cost_est?: string | null }>("generate_asset_command", { prompt, model: model ?? null }),
   listAssets: () =>
-    invoke<{ id: string; file: string; prompt: string; created: string; kind?: string }[]>("list_assets"),
+    invoke<{ id: string; file: string; prompt: string; created: string; kind?: string; cost_est?: string | null }[]>("list_assets"),
   generateMesh: (prompt: string, key: string, base?: string) =>
-    invoke<{ id: string; file: string; prompt: string; created: string; kind: string }>("generate_mesh_command", {
+    invoke<{ id: string; file: string; prompt: string; created: string; kind: string; cost_est?: string | null }>("generate_mesh_command", {
       prompt,
       key,
       base: base ?? null,
     }),
   generateVideo: (prompt: string, key: string, base?: string, model?: string, ratio?: string) =>
-    invoke<{ id: string; file: string; prompt: string; created: string; kind: string }>("generate_video_command", {
+    invoke<{ id: string; file: string; prompt: string; created: string; kind: string; cost_est?: string | null; usage_tokens?: number | null }>("generate_video_command", {
       prompt,
       key,
       base: base ?? null,
