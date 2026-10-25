@@ -25,6 +25,11 @@ pub struct StoryBeat {
     pub phase: String,
     pub title: String,
     pub desc: String,
+    /// #120 影游可执行腿：choices/countdown/ending/settle/video 等扩展字段
+    /// 原样透传进 story.json。serde 默认忽略未知字段，不加 flatten 会在
+    /// create_project 时把模板里的影游腿字段静默砍掉。
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentPreset {

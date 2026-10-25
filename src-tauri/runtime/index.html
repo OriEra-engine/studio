@@ -99,6 +99,36 @@
   #kg-msg { color: #ff9a8a; font-size: 12px; min-height: 18px; }
   .hint { font-size: 12px; color: #7c86a3; margin-top: 8px; }
   .thinking { color: #7c86a3; font-size: 12px; align-self: flex-start; }
+  /* ---- #120 影游可执行腿：choice 倒计时 / video 舞台 / ending 结算 ---- */
+  /* video 舞台淡出 3D 场景：runtime 只对含 video 字段的拍挂 .dimmed，其余包不受影响 */
+  #scene { transition: opacity .6s; }
+  #scene.dimmed { opacity: 0; }
+  /* choice 倒计时条：bar 以 scaleX 从满到空（动画时长由 JS 按 countdown 写入） */
+  #choice-timer { position: relative; height: 8px; background: #1e2536; border-radius: 4px;
+    overflow: hidden; margin: 14px 0 4px; }
+  #choice-timer-bar { position: absolute; inset: 0; background: linear-gradient(90deg, #7eb8ff, #35d07f);
+    border-radius: 4px; transform-origin: left; }
+  @keyframes cdshrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  #choice-timer-txt { font-size: 11px; color: #ffd88a; margin: 4px 0 8px; min-height: 14px; }
+  /* video 舞台：全屏正片（z-index 低于 keygate 97 / boot 98 / fallback 99，出错页仍可覆盖） */
+  #video-stage { position: fixed; inset: 0; background: #000; z-index: 96; display: none;
+    align-items: center; justify-content: center; }
+  #video-el { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #video-skip { position: absolute; right: 18px; bottom: 16px; background: rgba(13,16,23,.72);
+    color: #aeb6cc; border: 1px solid #2a3a5c; border-radius: 20px; padding: 8px 18px;
+    cursor: pointer; font-size: 13px; }
+  #video-skip:hover { color: #fff; }
+  /* ending 结算覆盖层：结局标题 + 一句评语 + 变量小结 + 重开 */
+  #ending { position: fixed; inset: 0; z-index: 95; display: none; align-items: center;
+    justify-content: center; background: radial-gradient(ellipse at center, #16213a 0%, #0d1017 72%); }
+  .ending-box { text-align: center; max-width: 540px; padding: 40px 30px; }
+  #ending-kicker { font-size: 12px; letter-spacing: 6px; color: #7c86a3; margin-bottom: 10px; }
+  #ending-title { font-size: 30px; margin: 0 0 14px; color: #e8d78a; }
+  #ending-line { font-size: 14px; color: #aeb6cc; line-height: 1.9; }
+  #ending-vars { margin: 18px 0 26px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  #btn-restart { background: #2d5b9e; color: #fff; border: none; border-radius: 8px;
+    padding: 12px 36px; cursor: pointer; font-size: 14px; }
+  #btn-restart:hover { background: #3a6fb8; }
 </style>
 </head>
 <body>
@@ -170,6 +200,22 @@
       <button id="kg-unlock">解锁 AI</button>
       <button id="kg-skip">先离线逛逛</button>
     </div>
+  </div>
+</div>
+<!-- #120 影游可执行腿：video 舞台——beats 节点含 video 字段时全屏播正片，
+     播完/跳过/加载失败自动回场景出选项；无 video 字段的模板永不显示此层 -->
+<div id="video-stage">
+  <video id="video-el" playsinline></video>
+  <button id="video-skip">跳过镜头 ▶</button>
+</div>
+<!-- #120 影游可执行腿：ending 节点按 settle 规则结算后的全屏结局画面 -->
+<div id="ending">
+  <div class="ending-box">
+    <div id="ending-kicker">— 结 局 达 成 —</div>
+    <h2 id="ending-title"></h2>
+    <p id="ending-line"></p>
+    <div id="ending-vars"></div>
+    <button id="btn-restart">重新体验</button>
   </div>
 </div>
 
@@ -591,6 +637,7 @@ async function startScene(mod) {
   let storyIdx = JSON.parse(localStorage.getItem("game." + GAME.id + ".beat") || "0");
   let day = JSON.parse(localStorage.getItem("game." + GAME.id + ".day") || "1");
   function renderStory() {
+    clearCountdown(); // 每次重渲染先撤旧计时器，防止过期定时器误触发
     const el = document.getElementById("page-story");
     let html = `<p class="hint" style="margin-bottom:10px">${esc(STORY.premise)}</p>`;
     STORY.beats.forEach((b, i) => {
@@ -601,10 +648,23 @@ async function startScene(mod) {
     const chs = (cur.choices || []).filter(c => c && c.label);
     if (storyIdx >= STORY.beats.length) {
       html += `<button disabled>故事已抵达结局</button>`;
+    } else if (cur.ending) {
+      /* #120 影游腿：ending 节点不再显示推进按钮——按 settle 规则结算并弹出全屏结局 */
+      html += renderEnding(cur);
+    } else if (cur.video && !videoWatched.has(storyIdx)) {
+      /* #120 影游腿：video 舞台节点——先全屏播正片，播完回这里再出选项 */
+      html += `<div class="mech"><b>🎬 正片播放中</b><div>全屏镜头结束后回到现场做出选择；也可点击「跳过镜头」。</div></div>`;
+      setTimeout(() => {
+        if (STORY.beats[storyIdx] === cur) playBeatVideo(cur.video, () => { videoWatched.add(storyIdx); renderStory(); });
+      }, 0);
     } else if (chs.length) {
+      /* #120 影游腿：带 countdown 的选择拍先渲染倒计时条（动画时长在 startCountdown 写入） */
+      if (+cur.countdown > 0) {
+        html += `<div id="choice-timer"><div id="choice-timer-bar"></div></div><div id="choice-timer-txt"></div>`;
+      }
       html += `<div class="choices">` + chs.map((c, ci) => {
         const eff = parseEffect(c.effect);
-        const blocked = !!(eff && eff.d < 0 && resAmount(eff.res) < -eff.d);
+        const blocked = choiceBlocked(c);
         return `<button class="choice ${blocked ? "off" : ""}" data-ci="${ci}" ${blocked ? "disabled" : ""}
           title="${blocked ? esc(eff.res) + " 不足" : "前往第 " + (nextOf(c) + 1) + " 拍"}">${esc(c.label)}${eff ? `<i>${esc((eff.d > 0 ? "＋" : "－") + Math.abs(eff.d) + " " + eff.res)}</i>` : ""}</button>`;
       }).join("") + `</div>`;
@@ -618,6 +678,10 @@ async function startScene(mod) {
       const c = chs[+b2.dataset.ci];
       advanceTo(nextOf(c), c.effect);
     });
+    // 倒计时只在「真渲染了选项」时启动（video 未播完时不启动，结局拍不启动）
+    if (!cur.ending && !(cur.video && !videoWatched.has(storyIdx)) && chs.length && +cur.countdown > 0) {
+      startCountdown(+cur.countdown, chs);
+    }
   }
   /* 分支数据模型:c.next = 目标拍序号(0 起);省略/-1 = 顺延;effect = "资源±数量" */
   function parseEffect(s) {
@@ -631,11 +695,17 @@ async function startScene(mod) {
   }
   async function advanceTo(target, effectStr) {
     if (storyIdx >= STORY.beats.length) return;
+    clearCountdown(); // 先撤倒计时：导演 AI await 期间计时器若再触发会造成双重推进
     const b = STORY.beats[storyIdx];
     const eff = parseEffect(effectStr);
     if (eff) {
-      if (eff.d < 0 && resAmount(eff.res) < -eff.d) { sys(`${eff.res}不足（需要 ${-eff.d}）`); renderStory(); return; }
-      resAdd(eff.res, eff.d, "分支选择");
+      if (VAR_NAMES.has(eff.res)) {
+        /* #120 影游腿：结局 settle 规则声明过的变量进变量袋（负值钳 0，不阻塞选择） */
+        varAdd(eff.res, eff.d, "分支选择");
+      } else {
+        if (eff.d < 0 && resAmount(eff.res) < -eff.d) { sys(`${eff.res}不足（需要 ${-eff.d}）`); renderStory(); return; }
+        resAdd(eff.res, eff.d, "分支选择");
+      }
     }
     sys(`📖 第 ${day} 天 · 剧情推进：「${b.title}」`);
     if (providerReady) {
@@ -681,6 +751,145 @@ async function startScene(mod) {
       `<span class="chip">${esc(n)} <b style="color:#ffd88a">${resAmount(n)}</b></span>`).join("");
   }
   function earn(n, why) { resAdd(RES[0], n, why); }
+
+  /* ==================== #120 影游可执行腿 ====================
+     三个能力全部按「字段存在性」守卫：beats 节点不含 countdown/ending/video
+     字段时走旧路径，其余 16 个玩法包零回归。
+     ---- 变量袋 ----
+     与 resBag 同款 localStorage 约定，独立键 game.<id>.vars（导出存档自动带上）。
+     变量名集合 = ending 节点 settle 规则里声明的名字（如 "affinity>=2" 的 affinity）
+                ∪ 选择 effect 里出现的、但不在 economy 资源表里的名字。
+     命中变量袋的 effect 不占 HUD 资源条，只延迟到 ending 节点一次性结算——
+     避免被「剧情推进奖励 +15」这类主资源流水稀释结算语义。 */
+  const VARS_KEY = "game." + GAME.id + ".vars";
+  let varBag = (() => {
+    try { return JSON.parse(localStorage.getItem(VARS_KEY) || "{}"); } catch (e) { return {}; }
+  })();
+  const VAR_NAMES = (() => {
+    const s = new Set();
+    const addRule = rule => {
+      const m = typeof rule === "string" ? rule.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s*>=/) : null;
+      if (m) s.add(m[1]);
+    };
+    STORY.beats.forEach(b => {
+      if (b && b.settle && typeof b.settle === "object" && !Array.isArray(b.settle)) {
+        Object.values(b.settle).forEach(addRule);
+      }
+      (b && b.choices || []).forEach(c => {
+        const eff = parseEffect(c && c.effect);
+        if (eff && !RES_NAMES.includes(eff.res)) s.add(eff.res);
+      });
+    });
+    return s;
+  })();
+  function varAmount(n) { return varBag[n] | 0; }
+  function varAdd(n, d, why) {
+    varBag[n] = Math.max(0, (varBag[n] | 0) + d);
+    localStorage.setItem(VARS_KEY, JSON.stringify(varBag));
+    if (why) sys(`${d > 0 ? "＋" : "－"}${Math.abs(d)} ${n}（${why}）`);
+  }
+  /* settle 规则求值："*"=通配恒真；"变量>=数值"查变量袋；其余写法视为不成立 */
+  function evalRule(rule) {
+    if (rule === "*" || rule === undefined || rule === null || rule === "") return true;
+    const m = String(rule).trim().match(/^([A-Za-z_][A-Za-z0-9_]*)\s*>=\s*(\d+)$/);
+    return m ? varAmount(m[1]) >= +m[2] : false;
+  }
+  /* 按 settle 声明顺序取第一个命中的分支（模板应兜底 "*" 分支） */
+  function settleBranch(settle) {
+    for (const [branch, rule] of Object.entries(settle || {})) {
+      if (evalRule(rule)) return branch;
+    }
+    return null;
+  }
+  /* 选择是否因资源不足而禁用：变量袋负值钳 0 永不阻塞，只有主资源可能不足 */
+  function choiceBlocked(c) {
+    const eff = parseEffect(c.effect);
+    return !!(eff && eff.d < 0 && !VAR_NAMES.has(eff.res) && resAmount(eff.res) < -eff.d);
+  }
+  /* ---- choice 倒计时：beat.countdown = N 秒。CSS scaleX 动画 + 文本秒数，
+     归零自动选第一个可用选项。deadline 用绝对时间算剩余，后台节流不歪。 ---- */
+  let cdTimer = null;
+  function clearCountdown() {
+    if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
+  }
+  function startCountdown(sec, chs) {
+    clearCountdown();
+    const bar = document.getElementById("choice-timer-bar");
+    const txt = document.getElementById("choice-timer-txt");
+    if (!bar || !txt || !chs.length) return;
+    bar.style.animation = `cdshrink ${sec}s linear forwards`;
+    const deadline = Date.now() + sec * 1000;
+    cdTimer = setInterval(() => {
+      const left = deadline - Date.now();
+      if (left <= 0) {
+        clearCountdown();
+        sys("⏳ 倒计时归零——故事替你做了决定");
+        const pick = chs.find(c => !choiceBlocked(c)) || chs[0];
+        advanceTo(nextOf(pick), pick.effect);
+        return;
+      }
+      txt.textContent = `⏳ ${Math.ceil(left / 1000)} 秒后自动选择`;
+    }, 250);
+  }
+  /* ---- video 舞台节点：beat.video = "clips/xxx.mp4"（相对 → /projects/{id}/ 下）
+     或 "/assets/..."（素材库绝对路径）。播完/跳过/加载失败/自动播放被拦 → 回场景出选项。 ---- */
+  const videoWatched = new Set(); // 本次会话已播过的拍（不落盘：重进该拍会重播）
+  function resolveVideoUrl(v) {
+    const s = String(v);
+    return s.startsWith("/") ? s : "/projects/" + GAME.id + "/" + s;
+  }
+  function playBeatVideo(src, onDone) {
+    const stage = document.getElementById("video-stage");
+    const vid = document.getElementById("video-el");
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      vid.onended = vid.onerror = null;
+      vid.pause(); vid.removeAttribute("src"); vid.load();
+      stage.style.display = "none";
+      sceneEl.classList.remove("dimmed");
+      onDone();
+    };
+    sceneEl.classList.add("dimmed"); // 3D 场景淡出，让位正片
+    stage.style.display = "flex";
+    document.getElementById("video-skip").onclick = finish;
+    vid.onended = finish;
+    vid.onerror = () => { sys("（本镜头视频素材缺失，已自动跳过）"); finish(); };
+    vid.src = resolveVideoUrl(src);
+    vid.play().catch(() => { sys("（浏览器拦截了自动播放，已跳过镜头）"); finish(); });
+  }
+  /* ---- ending 结算：剧情页小结 + 全屏结局画面。
+     结局标题/评语优先取 beat.ending_titles / beat.ending_lines（分支键 → 文案），
+     缺省回落到通用文案，运行时不写死任何一部作品的结局。 ---- */
+  function renderEnding(cur) {
+    const branch = settleBranch(cur.settle) || "lose";
+    const titles = (cur.ending_titles && typeof cur.ending_titles === "object") ? cur.ending_titles : {};
+    const lines = (cur.ending_lines && typeof cur.ending_lines === "object") ? cur.ending_lines : {};
+    const title = titles[branch] || `${cur.title}（${branch}）`;
+    const line = lines[branch] || `这是「${branch}」分支的结局——本局的选择已经尘埃落定。`;
+    document.getElementById("ending-title").textContent = title;
+    document.getElementById("ending-line").textContent = line;
+    document.getElementById("ending-vars").innerHTML = [...VAR_NAMES].map(n =>
+      `<span class="chip">${esc(n)} <b style="color:#ffd88a">${varAmount(n)}</b></span>`).join("");
+    document.getElementById("ending").style.display = "flex";
+    sys(`🎬 结局结算：「${title}」`);
+    return `<div class="beat now"><div class="ph">${esc(cur.phase)} · 已结算</div><div class="tt">🎬 ${esc(title)}</div><div class="ds">${esc(line)}</div></div>
+      <p class="hint">点击画面中央的「重新体验」清空本作存档、从头再来。</p>`;
+  }
+  /* 「重新体验」：清掉本作全部 localStorage 键（beat/day/res/vars/loop/llmledger/记忆）后重开 */
+  function restartGame() {
+    const prefix = "game." + GAME.id + ".";
+    const kill = [];
+    for (let k = 0; k < localStorage.length; k++) {
+      const key = localStorage.key(k);
+      if (key && key.startsWith(prefix)) kill.push(key);
+    }
+    kill.forEach(k => localStorage.removeItem(k));
+    location.reload();
+  }
+  document.getElementById("btn-restart").onclick = restartGame;
+  /* =================== #120 影游可执行腿（完） =================== */
 
   const buyBtn = document.getElementById("buy-hint");
   function refreshBuyBtn() {

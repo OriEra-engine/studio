@@ -20,7 +20,10 @@ const gameName = ref("");
 const theme = ref("");
 const framework = ref("");
 const premise = ref("");
-const beats = reactive<{ phase: string; title: string; desc: string; choices?: BeatChoice[] | null }[]>([]);
+const beats = reactive<{ phase: string; title: string; desc: string; choices?: BeatChoice[] | null;
+  countdown?: number | null; video?: string | null; ending?: boolean | null;
+  settle?: Record<string, string> | null; ending_titles?: Record<string, string> | null;
+  ending_lines?: Record<string, string> | null }[]>([]);
 const aiBusy = ref(-1);
 const instruction = reactive<Record<number, string>>({});
 const saving = ref(false);
@@ -68,6 +71,13 @@ async function save() {
       premise: premise.value,
       beats: beats.map(b => ({
         phase: b.phase, title: b.title, desc: b.desc,
+        // #120 影游腿扩展字段：编辑器暂不提供编辑 UI，但保存时必须原样保留（保存 ≠ 降级）
+        ...(b.countdown != null ? { countdown: b.countdown } : {}),
+        ...(b.video ? { video: b.video } : {}),
+        ...(b.ending ? { ending: b.ending } : {}),
+        ...(b.settle ? { settle: b.settle } : {}),
+        ...(b.ending_titles ? { ending_titles: b.ending_titles } : {}),
+        ...(b.ending_lines ? { ending_lines: b.ending_lines } : {}),
         ...(b.choices?.length ? { choices: b.choices.map(c => ({
           label: c.label,
           ...(c.next !== null && c.next !== undefined ? { next: c.next } : {}),

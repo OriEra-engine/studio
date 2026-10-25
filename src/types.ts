@@ -26,6 +26,19 @@ export interface StoryBeat {
   title: string;
   desc: string;
   choices?: BeatChoice[] | null;
+  /** #120 影游可执行腿：可选扩展字段。runtime（runtime/index.html）按字段存在性守卫，
+   *  缺省时行为与旧版完全一致（其余 16 包零回归）。 */
+  /** choice 倒计时秒数；仅对渲染了 choices 的拍生效，超时自动选第一个可用选项 */
+  countdown?: number | null;
+  /** video 舞台：/projects/{id}/ 相对路径（如 clips/x.mp4）或 /assets/ 绝对路径 */
+  video?: string | null;
+  /** 结局节点：不再显示推进按钮，按 settle 规则全屏结算 */
+  ending?: boolean | null;
+  /** 结算规则：分支名 → "*" 通配 或 "变量>=数值"；按声明顺序取第一个命中分支 */
+  settle?: Record<string, string> | null;
+  /** 结局文案（可选）：分支名 → 结局标题 / 一句评语 */
+  ending_titles?: Record<string, string> | null;
+  ending_lines?: Record<string, string> | null;
 }
 
 export interface AgentPreset {
