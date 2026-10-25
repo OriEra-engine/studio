@@ -369,7 +369,50 @@ pub async fn generate_mesh_command(
 
 const SEEDANCE_POLL_SECS: u64 = 10;
 const SEEDANCE_MAX_POLLS: u32 = 90; // 15 分钟上限（实测 1.5~3.5 分钟）
+const SEEDANCE_TOLERATED_BLIPS: u32 = 3; // 轮询网络抖动容忍次数（评审 R2 性能 P1）
 const SEEDANCE_DEFAULT_MODEL: &str = "doubao-seedance-2-0-mini-260615"; // 草稿档（¥2.50/5s@720p 实测）
+
+/// 视频任务的在途记录（评审 R2 AI原生/性能/PM 三方 P1：task_id 只活在
+/// 函数内存，超时/关窗即丢 → 重试=双倍扣费）。落盘 assets/pending.json；
+/// **刻意不含 Key**——续查用本次调用传入的 Key，纪律与主链一致。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingVideo {
+    pub task_id: String,
+    pub prompt: String,
+    pub base: String,
+    pub model: String,
+    pub ratio: String,
+    pub started: u64,
+}
+
+fn pending_path(state: &tauri::State<'_, crate::AppState>) -> std::path::PathBuf {
+    assets_dir(state).join("pending.json")
+}
+
+fn read_pending(state: &tauri::State<'_, crate::AppState>) -> Vec<PendingVideo> {
+    std::fs::read_to_string(pending_path(state))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_pending(state: &tauri::State<'_, crate::AppState>, list: &[PendingVideo]) {
+    if list.is_empty() {
+        let _ = std::fs::remove_file(pending_path(state));
+        return;
+    }
+    let _ = std::fs::create_dir_all(assets_dir(state));
+    if let Ok(bytes) = serde_json::to_vec_pretty(list) {
+        let _ = std::fs::write(pending_path(state), bytes);
+    }
+}
+
+/// reqwest 错误脱敏（对照 #79 教训）：完整 URL 可能带 query 凭据形态，
+/// 只留 host 与错误类别。
+fn short_err(e: &reqwest::Error) -> String {
+    let host = e.url().and_then(|u| u.host_str()).unwrap_or("?");
+    format!("{host}: {e}")
+}
 
 /// 火山方舟 Seedance 文生视频：prompt → MP4 字节 → 资产库（kind=video）。
 pub async fn generate_video(
@@ -398,7 +441,71 @@ pub async fn generate_video(
         .unwrap_or_else(|| SEEDANCE_DEFAULT_MODEL.into());
     let ratio = ratio.filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "16:9".into());
 
+    // 防双倍扣费（评审 R2 三方 P1）：同 prompt 有在途任务 → 续查而不是
+    // 再创建。Key 用本次传入的（纪律：pending 不存 Key）。
+    let existing = read_pending(&state)
+        .into_iter()
+        .find(|t| t.prompt == prompt);
     let client = reqwest::Client::new();
+    let task_id = if let Some(pending) = existing {
+        println!("[assets] 续查在途视频任务 {}（不重复创建）", pending.task_id);
+        pending.task_id.clone()
+    } else {
+        create_video_task(&client, &base, &key, &model, &ratio, &prompt, &state).await?
+    };
+
+    // 轮询：queued|running 继续；succeeded 取 video_url；failed/cancelled 报错。
+    let video_url = poll_video_task(&client, &base, &key, &task_id).await?;
+
+    // 公网签名 URL：立即取回（不带鉴权头，会过期）。
+    let bytes = client
+        .get(&video_url)
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await
+        .map_err(|e| format!("下载视频失败：{e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("读取视频内容失败：{e}"))?
+        .to_vec();
+
+    // 任务完结：清在途记录（成功路径；终态失败在 poll 内已报错，pending
+    // 里的该条同样清除——供应商终态不可续查）。
+    {
+        let mut pend = read_pending(&state);
+        pend.retain(|t| t.task_id != task_id);
+        write_pending(&state, &pend);
+    }
+
+    // 落盘 + 入库（页面按 video 类别用 <video> 渲染）。
+    let dir = assets_dir(&state);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = now_ts();
+    let file = format!("{ts}-seedance.mp4");
+    std::fs::write(dir.join(&file), &bytes).map_err(|e| format!("写入 MP4 失败：{e}"))?;
+    let meta = AssetMeta {
+        id: format!("a{ts}"),
+        file: format!("assets/{file}"),
+        prompt: prompt.chars().take(120).collect(),
+        created: ts.to_string(),
+        kind: "video".into(),
+    };
+    let mut list = read_meta(&state);
+    list.insert(0, meta.clone());
+    write_meta(&state, &list)?;
+    Ok(meta)
+}
+
+/// 创建 Seedance 任务并落 pending（防双倍扣费）。
+async fn create_video_task(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    model: &str,
+    ratio: &str,
+    prompt: &str,
+    state: &tauri::State<'_, crate::AppState>,
+) -> Result<String, String> {
     let resp = client
         .post(format!("{base}/api/v3/contents/generations/tasks"))
         .header("Authorization", format!("Bearer {key}"))
@@ -412,7 +519,7 @@ pub async fn generate_video(
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| format!("创建 Seedance 任务失败：{e}"))?;
+        .map_err(|e| format!("创建 Seedance 任务失败：{}", short_err(&e)))?;
     let status = resp.status();
     let text = resp.text().await.map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
@@ -432,66 +539,75 @@ pub async fn generate_video(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("方舟未受理任务：{}", text.chars().take(200).collect::<String>()))?
         .to_string();
+    let mut pend = read_pending(state);
+    pend.retain(|t| t.prompt != prompt);
+    pend.push(PendingVideo {
+        task_id: task_id.clone(),
+        prompt: prompt.to_string(),
+        base: base.to_string(),
+        model: model.to_string(),
+        ratio: ratio.to_string(),
+        started: now_ts(),
+    });
+    write_pending(state, &pend);
+    Ok(task_id)
+}
 
-    // 轮询：queued|running 继续；succeeded 取 video_url；failed/cancelled 报错。
-    let video_url = {
-        let mut hit: Option<String> = None;
-        for _ in 0..SEEDANCE_MAX_POLLS {
-            tokio::time::sleep(std::time::Duration::from_secs(SEEDANCE_POLL_SECS)).await;
-            let resp = client
-                .get(format!("{base}/api/v3/contents/generations/tasks/{task_id}"))
-                .header("Authorization", format!("Bearer {key}"))
-                .timeout(std::time::Duration::from_secs(30))
-                .send()
-                .await
-                .map_err(|e| format!("查询状态失败：{e}"))?;
-            let v: serde_json::Value = resp.json().await.map_err(|e| format!("解析状态失败：{e}"))?;
-            match v["status"].as_str().unwrap_or_default() {
-                "queued" | "running" => {}
-                "succeeded" => {
-                    hit = v["content"]["video_url"].as_str().map(str::to_string);
-                    break;
+/// 轮询 Seedance 任务到终态（带网络抖动容忍，评审 R2 性能 P1）。
+async fn poll_video_task(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    task_id: &str,
+) -> Result<String, String> {
+    let mut blips = 0u32;
+    for _ in 0..SEEDANCE_MAX_POLLS {
+        tokio::time::sleep(std::time::Duration::from_secs(SEEDANCE_POLL_SECS)).await;
+        // 抖动容忍：连续 SEEDANCE_TOLERATED_BLIPS 次网络/解析失败才放弃，
+        // 单次抖动不再报废已付费任务。
+        let v = match client
+            .get(format!("{base}/api/v3/contents/generations/tasks/{task_id}"))
+            .header("Authorization", format!("Bearer {key}"))
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+        {
+            Ok(r) => match r.json::<serde_json::Value>().await {
+                Ok(v) => v,
+                Err(e) => {
+                    blips += 1;
+                    if blips >= SEEDANCE_TOLERATED_BLIPS {
+                        return Err(format!("解析状态连续失败：{}", short_err(&e)));
+                    }
+                    continue;
                 }
-                other => {
-                    let detail = v["error"]["message"].as_str().unwrap_or("无详情");
-                    return Err(format!("生成失败（{other}）：{detail}"));
+            },
+            Err(e) => {
+                blips += 1;
+                if blips >= SEEDANCE_TOLERATED_BLIPS {
+                    return Err(format!("查询状态连续失败：{}", short_err(&e)));
                 }
+                continue;
+            }
+        };
+        blips = 0;
+        match v["status"].as_str().unwrap_or_default() {
+            "queued" | "running" => {}
+            "succeeded" => {
+                let url = v["content"]["video_url"].as_str().map(str::to_string);
+                return url.ok_or_else(|| "任务成功但响应缺 video_url".to_string());
+            }
+            other => {
+                let detail = v["error"]["message"].as_str().unwrap_or("无详情");
+                return Err(format!("生成失败（{other}）：{detail}"));
             }
         }
-        hit.ok_or_else(|| {
-            format!("生成超时（超 {} 次轮询）——任务可能仍在排队，稍后在方舟控制台查看", SEEDANCE_MAX_POLLS)
-        })?
-    };
-
-    // 公网签名 URL：立即取回（不带鉴权头，会过期）。
-    let bytes = client
-        .get(&video_url)
-        .timeout(std::time::Duration::from_secs(600))
-        .send()
-        .await
-        .map_err(|e| format!("下载视频失败：{e}"))?
-        .bytes()
-        .await
-        .map_err(|e| format!("读取视频内容失败：{e}"))?
-        .to_vec();
-
-    // 落盘 + 入库（页面按 video 类别用 <video> 渲染）。
-    let dir = assets_dir(&state);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let ts = now_ts();
-    let file = format!("{ts}-seedance.mp4");
-    std::fs::write(dir.join(&file), &bytes).map_err(|e| format!("写入 MP4 失败：{e}"))?;
-    let meta = AssetMeta {
-        id: format!("a{ts}"),
-        file: format!("assets/{file}"),
-        prompt: prompt.chars().take(120).collect(),
-        created: ts.to_string(),
-        kind: "video".into(),
-    };
-    let mut list = read_meta(&state);
-    list.insert(0, meta.clone());
-    write_meta(&state, &list)?;
-    Ok(meta)
+    }
+    // 超时：pending 保留——同 prompt 重新生成将续查而非重复扣费
+    Err(format!(
+        "生成超时（超 {} 次轮询）——在途任务已记录，同描述重新生成将续查而非重复扣费",
+        SEEDANCE_MAX_POLLS
+    ))
 }
 
 #[tauri::command]
@@ -539,6 +655,14 @@ pub fn add_asset_to_project(
         .find(|a| a.id == asset_id)
         .ok_or_else(|| format!("资产不存在：{asset_id}"))?
         .clone();
+    // 评审 R2 玩家 P0：视频/3D 模型挂进画廊墙会静默加载失败（runtime 的
+    // art.json 走 TextureLoader 只认图片），还白占坑位——后端诚实拒绝。
+    if asset.kind != "image" {
+        return Err(format!(
+            "画廊墙只挂插画；{} 类资产的场景挂载随素材中心 M2 跟进（当前可导出收藏）",
+            if asset.kind == "video" { "视频" } else { "3D 模型" }
+        ));
+    }
 
     let dir = state.projects_dir.join(&project_id);
     if !dir.join("index.html").is_file() {
