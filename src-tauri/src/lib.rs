@@ -3,6 +3,7 @@
 mod assets;
 mod demos;
 mod feedback;
+mod film_flow;
 mod hardware;
 mod llm;
 mod ollama;
@@ -460,6 +461,10 @@ pub fn run() {
             assets::generate_asset_command,
             assets::generate_mesh_command,
             assets::generate_video_command,
+            film_flow::film_flow_load,
+            film_flow::film_flow_save,
+            film_flow::tts_doubao,
+            film_flow::export_film,
             assets::list_assets,
             assets::delete_asset,
             assets::add_asset_to_project,
