@@ -52,6 +52,23 @@ let curTaskId = "";
 let typingTimer: number | undefined;
 let elapsedTimer: number | undefined;
 let busyStart = 0;
+/* 流式 delta 批量刷（性能测评 P0 修法）：增量先入 buffer，100ms 一批落
+   消息；滚动只在用户本就贴底时跟随——上翻阅读时不再被拽回底部 */
+let streamBuf = "";
+let streamTimer: number | undefined;
+let streamProx: { content: string } | null = null;
+function flushStream() {
+  if (streamTimer !== undefined) {
+    clearInterval(streamTimer);
+    streamTimer = undefined;
+  }
+  if (!streamProx || !streamBuf) { streamBuf = ""; return; }
+  const el = listEl.value;
+  const stick = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  streamProx.content += streamBuf;
+  streamBuf = "";
+  if (stick) void scrollBottom();
+}
 
 const QUICK_ACTIONS: { label: string; text: string }[] = [
   { label: "🎮 带我做第一个游戏", text: "带我从零做一个游戏,我是新手" },
@@ -200,6 +217,8 @@ function startElapsed() {
 }
 /** 强制收尾：解锁 busy、给最后一条assistant消息标注超时，输入即时可用。 */
 function watchdogTimeout() {
+  flushStream();
+  streamProx = null;
   stopElapsed();
   stopTyping();
   busy.value = false;
@@ -253,6 +272,8 @@ async function send(text?: string) {
     msgs.value.push({ role: "assistant", content: "", ts: Date.now() });
     const prox = msgs.value[msgs.value.length - 1];
     const finish = () => {
+      flushStream();
+      streamProx = null;
       busy.value = false;
       stopElapsed();
       curTaskId = "";
@@ -260,13 +281,17 @@ async function send(text?: string) {
       scrollBottom();
     };
     curTaskId = "";
+    streamProx = prox;
     const idP = api.copilotChatStream(SYSTEM_PROMPT, history, q, ev => {
       if (!busy.value) return; // 看门狗已强制收尾——丢弃迟到事件
       if (ev.event === "delta") {
         providerOnline.value = true;
-        prox.content += ev.text;
-        scrollBottom();
+        // 2026-10-26 性能测评 P0：每个 delta 全量重渲染 markdown + 强制
+        // 重排是 O(n²) 打字机自杀——攒 100ms 批量刷，滚动只在「已贴底」跟随
+        streamBuf += ev.text;
+        if (streamTimer === undefined) streamTimer = window.setInterval(flushStream, 100);
       } else if (ev.event === "done") {
+        flushStream();
         if (!prox.content) prox.content = "(空回复,再试一次?)";
         finish();
       } else {
@@ -572,7 +597,7 @@ onBeforeUnmount(() => {
   position: absolute; right: 5px; bottom: 7px; width: 9px; height: 9px;
   border-radius: 50%; border: 2px solid #0b0b0e;
 }
-.ori-status-dot.on { background: #3fd68f; }
+.ori-status-dot.on { background: var(--good); }
 .ori-status-dot.off { background: #71717c; }
 
 .ori-panel {
@@ -599,7 +624,7 @@ onBeforeUnmount(() => {
   flex: 0 1 auto; min-width: 0; max-width: 190px;
 }
 .ori-chip.small { max-width: 170px; padding: 1px 7px; }
-.ori-chip.on { color: #3fd68f; border-color: #215437; }
+.ori-chip.on { color: var(--good); border-color: #215437; }
 .ori-chip.off { color: #c9a6ff; border-color: #4a3a66; }
 .ori-head-btn {
   background: none; border: none; color: #71717c; font-size: 14px; cursor: pointer;
@@ -677,7 +702,7 @@ onBeforeUnmount(() => {
   border-radius: 14px; padding: 3px 10px; cursor: pointer; transition: all 0.12s ease;
 }
 .ori-quick button:hover { color: #7eb8ff; border-color: #3a3a46; }
-.ori-quick .ori-nav { color: #3fd68f; border-color: #215437; }
+.ori-quick .ori-nav { color: var(--good); border-color: #215437; }
 
 /* composer：输入 + 状态条 + 发送/停止 */
 .ori-composer { padding: 10px 14px 12px; }
