@@ -719,6 +719,70 @@ pub fn add_asset_to_project(
     Ok(())
 }
 
+/// B1 影游 video 桥：素材中心 video 资产 → 项目某拍正片。
+/// 拷贝（非移动，素材库保留原件）assets/<file> → projects/<id>/clips/beat{N}.mp4，
+/// 并读改写项目 clips.json（[{beat, file, prompt}]，同拍覆盖、按拍号排序）。
+/// runtime 端 clips.json 的 file 只接受 clips/ 前缀相对路径（白名单语义），
+/// 这里生成的路径恒为 "clips/beat{N}.mp4"，天然合规。
+#[tauri::command]
+pub fn set_video_as_clip(
+    app: AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    project_id: String,
+    asset_id: String,
+    beat_index: u32,
+) -> Result<(), String> {
+    let list = read_meta(&state);
+    let asset = list
+        .iter()
+        .find(|a| a.id == asset_id)
+        .ok_or_else(|| format!("资产不存在：{asset_id}"))?
+        .clone();
+    if asset.kind != "video" {
+        return Err(format!(
+            "只有视频类资产能设为正片（该资产是 {} 类）",
+            if asset.kind == "mesh" { "3D 模型" } else { "插画" }
+        ));
+    }
+    let dir = state.projects_dir.join(&project_id);
+    if !dir.join("index.html").is_file() {
+        return Err(format!("项目不存在：{project_id}"));
+    }
+    let file_name = asset.file.strip_prefix("assets/").unwrap_or(&asset.file);
+    let src = assets_dir(&state).join(file_name);
+    if !src.is_file() {
+        return Err(format!("视频文件已不存在：{}", asset.file));
+    }
+    // 拷贝而非移动：素材库保留原件（删除素材不影响已进项目的正片）
+    let clips_dir = dir.join("clips");
+    std::fs::create_dir_all(&clips_dir).map_err(|e| format!("创建 clips 目录失败：{e}"))?;
+    let dest_rel = format!("clips/beat{beat_index}.mp4");
+    std::fs::copy(&src, dir.join(&dest_rel)).map_err(|e| format!("拷贝视频失败：{e}"))?;
+
+    // 读改写 clips.json：同拍覆盖（retain 掉旧条目再 push），按拍号升序
+    let clips_path = dir.join("clips.json");
+    let mut clips: Vec<serde_json::Value> = std::fs::read_to_string(&clips_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let beat_key = |c: &serde_json::Value| c.get("beat").and_then(|b| b.as_u64()).unwrap_or(u64::MAX);
+    clips.retain(|c| beat_key(c) != beat_index as u64);
+    clips.push(json!({
+        "beat": beat_index,
+        "file": dest_rel,
+        "prompt": asset.prompt,
+    }));
+    clips.sort_by_key(|c| beat_key(c));
+    std::fs::write(
+        &clips_path,
+        serde_json::to_vec_pretty(&clips).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("写入 clips.json 失败：{e}"))?;
+
+    crate::project::reload_project_window(&app, &project_id);
+    Ok(())
+}
+
 /// 供项目卡导入（ProviderCfg 仅在 zhipu 时可用）——导出给测试与前端校验用
 pub fn provider_is_zhipu(cfg: &ProviderCfg) -> bool {
     cfg.kind == "zhipu"

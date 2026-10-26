@@ -225,6 +225,9 @@ export const api = {
   deleteAsset: (id: string) => invoke<void>("delete_asset", { id }),
   addAssetToProject: (assetId: string, projectId: string) =>
     invoke<void>("add_asset_to_project", { assetId, projectId }),
+  /** B1 影游 video 桥：把 video 资产拷为项目第 beatIndex 拍正片（clips/beatN.mp4 + clips.json） */
+  setVideoAsClip: (assetId: string, projectId: string, beatIndex: number) =>
+    invoke<void>("set_video_as_clip", { assetId, projectId, beatIndex }),
 
   // 影游工作流（状态落盘 / 豆包 TTS-2.0 配音 / 组装导出）
   filmFlowLoad: (project: string) =>
