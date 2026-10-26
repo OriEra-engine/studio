@@ -656,17 +656,19 @@ async function startScene(mod) {
       html += `<div class="beat ${cls}"><div class="ph">${esc(b.phase)}${i < storyIdx ? " · 已完成" : i === storyIdx ? " · 进行中" : ""}</div><div class="tt">${esc(b.title)}</div><div class="ds">${esc(b.desc)}</div></div>`;
     });
     const cur = STORY.beats[storyIdx] || {};
+    /* B1 影游 video 桥：拍正片三级优先——beats 自带 video > clips.json > 无视频 */
+    const clipSrc = cur.video || clipForBeat(storyIdx);
     const chs = (cur.choices || []).filter(c => c && c.label);
     if (storyIdx >= STORY.beats.length) {
       html += `<button disabled>故事已抵达结局</button>`;
     } else if (cur.ending) {
       /* #120 影游腿：ending 节点不再显示推进按钮——按 settle 规则结算并弹出全屏结局 */
       html += renderEnding(cur);
-    } else if (cur.video && !videoWatched.has(storyIdx)) {
+    } else if (clipSrc && !videoWatched.has(storyIdx)) {
       /* #120 影游腿：video 舞台节点——先全屏播正片，播完回这里再出选项 */
       html += `<div class="mech"><b>🎬 正片播放中</b><div>全屏镜头结束后回到现场做出选择；也可点击「跳过镜头」。</div></div>`;
       setTimeout(() => {
-        if (STORY.beats[storyIdx] === cur) playBeatVideo(cur.video, () => { videoWatched.add(storyIdx); renderStory(); });
+        if (STORY.beats[storyIdx] === cur) playBeatVideo(clipSrc, () => { videoWatched.add(storyIdx); renderStory(); });
       }, 0);
     } else if (chs.length) {
       /* #120 影游腿：带 countdown 的选择拍先渲染倒计时条（动画时长在 startCountdown 写入） */
@@ -690,7 +692,7 @@ async function startScene(mod) {
       advanceTo(nextOf(c), c.effect);
     });
     // 倒计时只在「真渲染了选项」时启动（video 未播完时不启动，结局拍不启动）
-    if (!cur.ending && !(cur.video && !videoWatched.has(storyIdx)) && chs.length && +cur.countdown > 0) {
+    if (!cur.ending && !(clipSrc && !videoWatched.has(storyIdx)) && chs.length && +cur.countdown > 0) {
       startCountdown(+cur.countdown, chs);
     }
   }
@@ -884,6 +886,31 @@ async function startScene(mod) {
   /* ---- video 舞台节点：beat.video = "clips/xxx.mp4"（相对 → /projects/{id}/ 下）
      或 "/assets/..."、"/projects/..."（素材库/项目内绝对路径）。播完/跳过/加载失败/
      自动播放被拦/白名单拒绝 → 回场景出选项。 ---- */
+  /* ---- B1 影游 video 桥：项目 clips.json（素材中心「设为正片」写入）----
+     格式 [{beat: N, file: "clips/beatN.mp4", prompt}]。优先级：beats 自带
+     video 字段 > clips.json > 无视频照旧。拉取 404/失败（非影游项目无此
+     文件）静默照旧，其余 16 个玩法包零回归。白名单语义：file 只认 clips/
+     前缀相对路径且拒绝 .. 穿越 defence in depth（后端 set_video_as_clip
+     生成的路径天然合规，这里再挡一层手改的 clips.json）。 ---- */
+  let projectClips = [];
+  const clipsReady = (async () => {
+    try {
+      const res = await fetch("/projects/" + GAME.id + "/clips.json", { cache: "no-store" });
+      if (!res.ok) return; // 404 = 项目没有 clips.json，非影游项目零回归
+      const arr = await res.json();
+      if (Array.isArray(arr)) projectClips = arr;
+    } catch (e) { /* 静默：拉不到照旧 */ }
+  })();
+  function clipForBeat(i) {
+    const hit = projectClips.find(c => c && +c.beat === i && typeof c.file === "string");
+    if (!hit) return null;
+    const f = hit.file.trim();
+    if (!f.startsWith("clips/") || f.includes("..")) {
+      console.warn("[oriera] clips.json 条目被白名单拒绝（仅接受 clips/ 前缀相对路径）:", hit.file);
+      return null;
+    }
+    return f;
+  }
   const videoWatched = new Set(); // 本次会话已播过的拍（不落盘：重进该拍会重播）
   /* W4 视频源白名单：拒绝 "//" 开头（协议相对外链）、含 "://" 的绝对 URL 与任何
      scheme: 前缀（data:/javascript:/file: 等不带 "//"，单独挡 ：// 挡不住），
@@ -1148,6 +1175,7 @@ async function startScene(mod) {
   document.getElementById("tagline").textContent = GAME.tagline;
   document.getElementById("day").textContent = day;
   renderRes();
+  await clipsReady; // B1：先拿到 clips.json 再首渲染，防正片首拍漏播（本地 fetch 毫秒级）
   renderStory(); renderCodex(); renderNpcList(); select(0);
   npcs[0] && sys(`欢迎来到「${esc(GAME.name)}」。${esc(AGENTS[0].name)}正在看你——去和 TA 说说第一句话吧。`);
   // NPC 开场白（顺序错开）
