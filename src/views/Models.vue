@@ -311,17 +311,20 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       </NGrid>
     </NCard>
 
-    <!-- 全部云厂商 -->
-    <NCard title="☁️ 全部云厂商 · 自由选择" size="small" style="margin-bottom: 14px">
-      <template #header-extra>
-        <NSpace size="small" :wrap="false">
-          <NTag
-            v-for="f in FILTERS" :key="f.id" size="small" round
-            :type="filter === f.id ? 'primary' : 'default'" style="cursor: pointer"
-            @click="filter = f.id"
-          >{{ f.label }}</NTag>
-        </NSpace>
-      </template>
+    <!-- 全部云厂商（渐进披露：默认收起，推荐方案已够用） -->
+    <NCard size="small" style="margin-bottom: 14px">
+      <NCollapse>
+        <template #header>☁️ 全部云厂商 · 自由选择（<span style="color:#35d07f">点开</span>）</template>
+        <template #header-extra>
+          <NSpace size="small" :wrap="false">
+            <NTag
+              v-for="f in FILTERS" :key="f.id" size="small" round
+              :type="filter === f.id ? 'primary' : 'default'" style="cursor: pointer"
+              @click.stop="filter = f.id"
+            >{{ f.label }}</NTag>
+          </NSpace>
+        </template>
+        <div style="padding-top: 6px">
       <NGrid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="p in filteredPresets" :key="p.kind" span="3 m:1">
           <div
@@ -364,6 +367,8 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       <p style="color: #71717c; font-size: 11.5px; margin: 12px 0 0">
         价格与免费额度以各厂商定价页为准(引擎不背书价格);任何 OpenAI 兼容端点也可在下方「其他 OpenAI 兼容」自由填写。
       </p>
+            </div>
+      </NCollapse>
     </NCard>
 
     <!-- 任务槽位(v0.7.3 已接入运行时:对话/导演槽生效;行为/审校预留) -->

@@ -2,6 +2,15 @@
 // 构建期注入（vite define），与 package.json 版本恒一致
 const APP_VERSION = __APP_VERSION__;
 import { computed, ref, onBeforeUnmount, onMounted } from "vue";
+// 桌面小宠物自启（设置页 🐾 开关；失败静默——浏览器 dev 环境无 Tauri）
+function petAutoStart() {
+  try {
+    if (localStorage.getItem("pet.auto") === "1") {
+      const ch = localStorage.getItem("pet.character") === "era" ? "era" : "ori";
+      window.__TAURI__?.core?.invoke?.("open_pet", { character: ch })?.catch?.(() => {});
+    }
+  } catch { /* 非 Tauri 环境 */ }
+}
 import { useRoute, RouterLink, RouterView } from "vue-router";
 import { NConfigProvider, NMessageProvider, NDialogProvider, darkTheme, zhCN, dateZhCN } from "naive-ui";
 import type { GlobalThemeOverrides } from "naive-ui";
@@ -53,6 +62,7 @@ function onGlobalKey(e: KeyboardEvent) {
   }
 }
 onMounted(() => {
+  petAutoStart();
   window.addEventListener("keydown", onGlobalKey);
   // 全局状态唯一初始化点：之后模型保存/清除经 store 即时传导各页
   refreshStatus();

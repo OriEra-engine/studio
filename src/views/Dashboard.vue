@@ -109,24 +109,17 @@ function fmtDate(unix: string) {
       </div>
     </div>
 
-    <NGrid :cols="4" :x-gap="14" :y-gap="14" responsive="screen" item-responsive>
-      <NGi span="4 m:2">
+    <NGrid :cols="3" :x-gap="14" :y-gap="14" responsive="screen" item-responsive>
+      <NGi span="3 m:1">
         <NCard title="内置服务" size="small">
           <template #header-extra>
             <span class="oe-badge"><span class="status-dot on pulse"></span>运行中</span>
           </template>
           <div class="stat-line"><span class="stat-label">本地演示服务器</span><span class="stat-val mono">{{ status ? `127.0.0.1:${status.server.port}` : '—' }}</span></div>
+          <div class="stat-line"><span class="stat-label">引擎快照</span><span class="stat-val mono">{{ status?.server.snapshot_version ?? '—' }}</span></div>
         </NCard>
       </NGi>
-      <NGi span="4 m:2">
-        <NCard title="引擎快照" size="small">
-          <template #header-extra>
-            <NTag type="info" size="small" round>已内置</NTag>
-          </template>
-          <div class="stat-line"><span class="stat-label">OriEra Engine</span><span class="stat-val mono">{{ status?.server.snapshot_version ?? '—' }}</span></div>
-        </NCard>
-      </NGi>
-      <NGi span="4 m:2">
+      <NGi span="3 m:1">
         <NCard title="AI 模型" size="small">
           <template #header-extra>
             <span class="oe-badge" :style="status?.provider_configured ? '' : 'color: var(--warn)'">
@@ -143,7 +136,7 @@ function fmtDate(unix: string) {
           </div>
         </NCard>
       </NGi>
-      <NGi span="4 m:2">
+      <NGi span="3 m:1">
         <NCard title="我的游戏" size="small">
           <template #header-extra>
             <NTag size="small" round>{{ status?.project_count ?? 0 }} 个</NTag>

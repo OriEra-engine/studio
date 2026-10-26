@@ -23,6 +23,8 @@ jobs:
         run: npm ci || npm install --no-package-lock --no-save
       - name: Preset alignment check (api.ts ↔ kernel snapshot)
         run: node scripts/check-presets.mjs
+      - name: Runtime pet/game page syntax check (W10)
+        run: node scripts/check-runtime-syntax.mjs
       - name: Build frontend
         run: npx vite build
 

@@ -4,10 +4,18 @@ const APP_VERSION = __APP_VERSION__;
 import { onMounted, ref } from "vue";
 import { NCard, NSpace, NButton, NTag, NAlert, NModal, useMessage, NSwitch, NInput, NRadioGroup, NRadioButton } from "naive-ui";
 import { api, type ServerInfo, type FeedbackResult } from "../api";
+import { invoke } from "@tauri-apps/api/core";
 
 const message = useMessage();
 const info = ref<ServerInfo | null>(null);
 const showDev = ref(false);
+const petAuto = ref(localStorage.getItem("pet.auto") === "1");
+function onPetAuto(v: boolean) {
+  localStorage.setItem("pet.auto", v ? "1" : "0");
+  const ch = localStorage.getItem("pet.character") === "era" ? "era" : "ori";
+  if (v) invoke("open_pet", { character: ch }).catch(() => {});
+  else invoke("pet_close").catch(() => {});
+}
 const developerMode = ref(false);
 
 // ---- 反馈链路 ----
@@ -136,6 +144,18 @@ cargo run -p oriera-pc`;
       </NAlert>
     </NCard>
 
+    <NCard title="🐾 桌面小宠物" size="small" style="margin-bottom: 14px">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+        <div>
+          <div style="font-size: 13.5px; color: #e6e8ef">启动 Studio 时自动召唤桌宠</div>
+          <div style="font-size: 12px; color: #a0a0ab; margin-top: 2px">
+            Ori（白蓝悬浮）/ Era（橙棕机械）陪伴在桌面角落；也可随时在奥粒面板 🐾🤖 召唤
+          </div>
+        </div>
+        <NSwitch v-model:value="petAuto" @update:value="onPetAuto" />
+      </div>
+    </NCard>
+
     <NCard title="🧑‍💻 开发者模式" size="small" style="margin-bottom: 14px">
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px">
         <p style="color: #a0a0ab; font-size: 13px; line-height: 1.8; margin: 0">
@@ -190,12 +210,15 @@ cargo run -p oriera-pc`;
       </NSpace>
     </NCard>
 
-    <NCard title="🛠️ 引擎源码开发引导（Rust）" size="small" style="margin-bottom: 14px">
+    <NCard size="small" style="margin-bottom: 14px">
+      <NCollapse>
+        <template #header>🛠️ 引擎源码开发引导（Rust · 进阶）</template>
       <p style="color: #a0a0ab; font-size: 13px; line-height: 1.8; margin: 0 0 12px">
         进阶用户可获取引擎 Rust 源码、参与引擎开发。全程走国内镜像（rsproxy / gitee），
         <b>无需科学上网</b>。需要约 10GB 磁盘与一定命令行基础。
       </p>
       <NButton type="primary" ghost @click="showDev = true">查看引导手册</NButton>
+          </NCollapse>
     </NCard>
 
     <NCard title="ℹ️ 关于" size="small">
