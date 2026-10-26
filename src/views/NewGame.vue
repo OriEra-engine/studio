@@ -34,6 +34,53 @@ const aiPureText = computed(
     beats.every((b) => !b.countdown && !b.ending && !b.video),
 );
 
+// ---- B3：影游模板（pack.id 含 film）走影游 schema prompt ----
+// 后端 GeneratedBeat 不透传 countdown/ending/settle（serde 未知字段丢弃），
+// 但流式 delta 在前端攒成了完整原文——影游字段从原文自行解析，无需动后端。
+const isFilmPack = computed(() => !!pack.value && pack.value.id.includes("film"));
+
+/** 影游 schema 追加指令：拼进 frameworkRhythm 通道（后端 story_prompt 原文内插，不改 llm.rs）。
+ *  字段形态对齐 last-platform-filmgame 模板 beats 与 runtime 的 countdown/ending 实现约定。 */
+const FILM_SCHEMA_PROMPT =
+  "。本作为互动影游，在上述结构上追加影游字段：" +
+  "(1)每个含 choices 的选择拍必须带 \"countdown\": 8（8 秒倒计时，超时自动选最后一项）；" +
+  "(2)choices 元素改为 {\"label\":\"不超过12字的选择\",\"effect\":\"变量名+增减量\"}（如 \"affinity+1\"），不要 next 字段——选择只记变量不改走向，中段节拍可带 \"video\":\"clips/英文短名.mp4\" 氛围镜头；" +
+  "(3)最后一拍恰为 1 个结局拍：\"ending\": true 且带 \"settle\" 结算规则对象，形如 {\"win\":\"affinity>=2 && trust>=1\",\"lose\":\"*\"}——规则支持 \"变量>=数值\"、&& 双判据、按声明顺序取首个命中分支、\"*\" 通配兜底，并附 \"ending_titles\" 与 \"ending_lines\"（分支名→结局标题/一句评语）；" +
+  "(4)settle 中出现的变量名必须与各拍 effect 的变量名一致（如 affinity/trust），变量在结局拍一次性结算。";
+
+/** 影游结构校验：JSON 可解析 + 每拍字段完整 + 选择拍带 countdown + 至少一个 ending 拍带 settle。 */
+function validateFilmStory(story: unknown): story is GeneratedStory {
+  if (!story || typeof story !== "object") return false;
+  const s = story as GeneratedStory;
+  if (typeof s.premise !== "string" || !s.premise.trim()) return false;
+  if (!Array.isArray(s.beats) || s.beats.length === 0) return false;
+  let hasEnding = false;
+  for (const b of s.beats) {
+    if (!b || typeof b !== "object") return false;
+    const beat = b as Record<string, unknown>;
+    if (typeof beat.phase !== "string" || typeof beat.title !== "string" || typeof beat.desc !== "string") return false;
+    if (Array.isArray(beat.choices) && beat.choices.length > 0 && typeof beat.countdown !== "number") return false;
+    if (beat.ending === true) {
+      if (!beat.settle || typeof beat.settle !== "object" || Object.keys(beat.settle as object).length === 0) return false;
+      hasEnding = true;
+    }
+  }
+  return hasEnding;
+}
+
+/** 从流式原文提取 JSON（剥代码围栏，对齐后端 extract_json 行为）。 */
+function extractJsonRaw(raw: string): string {
+  const trimmed = raw.trim();
+  const no_fence = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/^```\s*/, "")
+    .replace(/```\s*$/, "")
+    .trim();
+  const start = no_fence.indexOf("{");
+  const end = no_fence.lastIndexOf("}");
+  return start >= 0 && end > start ? no_fence.slice(start, end + 1) : no_fence;
+}
+
 // ---- 模板库（Rust 合并内置+用户包；纯浏览器环境回退到静态数据）----
 const packs = ref<GameplayPack[]>([...FALLBACK_PACKS]);
 const frameworks = ref<StoryFramework[]>([...FALLBACK_FRAMEWORKS]);
@@ -136,10 +183,14 @@ async function aiGenerate() {
   aiStreamText.value = "";
   try {
     // 叙述框架节奏单独传参,替换后端默认的三幕式指令(避免两套节奏打架)
-    const rhythm =
+    let rhythm =
       framework.value && frameworkId.value !== "pack-default"
         ? `${framework.value.name}：${framework.value.phases.join("→")}。各阶段节拍提示：${framework.value.beat_hint.join("；")}。请严格按该框架推进,不要套用三幕式。`
         : undefined;
+    // B3：影游模板才追加影游 schema（countdown/ending/settle），其他模板维持原 prompt
+    if (isFilmPack.value) {
+      rhythm = (rhythm ? rhythm + " " : "三幕式，") + FILM_SCHEMA_PROMPT;
+    }
     aiTaskId = await api.generateStoryStream(
       {
         gameplayName: pack.value.name,
@@ -153,15 +204,28 @@ async function aiGenerate() {
         if (ev.event === "delta") {
           aiStreamText.value += ev.text;
         } else if (ev.event === "done") {
-          const story = ev.result as GeneratedStory;
-          premise.value = story.premise;
-          beats.splice(0, beats.length, ...story.beats);
-          appliedFramework.value = frameworkId.value;
-          aiBeatsApplied.value = true; // W5：AI 已整体替换节拍，检查是否纯文游
+          if (isFilmPack.value) {
+            // B3：影游模板——后端 GeneratedBeat 不透传影游字段，从流式原文解析并校验；
+            // 解析失败或影游字段缺失 → 明示回退模板节拍（对齐 W5 退化明示风格）
+            try {
+              const story = JSON.parse(extractJsonRaw(aiStreamText.value)) as GeneratedStory;
+              if (validateFilmStory(story)) {
+                applyStory(story);
+                message.success("AI 已生成影游结构剧情（倒计时选择 + 结局结算），可继续调整或直接下一步");
+              } else {
+                fallBackToTemplate();
+              }
+            } catch {
+              fallBackToTemplate();
+            }
+          } else {
+            const story = ev.result as GeneratedStory;
+            applyStory(story);
+            message.success("AI 已生成定制剧情，可继续调整或直接下一步");
+          }
           aiBusy.value = false;
           aiStreaming.value = false;
           aiStreamText.value = "";
-          message.success("AI 已生成定制剧情，可继续调整或直接下一步");
         } else {
           aiBusy.value = false;
           aiStreaming.value = false;
@@ -174,6 +238,24 @@ async function aiGenerate() {
     aiStreaming.value = false;
     message.error(String(e).length > 160 ? String(e).slice(0, 160) + "…" : String(e));
   }
+}
+
+/** 应用 AI 结果：替换前提与节拍，标记已应用（W5 纯文游检查接管） */
+function applyStory(story: GeneratedStory) {
+  premise.value = story.premise;
+  beats.splice(0, beats.length, ...story.beats);
+  appliedFramework.value = frameworkId.value;
+  aiBeatsApplied.value = true;
+}
+
+/** B3 退化路径：影游结构缺失 → 回退模板默认 beats，并明示（而非静默拆影游腿） */
+function fallBackToTemplate() {
+  if (!pack.value) return;
+  premise.value = pack.value.story_premise;
+  beats.splice(0, beats.length, ...pack.value.story_beats.map(b => ({ ...b })));
+  appliedFramework.value = "pack-default";
+  aiBeatsApplied.value = false;
+  message.warning("AI 定制未含影游结构，已回退模板节拍");
 }
 
 const chosenAgents = computed<AgentPreset[]>(() =>
@@ -311,6 +393,9 @@ const canNext = computed(() => {
               <NButton v-if="aiStreaming" size="small" quaternary type="error" @click="stopAi">■ 停止</NButton>
               <span style="color: #71717c; font-size: 12px">使用模型：{{ providerModel || '未配置' }}</span>
             </div>
+            <p v-if="isFilmPack" style="color: #9fc3ff; font-size: 12px; margin: 10px 0 0">
+              🎬 影游模板：AI 将按影游结构生成——选择拍带 8 秒倒计时，末拍按 settle 规则结算分叉结局；若输出缺影游字段会自动回退模板节拍。
+            </p>
             <p v-if="frameworkId !== 'pack-default' && appliedFramework !== frameworkId" style="color: #e8a35c; font-size: 12px; margin: 10px 0 0">
               ⚠️ 已选「{{ framework?.name }}」但尚未应用——下方节拍仍是模板默认（三幕式）。点上方「AI 生成」后生效。
             </p>
