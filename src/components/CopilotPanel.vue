@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { invoke } from "@tauri-apps/api/core";
+// 桌面小宠物：召唤 Ori（白蓝悬浮）/ Era（橙棕机械）；已在桌面则聚焦并切角色
+function callPet(ch) {
+  invoke("open_pet", { character: ch }).catch(e => console.warn("pet:", e));
+}
+
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api";
@@ -440,6 +446,8 @@ onBeforeUnmount(() => {
             {{ busy ? "回答中…" : providerOnline ? providerLabel + " · 对话中" : "离线小奥 · 规则应答" }}
           </span>
         </div>
+        <button class="ori-head-btn" title="召唤桌宠 Ori（白蓝悬浮）" aria-label="召唤桌宠 Ori" @click="callPet('ori')">🐾</button>
+        <button class="ori-head-btn" title="召唤桌宠 Era（橙棕机械）" aria-label="召唤桌宠 Era" @click="callPet('era')">🤖</button>
         <button class="ori-head-btn" title="新对话（清空记录）" aria-label="开始新对话" @click="onResetEvent">＋</button>
         <button class="ori-head-btn" title="收起 (Esc)" aria-label="收起奥粒面板" @click="open = false">✕</button>
       </div>
