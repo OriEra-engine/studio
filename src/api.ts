@@ -208,16 +208,14 @@ export const api = {
     invoke<{ id: string; file: string; prompt: string; created: string; cost_est?: string | null }>("generate_asset_command", { prompt, model: model ?? null }),
   listAssets: () =>
     invoke<{ id: string; file: string; prompt: string; created: string; kind?: string; cost_est?: string | null }[]>("list_assets"),
-  generateMesh: (prompt: string, key: string, base?: string) =>
+  generateMesh: (prompt: string, base?: string) =>
     invoke<{ id: string; file: string; prompt: string; created: string; kind: string; cost_est?: string | null }>("generate_mesh_command", {
       prompt,
-      key,
       base: base ?? null,
     }),
-  generateVideo: (prompt: string, key: string, base?: string, model?: string, ratio?: string) =>
+  generateVideo: (prompt: string, base?: string, model?: string, ratio?: string) =>
     invoke<{ id: string; file: string; prompt: string; created: string; kind: string; cost_est?: string | null; usage_tokens?: number | null }>("generate_video_command", {
       prompt,
-      key,
       base: base ?? null,
       model: model ?? null,
       ratio: ratio ?? null,
@@ -234,13 +232,18 @@ export const api = {
     invoke<FilmFlow | null>("film_flow_load", { project }),
   filmFlowSave: (project: string, flow: FilmFlow) =>
     invoke<void>("film_flow_save", { project, flow }),
-  ttsDoubao: (project: string, key: string, speaker: string, text: string, voId: string) =>
-    invoke<string>("tts_doubao", { project, key, speaker, text, voId }),
+  ttsDoubao: (project: string, speaker: string, text: string, voId: string) =>
+    invoke<string>("tts_doubao", { project, speaker, text, voId }),
   exportFilm: (project: string, flow: FilmFlow) =>
     invoke<string>("export_film", { project, flow }),
 
   /** 正在运行的项目 id（运行中徽标） */
   runningProjects: () => invoke<string[]>("running_projects"),
+
+  // 命名密钥（rodin/ark/tts）：只写不读——原始 key 永不回传前端
+  secretSave: (name: string, value: string) => invoke<void>("secret_save", { name, value }),
+  secretHas: (name: string) => invoke<boolean>("secret_has", { name }),
+  secretDelete: (name: string) => invoke<void>("secret_delete", { name }),
 
   // Ollama
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

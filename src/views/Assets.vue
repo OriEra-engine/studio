@@ -18,14 +18,54 @@ interface AssetMeta {
 const message = useMessage();
 const prompt = ref("");
 const generating = ref(false);
-// Rodin 文生 3D（key 只进 localStorage 与本次请求，不入配置文件）
+// Rodin 文生 3D（key 进系统凭据管理器，只写不读——明文不进 webview/磁盘）
 const meshPrompt = ref("");
-const rodinKey = ref(localStorage.getItem("oe.rodinKey") || "");
+const rodinKeyInput = ref(""); // 只写：粘贴即保存，保存后立即清空
+const rodinKeySaved = ref(false);
 const rodinBase = ref(localStorage.getItem("oe.rodinBase") || "");
 const meshGenerating = ref(false);
-// Seedance 文生视频（key 只进 localStorage 与本次请求，不入配置文件）
+// Seedance 文生视频（同上，凭据条目 ark）
 const videoPrompt = ref("");
-const arkKey = ref(localStorage.getItem("oe.arkKey") || "");
+const arkKeyInput = ref("");
+const arkKeySaved = ref(false);
+
+async function refreshSecrets() {
+  try {
+    rodinKeySaved.value = await api.secretHas("rodin");
+    arkKeySaved.value = await api.secretHas("ark");
+  } catch { /* 凭据管理器异常不阻断页面 */ }
+}
+// 一次性迁移：历史 localStorage 明文 key 收进凭据管理器后即删
+async function migrateLegacyKeys() {
+  const legacy: [string, string][] = [["rodin", "oe.rodinKey"], ["ark", "oe.arkKey"]];
+  for (const [name, lsKey] of legacy) {
+    const old = localStorage.getItem(lsKey);
+    if (old && old.trim()) {
+      try { await api.secretSave(name, old.trim()); } catch { /* 迁移失败不阻断 */ }
+      localStorage.removeItem(lsKey);
+    }
+  }
+}
+async function saveRodinKey() {
+  const v = rodinKeyInput.value.trim();
+  if (!v) return message.warning("粘贴 Hyper3D API Key（hyper3d.ai 控制台申请）");
+  try {
+    await api.secretSave("rodin", v);
+    rodinKeyInput.value = "";
+    rodinKeySaved.value = true;
+    message.success("Hyper3D Key 已存入系统凭据管理器（不落盘、不回显）");
+  } catch (e) { message.error(String(e)); }
+}
+async function saveArkKey() {
+  const v = arkKeyInput.value.trim();
+  if (!v) return message.warning("粘贴火山方舟 API Key（console.volcengine.com/ark 创建）");
+  try {
+    await api.secretSave("ark", v);
+    arkKeyInput.value = "";
+    arkKeySaved.value = true;
+    message.success("方舟 Key 已存入系统凭据管理器（不落盘、不回显）");
+  } catch (e) { message.error(String(e)); }
+}
 const videoModel = ref<string>("doubao-seedance-2-0-mini-260615");
 const videoRatio = ref<string>("16:9");
 const videoGenerating = ref(false);
@@ -142,12 +182,11 @@ async function doGenerate() {
 async function doGenerateMesh() {
   const p = meshPrompt.value.trim();
   if (!p) return message.warning("先描述你想要的 3D 模型（例如：一个圆润的机器人咖啡杯，低多边形风格）");
-  if (!rodinKey.value.trim()) return message.warning("先填入 Hyper3D API Key（hyper3d.ai 控制台申请）");
+  if (!rodinKeySaved.value) return message.warning("先粘贴并保存 Hyper3D API Key（hyper3d.ai 控制台申请）");
   meshGenerating.value = true;
   try {
-    localStorage.setItem("oe.rodinKey", rodinKey.value.trim());
     localStorage.setItem("oe.rodinBase", rodinBase.value.trim());
-    const meta = await api.generateMesh(p, rodinKey.value.trim(), rodinBase.value.trim() || undefined);
+    await api.generateMesh(p, rodinBase.value.trim() || undefined);
     message.success("3D 模型已生成并入库（GLB）");
     meshPrompt.value = "";
     await refresh();
@@ -161,11 +200,10 @@ async function doGenerateMesh() {
 async function doGenerateVideo() {
   const p = videoPrompt.value.trim();
   if (!p) return message.warning("先描述你想要的镜头（例如：雨夜地铁站台空镜，镜头缓推，霓虹反射在湿地面上）");
-  if (!arkKey.value.trim()) return message.warning("先填入火山方舟 API Key（console.volcengine.com/ark 控制台创建）");
+  if (!arkKeySaved.value) return message.warning("先粘贴并保存火山方舟 API Key（console.volcengine.com/ark 创建）");
   videoGenerating.value = true;
   try {
-    localStorage.setItem("oe.arkKey", arkKey.value.trim());
-    const meta = await api.generateVideo(p, arkKey.value.trim(), undefined, videoModel.value, videoRatio.value);
+    await api.generateVideo(p, undefined, videoModel.value, videoRatio.value);
     message.success("视频已生成并入库（MP4，无水印）——可在下方素材卡点「🎬 设为正片」挂进影游项目成为剧情拍", { duration: 5000 });
     videoPrompt.value = "";
     await refresh();
@@ -191,12 +229,11 @@ const UNIT: Record<string, number> = {
 async function doRunBatch() {
   const lines = batchText.value.split("\n").map(x => x.trim()).filter(Boolean);
   if (!lines.length) return message.warning("每行粘贴一个镜头描述");
-  if (!arkKey.value.trim()) return message.warning("先填入火山方舟 API Key");
-  localStorage.setItem("oe.arkKey", arkKey.value.trim());
+  if (!arkKeySaved.value) return message.warning("先粘贴并保存火山方舟 API Key");
   batchRunning.value = true; batchDone.value = 0; batchFail.value = []; batchCost.value = 0;
   for (const [i, line] of lines.entries()) {
     try {
-      await api.generateVideo(line, arkKey.value.trim(), undefined, batchModel.value, batchRatio.value);
+      await api.generateVideo(line, undefined, batchModel.value, batchRatio.value);
       batchDone.value++;
       batchCost.value += UNIT[batchModel.value] ?? 0;
     } catch (e) {
@@ -249,7 +286,7 @@ async function remove(a: AssetMeta) {
   }
 }
 
-onMounted(refresh);
+onMounted(() => { void refresh(); void migrateLegacyKeys().then(refreshSecrets); });
 </script>
 
 <template>
@@ -300,9 +337,12 @@ onMounted(refresh);
       />
       <NSpace style="margin-top: 10px" align="center" :wrap="false">
         <NInput
-          v-model:value="rodinKey" type="password" show-password-on="click"
-          placeholder="Hyper3D API Key（只存在本机浏览器）" style="max-width: 260px"
+          v-model:value="rodinKeyInput" type="password" show-password-on="click"
+          :placeholder="rodinKeySaved ? '已保存——粘贴新 Key 可替换' : 'Hyper3D API Key'"
+          style="max-width: 230px" @keydown.enter.exact.prevent="saveRodinKey"
         />
+        <NButton size="small" @click="saveRodinKey">保存</NButton>
+        <NTag v-if="rodinKeySaved" size="small" type="success" :bordered="false">Key 已存凭据管理器</NTag>
         <NSelect
           v-model:value="rodinBase" size="small" style="width: 180px" clearable
           :options="[
@@ -334,9 +374,12 @@ onMounted(refresh);
       />
       <NSpace style="margin-top: 10px" align="center" :wrap="false">
         <NInput
-          v-model:value="arkKey" type="password" show-password-on="click"
-          placeholder="方舟 API Key（只存在本机浏览器）" style="max-width: 250px"
+          v-model:value="arkKeyInput" type="password" show-password-on="click"
+          :placeholder="arkKeySaved ? '已保存——粘贴新 Key 可替换' : '方舟 API Key'"
+          style="max-width: 220px" @keydown.enter.exact.prevent="saveArkKey"
         />
+        <NButton size="small" @click="saveArkKey">保存</NButton>
+        <NTag v-if="arkKeySaved" size="small" type="success" :bordered="false">Key 已存凭据管理器</NTag>
         <NSelect
           v-model:value="videoModel" size="small" style="width: 200px"
           :options="[

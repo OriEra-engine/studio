@@ -147,3 +147,65 @@ fn keyring_del() -> Result<(), String> {
         Err(e) => Err(format!("删除凭据失败：{e}")),
     }
 }
+
+// ---- 命名密钥（Rodin / 方舟 / 豆包 TTS）--------------------------------
+// 与主 L7 key 同一凭据管理器、按名分条目。原则：**只写不读**——对外只暴露
+// save/has/delete，原始 key 永不回传 webview（前端历史明文 localStorage
+// 的一次性迁移也走这里，迁完即删）。
+
+/// 允许的密钥名白名单（条目名 = `provider-api-key-<name>`）。
+const SECRET_NAMES: &[&str] = &["rodin", "ark", "tts"];
+
+fn secret_entry(name: &str) -> Result<keyring::Entry, String> {
+    if !SECRET_NAMES.contains(&name) {
+        return Err(format!("未知密钥名：{name}"));
+    }
+    keyring::Entry::new(KEYRING_SERVICE, &format!("{KEYRING_ENTRY}-{name}"))
+        .map_err(|e| format!("凭据管理器不可用：{e}"))
+}
+
+/// Rust 侧消费者自取密钥（assets/film_flow 命令内部调用，key 不经前端）。
+pub fn secret_load(name: &str) -> Result<String, String> {
+    let entry = secret_entry(name)?;
+    match entry.get_password() {
+        Ok(v) => Ok(v),
+        Err(keyring::Error::NoEntry) => Err(format!(
+            "尚未保存 {name} 密钥——请先在素材中心粘贴并保存"
+        )),
+        Err(e) => Err(format!("读取凭据失败：{e}")),
+    }
+}
+
+#[tauri::command]
+pub async fn secret_save(name: String, value: String) -> Result<(), String> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        return Err("密钥内容为空".into());
+    }
+    let entry = secret_entry(&name)?;
+    match entry.set_password(&value) {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("写入凭据失败：{e}")),
+    }
+}
+
+#[tauri::command]
+pub async fn secret_has(name: String) -> Result<bool, String> {
+    let entry = secret_entry(&name)?;
+    match entry.get_password() {
+        Ok(v) => Ok(!v.trim().is_empty()),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(e) => Err(format!("读取凭据失败：{e}")),
+    }
+}
+
+#[tauri::command]
+pub async fn secret_delete(name: String) -> Result<(), String> {
+    let entry = secret_entry(&name)?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("删除凭据失败：{e}")),
+    }
+}
