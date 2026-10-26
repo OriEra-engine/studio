@@ -19,7 +19,7 @@ pub fn open_pet(app: AppHandle, character: String) -> Result<(), String> {
         let _ = w.set_focus();
         return Ok(());
     }
-    let (w, h) = if character == "era" { (240.0, 330.0) } else { (250.0, 430.0) };
+    let (w, h) = if character == "ori" { (240.0, 330.0) } else { (250.0, 430.0) };
     WebviewWindowBuilder::new(
         &app,
         "pet",
@@ -73,10 +73,12 @@ pub async fn pet_chat(
     if cfg.key.is_empty() || cfg.kind == "rule" {
         return Err("NO_PROVIDER".into());
     }
+    // 角色定位（用户 2026-10-26 拍板）：Ori=白蓝悬浮（温柔治愈）、
+    // Era=橙棕机械履带（可靠直接）。
     let persona = if character == "era" {
-        "你是 Era，OriEra 桌面漂浮助手，白色圆润身体、蓝色发光眼睛。性格温柔治愈、简洁、偶尔幽默。用中文回复，一句话以内（最多两句）。"
+        "你是 Era，OriEra 桌面机械助手，橙棕工业风、履带底座、蓝色屏幕眼。性格可靠直接、工程师气质、偶尔冷幽默。用中文回复，一句话以内（最多两句）。"
     } else {
-        "你是 Ori，OriEra 桌面机械助手，橙棕工业风、履带底座、蓝色屏幕眼。性格可靠直接、工程师气质、偶尔冷幽默。用中文回复，一句话以内（最多两句）。"
+        "你是 Ori，OriEra 桌面漂浮伙伴，白色圆润身体、蓝色发光眼睛。性格温柔治愈、简洁、偶尔幽默。用中文回复，一句话以内（最多两句）。"
     };
     let base = if cfg.base.trim().is_empty() {
         match cfg.kind.as_str() {
