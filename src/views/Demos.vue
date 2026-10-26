@@ -21,8 +21,13 @@ onMounted(async () => {
 async function open(d: DemoInfo) {
   opening.value = d.id;
   try {
-    await api.openDemo(d.id);
+    // 系统浏览器直开本地服务器 URL——WebView2/Edge155 运行时子窗口对
+    // 一切导航静默吞没（studio#25 悬案）：窗口路 open_demo 会无声挂起，
+    // 卡片永远「打开中」。浏览器路是拍板正解，窗口路不再作为入口。
+    await api.openDemoInBrowser(d.id);
     localStorage.setItem("oe.seenDemo", "1");
+  } catch (e) {
+    message.error(`打开失败：${String(e).slice(0, 120)}`);
   } finally {
     opening.value = "";
   }
