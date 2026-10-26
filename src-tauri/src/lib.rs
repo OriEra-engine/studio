@@ -468,6 +468,7 @@ pub fn run() {
             assets::list_assets,
             assets::delete_asset,
             assets::add_asset_to_project,
+            assets::set_video_as_clip,
             demos::open_demo_in_browser,
             ollama::ollama_status,
             ollama::ollama_serve,

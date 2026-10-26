@@ -166,7 +166,7 @@ async function doGenerateVideo() {
   try {
     localStorage.setItem("oe.arkKey", arkKey.value.trim());
     const meta = await api.generateVideo(p, arkKey.value.trim(), undefined, videoModel.value, videoRatio.value);
-    message.success("视频已生成并入库（MP4，无水印）");
+    message.success("视频已生成并入库（MP4，无水印）——可在下方素材卡点「🎬 设为正片」挂进影游项目成为剧情拍", { duration: 5000 });
     videoPrompt.value = "";
     await refresh();
   } catch (e) {
@@ -218,6 +218,25 @@ async function addToProject(a: AssetMeta) {
     message.error(String(e));
   } finally {
     busyId.value = "";
+  }
+}
+
+// ===== B1 影游 video 桥：把视频资产设为项目某拍正片 =====
+// 拷贝进项目 clips/beatN.mp4 + 写 clips.json（素材库保留原件）；拍号 0-4 弹层选择。
+const clipBeatDraft = ref<Record<string, number>>({});
+const clipBeatBusy = ref("");
+const beatOptions = [0, 1, 2, 3, 4].map((n) => ({ label: `第 ${n + 1} 拍`, value: n }));
+async function setAsClip(a: AssetMeta) {
+  if (!targetProject.value) return message.warning("先在右上角选择目标项目（正片要进项目才会被剧情拍引用）");
+  const beat = clipBeatDraft.value[a.id] ?? 0;
+  clipBeatBusy.value = a.id;
+  try {
+    await api.setVideoAsClip(a.id, targetProject.value, beat);
+    message.success(`已拷贝为该项目第 ${beat + 1} 拍正片（clips/beat${beat}.mp4，运行中窗口已自动刷新）`);
+  } catch (e) {
+    message.error(String(e));
+  } finally {
+    clipBeatBusy.value = "";
   }
 }
 
@@ -426,7 +445,24 @@ onMounted(refresh);
                 />
                 <NButton size="tiny" :loading="busyId === a.id" @click="addToProject(a)">挂载</NButton>
               </template>
-              <NTag v-else-if="a.kind === 'video'" size="tiny" type="warning" round>视频镜头</NTag>
+              <template v-else-if="a.kind === 'video'">
+                <NTag size="tiny" type="warning" round>视频镜头</NTag>
+                <NPopover trigger="click" placement="top">
+                  <template #trigger>
+                    <NButton size="tiny" type="primary" :loading="clipBeatBusy === a.id">🎬 设为正片</NButton>
+                  </template>
+                  <NSpace align="center" :wrap="false">
+                    <NSelect
+                      v-model:value="clipBeatDraft[a.id]" size="small" style="width: 110px"
+                      :options="beatOptions" placeholder="第 1 拍"
+                    />
+                    <NButton size="small" type="primary" @click="setAsClip(a)">设为第 {{ (clipBeatDraft[a.id] ?? 0) + 1 }} 拍</NButton>
+                  </NSpace>
+                  <p style="font-size: 12px; color: #71717c; margin: 8px 0 0; max-width: 240px">
+                    拷贝进目标项目 clips/ 成为该拍正片（素材库保留原件）；同拍重复设置会覆盖。
+                  </p>
+                </NPopover>
+              </template>
               <NTag v-else size="tiny" type="success" round>3D 模型</NTag>
               <NPopconfirm @positive-click="remove(a)">
                 <template #trigger><NButton size="tiny" quaternary type="error">删除</NButton></template>
