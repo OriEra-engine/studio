@@ -177,14 +177,22 @@ fn build_router(
                 // 仅监听 127.0.0.1：与此前注入 localStorage 的信任域一致。
                 // 白名单网关 base 在出口改写为同源代理（游戏免 CORS）。
                 let cfg = crate::settings::load_provider(&app_for_provider);
-                match cfg {
+                // 含 key 的响应禁止进任何缓存（2026-10-26 安全测评 P1）：
+                // axum Json 出口此前没设 no-store，响应可能落 WebView2
+                // 磁盘缓存，本机任意读缓存进程即可拾取 key。
+                let mut resp = match cfg {
                     Some(c) => axum::Json(serde_json::json!({
                         "kind": c.kind, "key": c.key, "model": c.model,
                         "base": localize_base(&c.base, port),
                     }))
                     .into_response(),
                     None => axum::Json(serde_json::json!({"kind": "rule"})).into_response(),
-                }
+                };
+                resp.headers_mut().insert(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::HeaderValue::from_static("no-store"),
+                );
+                resp
             }),
         )
         .nest_service("/examples", examples)

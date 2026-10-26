@@ -147,6 +147,11 @@ watch(project, async id => {
   storyText.value = flow?.story || TEMPLATE;
   clips.value = flow?.clips || {};
   voDone.value = flow?.vo || {};
+  // 2026-10-26 十角色测评：切换项目曾泄漏上一项目的配音表与导出路径
+  // （onMounted 有恢复、watch 漏了）——A 项目的 voices/zip 会 bleed 进
+  // B 项目并被 save() 落盘。两处恢复必须同构。
+  voices.value = flow?.voices?.length ? flow.voices : [...DEFAULT_VOICES];
+  exportedZip.value = flow?.exported_zip || "";
 });
 
 async function save(next = step.value) {
@@ -238,7 +243,7 @@ const shots = computed<Shot[]>(() => {
 const clipBusy = ref("");
 const clipMsg = ref("");
 const clipCost = computed(() =>
-  shots.value.length * (clipTier.value.includes("mini") ? 2.5 : 8.4));
+  shots.value.length * (clipTier.value.includes("mini") ? 2.5 : 7.5));
 
 async function genShot(shot: Shot) {
   if (!project.value) return message.warning("先选择项目");
@@ -307,17 +312,19 @@ const setSpeaker = (role: string, sp: string) => {
   if (hit) hit.speaker = sp; else voices.value.push({ role, speaker: sp });
 };
 const voBusy = ref("");
-async function genVo(item: VoItem) {
-  if (!project.value) return message.warning("先选择项目");
-  if (!ttsKeySaved.value) return message.warning("先粘贴并保存豆包语音 API Key");
+async function genVo(item: VoItem): Promise<boolean> {
+  if (!project.value) { message.warning("先选择项目"); return false; }
+  if (!ttsKeySaved.value) { message.warning("先粘贴并保存豆包语音 API Key"); return false; }
   voBusy.value = item.id;
   try {
     const f = await api.ttsDoubao(project.value, speakerOf(item.role), item.text, item.id);
     voDone.value[item.id] = f;
     await save();
     message.success(`${item.id} 配音完成`);
+    return true;
   } catch (e) {
     message.error(`${item.id} 失败：${String(e).slice(0, 120)}`);
+    return false;
   } finally { voBusy.value = ""; }
 }
 /* W6：TTS 也是付费生成——单条与批量入口同样过预算确认 */
@@ -328,9 +335,14 @@ function askGenAllVo() {
   budgetConfirm(() => { genAllVo(); });
 }
 async function genAllVo() {
+  // 2026-10-26 十角色测评：TTS 批量失败曾静默继续烧钱——失败即断，
+  // 未跑的行未扣费，排查后可重新「合成全部」（已完成的自动跳过）。
   for (const v of voItems.value) {
     if (voDone.value[v.id]) continue;
-    await genVo(v);
+    if (!(await genVo(v))) {
+      message.error("批量配音已中断：失败的这条未扣费成功，修复后重新点「合成全部」即可续跑");
+      return;
+    }
   }
 }
 
@@ -440,7 +452,7 @@ function go(next: number) {
         <NTag v-if="arkKeySaved" size="small" type="success" :bordered="false">Key 已存凭据管理器</NTag>
         <NSelect v-model:value="clipTier" size="small" style="width: 200px" :options="[
           { label: '2.0-mini 草稿档（≈¥2.5/条）', value: 'doubao-seedance-2-0-mini-260615' },
-          { label: '2.5 高光档（≈¥8.4/条，闲时约55%）', value: 'doubao-seedance-2-5-260628' }]" />
+          { label: '2.5 高光档（≈¥7.5/条，闲时约55%）', value: 'doubao-seedance-2-5-260628' }]" />
         <NSelect v-model:value="clipRatio" size="small" style="width: 110px" :options="[
           { label: '9:16 竖屏', value: '9:16' }, { label: '16:9 横屏', value: '16:9' }]" />
         <NButton size="small" type="primary" :loading="!!clipBusy" @click="askGenAllShots">

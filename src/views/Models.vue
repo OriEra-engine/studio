@@ -445,7 +445,11 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
           <div v-for="m in ollama.models" :key="m.name" class="model-pill">
             <span style="cursor: pointer" @click="useOllamaModel(m.name)">{{ m.name }}（{{ m.size_gb.toFixed(1) }}GB）</span>
             <NPopconfirm @positive-click="deleteModel(m.name)">
-              <template #trigger><span class="model-del">✕</span></template>
+              <template #trigger>
+                <!-- 2026-10-26 无障碍测评：删除是破坏性操作，键盘必须可达
+                     （原生 button 让 Enter/Space 天然触发 click→Popconfirm） -->
+                <button class="model-del" type="button" :aria-label="`删除模型 ${m.name}`">✕</button>
+              </template>
               删除模型 {{ m.name }}？（释放磁盘，不影响已生成项目）
             </NPopconfirm>
           </div>
@@ -504,8 +508,12 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .rec-card.sel { border-color: #7eb8ff; background: #1a1a20; }
 .model-pill { display: inline-flex; align-items: center; gap: 8px; background: #141418; border: 1px solid #30303a; border-radius: 20px; padding: 4px 12px; font-size: 12px; }
 .model-pill:hover { border-color: #3a3a46; }
-.model-del { cursor: pointer; color: #6f6f7a; font-size: 11px; }
+.model-del {
+  cursor: pointer; color: #6f6f7a; font-size: 11px;
+  background: none; border: none; padding: 2px 4px; line-height: 1; border-radius: 4px;
+}
 .model-del:hover { color: #ff8f8f; }
+.model-del:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 1px; }
 .rec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13.5px; }
 .rec-note { font-size: 12px; color: #74747f; line-height: 1.6; margin-bottom: 10px; }
 .rec-actions { display: flex; gap: 8px; }

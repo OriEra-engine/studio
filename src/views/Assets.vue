@@ -214,7 +214,9 @@ async function doGenerateVideo() {
   }
 }
 
-// 批量镜头量产：每行一个 prompt，串行生成 + 成本估算（实测价位 mini≈¥2.5 / 2.5≈¥8.4 每 5s@720p）
+// 批量镜头量产：每行一个 prompt，串行生成（2026-10-26 十角色测评：烧钱
+// 操作必须有停止键——batchStop 在行间生效，当前条收尾即停）；实际计费以
+// 后端落盘 cost_est 为唯一真源（防双倍扣费逻辑在 assets.rs），前端不自算
 const batchText = ref("");
 const batchModel = ref<string>("doubao-seedance-2-0-mini-260615");
 const batchRatio = ref<string>("16:9");
@@ -222,27 +224,38 @@ const batchRunning = ref(false);
 const batchDone = ref(0);
 const batchFail = ref<string[]>([]);
 const batchCost = ref(0);
+const batchStop = ref(false);
 const UNIT: Record<string, number> = {
   "doubao-seedance-2-0-mini-260615": 2.5,
-  "doubao-seedance-2-5-260628": 8.4,
+  "doubao-seedance-2-5-260628": 7.5,
 };
 async function doRunBatch() {
   const lines = batchText.value.split("\n").map(x => x.trim()).filter(Boolean);
   if (!lines.length) return message.warning("每行粘贴一个镜头描述");
   if (!arkKeySaved.value) return message.warning("先粘贴并保存火山方舟 API Key");
+  batchStop.value = false;
   batchRunning.value = true; batchDone.value = 0; batchFail.value = []; batchCost.value = 0;
   for (const [i, line] of lines.entries()) {
+    if (batchStop.value) break;
     try {
-      await api.generateVideo(line, undefined, batchModel.value, batchRatio.value);
+      const meta = await api.generateVideo(line, undefined, batchModel.value, batchRatio.value);
       batchDone.value++;
-      batchCost.value += UNIT[batchModel.value] ?? 0;
+      const est = parseFloat(String(meta.cost_est ?? "").replace(/[^\d.]/g, ""));
+      batchCost.value += Number.isFinite(est) ? est : 0;
     } catch (e) {
       batchFail.value.push(`第${i + 1}行: ${String(e).slice(0, 80)}`);
     }
     await refresh();
   }
   batchRunning.value = false;
-  message.success(`批量完成：${batchDone.value}/${lines.length} 条入库，估算 ≈¥${batchCost.value.toFixed(1)}`);
+  message.success(
+    `${batchStop.value ? "已停止" : "批量完成"}：${batchDone.value}/${lines.length} 条入库，实际计费 ≈¥${batchCost.value.toFixed(1)}` +
+    (batchStop.value ? "（未跑的行未扣费）" : ""),
+  );
+}
+function stopBatch() {
+  batchStop.value = true;
+  message.info("正在收尾当前一条，完成后即停……");
 }
 
 async function addToProject(a: AssetMeta) {
@@ -384,7 +397,7 @@ onMounted(() => { void refresh(); void migrateLegacyKeys().then(refreshSecrets);
           v-model:value="videoModel" size="small" style="width: 200px"
           :options="[
             { label: '2.0-mini 草稿档（约¥2.5/5s）', value: 'doubao-seedance-2-0-mini-260615' },
-            { label: '2.5 高光档（约¥8.4/5s）', value: 'doubao-seedance-2-5-260628' },
+            { label: '2.5 高光档（约¥7.5/5s）', value: 'doubao-seedance-2-5-260628' },
           ]"
         />
         <NSelect
@@ -419,7 +432,7 @@ onMounted(() => { void refresh(); void migrateLegacyKeys().then(refreshSecrets);
         <NSelect v-model:value="batchModel" size="small" style="width: 200px"
           :options="[
             { label: '2.0-mini 草稿档（≈¥2.5/条）', value: 'doubao-seedance-2-0-mini-260615' },
-            { label: '2.5 高光档（≈¥8.4/条，闲时约55%）', value: 'doubao-seedance-2-5-260628' },
+            { label: '2.5 高光档（≈¥7.5/条，闲时约55%）', value: 'doubao-seedance-2-5-260628' },
           ]" />
         <NSelect v-model:value="batchRatio" size="small" style="width: 110px"
           :options="[{ label: '16:9 横屏', value: '16:9' }, { label: '9:16 竖屏', value: '9:16' }]" />
@@ -427,11 +440,12 @@ onMounted(() => { void refresh(); void migrateLegacyKeys().then(refreshSecrets);
           @update:show="(v: boolean) => { if (!v) askBatch = false; }">
           <template #trigger>
             <NButton type="primary" :loading="batchRunning" @click="runBatch">
-              {{ batchRunning ? `生成中 ${batchDone.value}…（每条约 2-4 分钟）` : "🎞️ 开跑批量" }}
+              {{ batchRunning ? `生成中 ${batchDone}…（每条约 2-4 分钟）` : "🎞️ 开跑批量" }}
             </NButton>
           </template>
           {{ overBudgetMsg }}
         </NPopconfirm>
+        <NButton v-if="batchRunning" size="small" type="warning" @click="stopBatch">⏹ 停止（当前条跑完即停）</NButton>
         <span v-if="batchCost" style="font-size: 12px; color: #ff9a3c">已入账 ≈¥{{ batchCost.toFixed(1) }}</span>
       </NSpace>
       <div v-if="batchFail.length" style="font-size: 12px; color: #e5484d; margin-top: 6px">
@@ -471,7 +485,7 @@ onMounted(() => { void refresh(); void migrateLegacyKeys().then(refreshSecrets);
             <template #cover>
               <div v-if="a.kind === 'mesh'" class="asset-thumb asset-mesh">
                 <span style="font-size: 34px">🧊</span>
-                <span style="font-size: 11px; color: #6fd3a0">GLB · {{ a.file.split('/').pop() }}</span>
+                <span style="font-size: 11px; color: var(--good)">GLB · {{ a.file.split('/').pop() }}</span>
               </div>
               <video v-else-if="a.kind === 'video' && port" :src="assetUrl(a.file)"
                 class="asset-thumb" controls preload="metadata" muted />
@@ -522,7 +536,7 @@ onMounted(() => { void refresh(); void migrateLegacyKeys().then(refreshSecrets);
 <style scoped>
 .spend-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-bottom: 10px; font-size: 13px; color: #d8d8de; }
-.spend-bar b { color: #6fd3a0; }
+.spend-bar b { color: var(--good); }
 .spend-bar b.over { color: #e5484d; }
 .spend-tip { font-size: 12px; color: #71717c; margin: 8px 0 0; }
 .asset-card :deep(.n-card-cover) { height: 160px; overflow: hidden; }
