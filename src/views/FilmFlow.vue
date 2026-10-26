@@ -24,8 +24,49 @@ const clips = ref<Record<string, string>>({});
 const voDone = ref<Record<string, string>>({});
 const exportedZip = ref("");
 
-const arkKey = ref(localStorage.getItem("oe.arkKey") || "");
-const ttsKey = ref(localStorage.getItem("oe.ttsKey") || "");
+// 方舟/豆包 key 进系统凭据管理器（只写不读，明文不进 webview/磁盘）
+const arkKeyInput = ref("");
+const arkKeySaved = ref(false);
+const ttsKeyInput = ref("");
+const ttsKeySaved = ref(false);
+
+async function refreshSecrets() {
+  try {
+    arkKeySaved.value = await api.secretHas("ark");
+    ttsKeySaved.value = await api.secretHas("tts");
+  } catch { /* 凭据管理器异常不阻断页面 */ }
+}
+// 一次性迁移：历史 localStorage 明文 key 收进凭据管理器后即删
+async function migrateLegacyKeys() {
+  const legacy: [string, string][] = [["ark", "oe.arkKey"], ["tts", "oe.ttsKey"]];
+  for (const [name, lsKey] of legacy) {
+    const old = localStorage.getItem(lsKey);
+    if (old && old.trim()) {
+      try { await api.secretSave(name, old.trim()); } catch { /* 迁移失败不阻断 */ }
+      localStorage.removeItem(lsKey);
+    }
+  }
+}
+async function saveArkKey() {
+  const v = arkKeyInput.value.trim();
+  if (!v) return message.warning("粘贴火山方舟 API Key");
+  try {
+    await api.secretSave("ark", v);
+    arkKeyInput.value = "";
+    arkKeySaved.value = true;
+    message.success("方舟 Key 已存入系统凭据管理器");
+  } catch (e) { message.error(String(e)); }
+}
+async function saveTtsKey() {
+  const v = ttsKeyInput.value.trim();
+  if (!v) return message.warning("粘贴豆包语音 API Key");
+  try {
+    await api.secretSave("tts", v);
+    ttsKeyInput.value = "";
+    ttsKeySaved.value = true;
+    message.success("豆包语音 Key 已存入系统凭据管理器");
+  } catch (e) { message.error(String(e)); }
+}
 const clipTier = ref("doubao-seedance-2-0-mini-260615");
 const clipRatio = ref("9:16");
 
@@ -77,6 +118,7 @@ const SPEAKERS = [
 ];
 
 onMounted(async () => {
+  void migrateLegacyKeys().then(refreshSecrets);
   projects.value = await api.listProjects();
   // W6：预算口径与 Assets.vue 一致——当月支出取素材中心 meta 的 cost_est 合计
   try { monthAssets.value = await api.listAssets(); } catch { /* 浏览器降级：视为 0 */ }
@@ -200,13 +242,12 @@ const clipCost = computed(() =>
 
 async function genShot(shot: Shot) {
   if (!project.value) return message.warning("先选择项目");
-  if (!arkKey.value.trim()) return message.warning("先填入方舟 API Key");
-  localStorage.setItem("oe.arkKey", arkKey.value.trim());
+  if (!arkKeySaved.value) return message.warning("先粘贴并保存方舟 API Key");
   clipBusy.value = shot.id;
   clipMsg.value = `生成 ${shot.id}（约 1.5-3.5 分钟）…`;
   try {
     const meta = await api.generateVideo(
-      shot.frame + (shot.motion ? `，${shot.motion}` : ""), arkKey.value.trim(),
+      shot.frame + (shot.motion ? `，${shot.motion}` : ""),
       undefined, clipTier.value, clipRatio.value);
     clips.value[shot.id] = meta.file;
     await save();
@@ -268,11 +309,10 @@ const setSpeaker = (role: string, sp: string) => {
 const voBusy = ref("");
 async function genVo(item: VoItem) {
   if (!project.value) return message.warning("先选择项目");
-  if (!ttsKey.value.trim()) return message.warning("先填入豆包语音 API Key");
-  localStorage.setItem("oe.ttsKey", ttsKey.value.trim());
+  if (!ttsKeySaved.value) return message.warning("先粘贴并保存豆包语音 API Key");
   voBusy.value = item.id;
   try {
-    const f = await api.ttsDoubao(project.value, ttsKey.value.trim(), speakerOf(item.role), item.text, item.id);
+    const f = await api.ttsDoubao(project.value, speakerOf(item.role), item.text, item.id);
     voDone.value[item.id] = f;
     await save();
     message.success(`${item.id} 配音完成`);
@@ -393,8 +433,11 @@ function go(next: number) {
     <!-- Step 3 镜头量产 -->
     <NCard v-if="step === 3" size="small" title="🎬 镜头量产（火山方舟 Seedance · 实测约 2-4 分钟/条）">
       <NSpace style="margin-bottom: 12px" align="center" :wrap="false">
-        <NInput v-model:value="arkKey" type="password" show-password-on="click" size="small"
-          placeholder="方舟 API Key（只存本机浏览器）" style="max-width: 230px" />
+        <NInput v-model:value="arkKeyInput" type="password" show-password-on="click" size="small"
+          :placeholder="arkKeySaved ? '已保存——粘贴新 Key 可替换' : '方舟 API Key'"
+          style="max-width: 230px" @keydown.enter.exact.prevent="saveArkKey" />
+        <NButton size="small" @click="saveArkKey">保存</NButton>
+        <NTag v-if="arkKeySaved" size="small" type="success" :bordered="false">Key 已存凭据管理器</NTag>
         <NSelect v-model:value="clipTier" size="small" style="width: 200px" :options="[
           { label: '2.0-mini 草稿档（≈¥2.5/条）', value: 'doubao-seedance-2-0-mini-260615' },
           { label: '2.5 高光档（≈¥8.4/条，闲时约55%）', value: 'doubao-seedance-2-5-260628' }]" />
@@ -428,8 +471,11 @@ function go(next: number) {
     <!-- Step 4 配音 -->
     <NCard v-if="step === 4" size="small" title="🎙 配音（豆包语音合成 2.0 · 新版控制台 API Key，区别于方舟 Key）">
       <NSpace style="margin-bottom: 12px" align="center" :wrap="false">
-        <NInput v-model:value="ttsKey" type="password" show-password-on="click" size="small"
-          placeholder="豆包语音 API Key（console.volcengine.com/speech/new）" style="max-width: 260px" />
+        <NInput v-model:value="ttsKeyInput" type="password" show-password-on="click" size="small"
+          :placeholder="ttsKeySaved ? '已保存——粘贴新 Key 可替换' : '豆包语音 API Key'"
+          style="max-width: 260px" @keydown.enter.exact.prevent="saveTtsKey" />
+        <NButton size="small" @click="saveTtsKey">保存</NButton>
+        <NTag v-if="ttsKeySaved" size="small" type="success" :bordered="false">Key 已存凭据管理器</NTag>
         <NButton size="small" type="primary" :loading="!!voBusy" @click="askGenAllVo">
           ▶ 合成全部（{{ voItems.filter(v => !voDone[v.id]).length }} 条待做）
         </NButton>

@@ -105,20 +105,17 @@ fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// 豆包语音合成 2.0（单向流式 SSE）。key 只走参数不落盘；产物写 film/vo/{vo_id}.mp3。
+/// 豆包语音合成 2.0（单向流式 SSE）。key 从凭据管理器自取（命名条目 tts，
+/// 不经 webview 传参不落盘）；产物写 film/vo/{vo_id}.mp3。
 #[tauri::command]
 pub async fn tts_doubao(
     state: tauri::State<'_, crate::AppState>,
     project: String,
-    key: String,
     speaker: String,
     text: String,
     vo_id: String,
 ) -> Result<String, String> {
-    let key = key.trim().to_string();
-    if key.is_empty() {
-        return Err("需要豆包语音 API Key（console.volcengine.com/speech/new 创建，区别于方舟 Key）".into());
-    }
+    let key = crate::settings::secret_load("tts")?;
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("台词为空".into());

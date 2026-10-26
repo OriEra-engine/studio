@@ -371,9 +371,10 @@ pub async fn generate_mesh(
 pub async fn generate_mesh_command(
     state: tauri::State<'_, crate::AppState>,
     prompt: String,
-    key: String,
     base: Option<String>,
 ) -> Result<AssetMeta, String> {
+    // key 从凭据管理器自取（命名条目 rodin）——不再经 webview 传参。
+    let key = crate::settings::secret_load("rodin")?;
     generate_mesh(state, prompt, key, base).await
 }
 
@@ -645,11 +646,12 @@ async fn poll_video_task(
 pub async fn generate_video_command(
     state: tauri::State<'_, crate::AppState>,
     prompt: String,
-    key: String,
     base: Option<String>,
     model: Option<String>,
     ratio: Option<String>,
 ) -> Result<AssetMeta, String> {
+    // key 从凭据管理器自取（命名条目 ark）——不再经 webview 传参。
+    let key = crate::settings::secret_load("ark")?;
     generate_video(state, prompt, key, base, model, ratio).await
 }
 
