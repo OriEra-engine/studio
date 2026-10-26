@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  html, body { background: transparent; overflow: hidden; height: 100%;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+
+  #stage { position: relative; width: 100%; height: 100%; display: flex;
+    flex-direction: column; align-items: center; justify-content: flex-end;
+    padding-bottom: 6px; }
+
+  /* 顶部小按钮排：切角色 / 关闭（hover 才显） */
+  #btns { position: absolute; top: 4px; right: 6px; display: none; gap: 4px; z-index: 30; }
+  #stage:hover #btns { display: flex; }
+  #btns button { width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(126,184,255,.35);
+    background: rgba(20,20,25,.85); color: #aeb6cc; font-size: 11px; cursor: pointer; line-height: 1; }
+  #btns button:hover { border-color: #7eb8ff; color: #7eb8ff; }
+
+  /* 台词气泡 */
+  #bubble { display: none; max-width: 230px; background: rgba(18,21,31,.94);
+    border: 1px solid rgba(126,184,255,.4); border-radius: 10px; padding: 8px 10px;
+    color: #e6e8ef; font-size: 12px; line-height: 1.55; margin-bottom: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4); position: relative; z-index: 20; }
+  #bubble.on { display: block; }
+  #bubble .who { color: #7eb8ff; font-weight: 700; margin-right: 4px; }
+
+  /* 对话输入（点气泡上的键盘图标展开） */
+  #ask { display: none; width: 230px; margin-bottom: 6px; display: flex; gap: 4px; z-index: 20; }
+  #ask.on { display: flex; }
+  #ask input { flex: 1; background: rgba(18,21,31,.94); border: 1px solid rgba(126,184,255,.4);
+    border-radius: 8px; padding: 5px 8px; color: #e6e8ef; font-size: 12px; outline: none; }
+  #ask button { background: #2d5b9e; color: #fff; border: none; border-radius: 8px;
+    padding: 0 10px; font-size: 12px; cursor: pointer; }
+  #ask button:disabled { opacity: .5; }
+
+  /* 立绘 + 动画 */
+  #sprite-wrap { position: relative; cursor: grab; z-index: 10; }
+  #sprite-wrap:active { cursor: grabbing; }
+  #sprite { display: block; image-rendering: pixelated; }
+
+  /* Ori：机械步进浮动 */
+  .c-ori #sprite { animation: bob-mech 2.4s steps(2) infinite; }
+  @keyframes bob-mech {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+  /* Era：正弦缓浮 */
+  .c-era #sprite { animation: float-era 3.2s ease-in-out infinite; }
+  @keyframes float-era {
+    0%, 100% { transform: translateY(0) rotate(-1deg); }
+    50% { transform: translateY(-8px) rotate(1deg); }
+  }
+
+  /* 点击反应：轻弹 */
+  .pop #sprite { animation: pop .35s ease !important; }
+  @keyframes pop {
+    0% { transform: scale(1); } 40% { transform: scale(1.06) translateY(-6px); }
+    100% { transform: scale(1); }
+  }
+
+  /* 底部名字标签 */
+  #tag { background: rgba(18,21,31,.88); border: 1px solid rgba(126,184,255,.3);
+    border-radius: 10px; padding: 3px 12px; color: #aeb6cc; font-size: 11px;
+    letter-spacing: 1px; z-index: 20; }
+  #tag b { color: #7eb8ff; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="btns">
+    <button id="b-switch" title="切换 Ori / Era">⇄</button>
+    <button id="b-ask" title="对话">💬</button>
+    <button id="b-close" title="收回">✕</button>
+  </div>
+  <div id="bubble"></div>
+  <div id="ask"><input id="ask-in" placeholder="说点什么…"><button id="ask-go">发</button></div>
+  <div id="sprite-wrap" data-drag>
+    <img id="sprite" alt="pet" draggable="false">
+  </div>
+  <div id="tag"></div>
+</div>
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var cur = qs.get('c') === 'era' ? 'era' : 'ori';
+  try { var saved = localStorage.getItem('pet.character'); if (saved === 'ori' || saved === 'era') cur = saved; } catch (e) {}
+
+  var CHARS = {
+    ori: {
+      img: 'pet/ori.png', name: 'Ori · 桌面机械助手', cls: 'c-ori', w: 200,
+      lines: [
+        '系统自检完毕，齿轮润滑良好。',
+        '需要我看着这个世界吗？交给我。',
+        '（履带转了半圈）……在的。',
+        '喝了口水。继续。',
+        '今天也是适合造世界的一天。'
+      ]
+    },
+    era: {
+      img: 'pet/era.png', name: 'Era · 桌面漂浮助手', cls: 'c-era', w: 170,
+      lines: [
+        '我在你身边飘着呢。',
+        '今天也要开心哦。',
+        '（轻轻转了个圈）嗯？叫我？',
+        '休息一下也没关系的。',
+        '这个世界很温柔呢。'
+      ]
+    }
+  };
+
+  function apply() {
+    var c = CHARS[cur];
+    document.body.className = c.cls;
+    var sp = document.getElementById('sprite');
+    sp.src = c.img;
+    sp.style.width = c.w + 'px';
+    document.getElementById('tag').innerHTML = '<b>' + c.name.split(' ')[0] + '</b>';
+    try { localStorage.setItem('pet.character', cur); } catch (e) {}
+  }
+
+  function bubble(who, text, ms) {
+    var el = document.getElementById('bubble');
+    el.innerHTML = '<span class="who">' + who + '</span>' + text;
+    el.classList.add('on');
+    clearTimeout(bubble._t);
+    bubble._t = setTimeout(function () { el.classList.remove('on'); }, ms || 4000);
+  }
+
+  var pick = function () {
+    var c = CHARS[cur];
+    bubble(c.name.split(' ')[0], c.lines[Math.floor(Math.random() * c.lines.length)], 5000);
+    var wrap = document.getElementById('sprite-wrap');
+    wrap.classList.remove('pop'); void wrap.offsetWidth; wrap.classList.add('pop');
+  };
+
+  // 拖拽：mousedown 在立绘上 → 调 Rust pet_start_drag（区别于 click 弹台词：
+  // 移动超过 6px 视为拖拽，不弹台词）
+  var wrap = document.getElementById('sprite-wrap');
+  var downXY = null, dragged = false;
+  wrap.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    downXY = [e.clientX, e.clientY]; dragged = false;
+    window.__TAURI_INTERNALS__.invoke('pet_start_drag').catch(function () {});
+  });
+  wrap.addEventListener('mousemove', function (e) {
+    if (!downXY) return;
+    if (Math.abs(e.clientX - downXY[0]) + Math.abs(e.clientY - downXY[1]) > 6) dragged = true;
+  });
+  wrap.addEventListener('click', function () { if (!dragged) pick(); });
+
+  // 按钮
+  document.getElementById('b-switch').onclick = function () {
+    cur = cur === 'ori' ? 'era' : 'ori';
+    apply();
+    bubble(CHARS[cur].name.split(' ')[0], cur === 'ori' ? 'Ori 上线。' : 'Era 上线。', 3000);
+  };
+  document.getElementById('b-close').onclick = function () {
+    window.__TAURI_INTERNALS__.invoke('pet_close').catch(function () {});
+  };
+
+  // 对话（Rust 侧调 L7；NO_PROVIDER 降级离线台词）
+  var asking = false;
+  function ask() {
+    if (asking) return;
+    var t = document.getElementById('ask-in').value.trim();
+    if (!t) return;
+    asking = true;
+    var btn = document.getElementById('ask-go');
+    btn.disabled = true; btn.textContent = '…';
+    window.__TAURI_INTERNALS__.invoke('pet_chat', {
+      character: cur, message: t
+    }).then(function (reply) {
+      bubble(CHARS[cur].name.split(' ')[0], reply, 8000);
+    }).catch(function (err) {
+      var offline = CHARS[cur].lines[Math.floor(Math.random() * CHARS[cur].lines.length)];
+      bubble(CHARS[cur].name.split(' ')[0],
+        String(err).indexOf('NO_PROVIDER') >= 0
+          ? '先在模型中心配好 Key，我才能真正开口说话哦。'
+          : offline, 6000);
+    }).finally(function () {
+      asking = false; btn.disabled = false; btn.textContent = '发';
+      document.getElementById('ask-in').value = '';
+    });
+  }
+  document.getElementById('b-ask').onclick = function () {
+    var el = document.getElementById('ask');
+    el.classList.toggle('on');
+    if (el.classList.contains('on')) document.getElementById('ask-in').focus();
+  };
+  document.getElementById('ask-go').onclick = ask;
+  document.getElementById('ask-in').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') ask();
+  });
+
+  // 主窗切换角色事件
+  window.addEventListener('pet-character', function (e) {
+    if (e.detail === 'ori' || e.detail === 'era') { cur = e.detail; apply(); }
+  });
+
+  apply();
+})();
+</script>
+</body>
+</html>

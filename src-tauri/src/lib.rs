@@ -7,6 +7,7 @@ mod film_flow;
 mod hardware;
 mod llm;
 mod ollama;
+mod pet;
 mod project;
 mod recommend;
 mod server;
@@ -458,6 +459,10 @@ pub fn run() {
             cancel_ai,
             demos::list_demos,
             demos::open_demo,
+            pet::open_pet,
+            pet::pet_start_drag,
+            pet::pet_close,
+            pet::pet_chat,
             assets::generate_asset_command,
             assets::generate_mesh_command,
             assets::generate_video_command,
