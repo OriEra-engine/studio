@@ -188,8 +188,29 @@ function startElapsed() {
   stopElapsed();
   elapsedTimer = window.setInterval(() => {
     const s = Math.floor((Date.now() - busyStart) / 1000);
+    if (s >= 90) {
+      // 看门狗（2026-10-26 用户实测「无响应」）：流任务静默死亡时无
+      // done/error 事件，busy 永久上锁=面板从此不回话——90 秒无任何
+      // 推进即强制收尾，输入永远可再按。
+      watchdogTimeout();
+      return;
+    }
     elapsed.value = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
   }, 500);
+}
+/** 强制收尾：解锁 busy、给最后一条assistant消息标注超时，输入即时可用。 */
+function watchdogTimeout() {
+  stopElapsed();
+  stopTyping();
+  busy.value = false;
+  curTaskId = "";
+  const last = msgs.value[msgs.value.length - 1];
+  if (last && last.role === "assistant") {
+    last.content = last.content.trim()
+      ? last.content + "\n\n（90 秒无更多响应，已自动停止——可重试）"
+      : "（90 秒无响应——连接可能已中断，请重试）";
+  }
+  void scrollBottom();
 }
 
 /** 打字机式逐段显示(规则模式);看完落盘。 */
@@ -240,6 +261,7 @@ async function send(text?: string) {
     };
     curTaskId = "";
     const idP = api.copilotChatStream(SYSTEM_PROMPT, history, q, ev => {
+      if (!busy.value) return; // 看门狗已强制收尾——丢弃迟到事件
       if (ev.event === "delta") {
         providerOnline.value = true;
         prox.content += ev.text;
@@ -567,18 +589,21 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #202027; background: #141419;
 }
 .ori-title { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.ori-title b { font-size: 14px; }
+.ori-title b { font-size: 14px; flex-shrink: 0; }
 .ori-chip {
   font-size: 11px; padding: 1px 8px; border-radius: 9px;
-  border: 1px solid #2c2c36; color: #a0a0ab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px;
+  border: 1px solid #2c2c36; color: #a0a0ab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   display: inline-flex; align-items: center; gap: 5px;
+  /* 挤压吸收者：面板 420px 减去头像/按钮后余量有限，chip 必须能缩到 0
+     （2026-10-26 用户实测 1280 宽窗口下按钮被顶出右缘裁掉） */
+  flex: 0 1 auto; min-width: 0; max-width: 190px;
 }
 .ori-chip.small { max-width: 170px; padding: 1px 7px; }
 .ori-chip.on { color: #3fd68f; border-color: #215437; }
 .ori-chip.off { color: #c9a6ff; border-color: #4a3a66; }
 .ori-head-btn {
   background: none; border: none; color: #71717c; font-size: 14px; cursor: pointer;
-  padding: 4px 8px; border-radius: 6px; line-height: 1;
+  padding: 4px 8px; border-radius: 6px; line-height: 1; flex-shrink: 0;
 }
 .ori-head-btn:hover { color: #e9e9ee; background: #20202a; }
 
