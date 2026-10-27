@@ -4,6 +4,7 @@ import {
   NButton, NCard, NGrid, NGi, NInput, NTag, NSpace, NEmpty, NPopconfirm,
   NSelect, useMessage, NSpin, NPopover, NInputNumber,
 } from "naive-ui";
+import { humanizeError } from "../utils/errors";
 import { api, type ProjectMeta } from "../api";
 
 interface AssetMeta {
@@ -41,8 +42,12 @@ async function migrateLegacyKeys() {
   for (const [name, lsKey] of legacy) {
     const old = localStorage.getItem(lsKey);
     if (old && old.trim()) {
-      try { await api.secretSave(name, old.trim()); } catch { /* 迁移失败不阻断 */ }
-      localStorage.removeItem(lsKey);
+      // 2026-10-26 PM/安全双评审 P0：先确认入库成功再删明文——曾几何时
+      // keyring 故障时唯一副本被静默删除且未入库
+      try {
+        await api.secretSave(name, old.trim());
+        localStorage.removeItem(lsKey);
+      } catch { /* 入库失败：保留明文副本（宁暂留不丢失），下次再迁 */ }
     }
   }
 }
@@ -54,7 +59,7 @@ async function saveRodinKey() {
     rodinKeyInput.value = "";
     rodinKeySaved.value = true;
     message.success("Hyper3D Key 已存入系统凭据管理器（不落盘、不回显）");
-  } catch (e) { message.error(String(e)); }
+  } catch (e) { message.error(humanizeError(e)); }
 }
 async function saveArkKey() {
   const v = arkKeyInput.value.trim();
@@ -64,7 +69,7 @@ async function saveArkKey() {
     arkKeyInput.value = "";
     arkKeySaved.value = true;
     message.success("方舟 Key 已存入系统凭据管理器（不落盘、不回显）");
-  } catch (e) { message.error(String(e)); }
+  } catch (e) { message.error(humanizeError(e)); }
 }
 const videoModel = ref<string>("doubao-seedance-2-0-mini-260615");
 const videoRatio = ref<string>("16:9");
@@ -173,7 +178,7 @@ async function doGenerate() {
       message.success("已自动挂进最近项目的画廊墙（运行中窗口已刷新）");
     }
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     generating.value = false;
   }
@@ -191,7 +196,7 @@ async function doGenerateMesh() {
     meshPrompt.value = "";
     await refresh();
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     meshGenerating.value = false;
   }
@@ -208,7 +213,7 @@ async function doGenerateVideo() {
     videoPrompt.value = "";
     await refresh();
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     videoGenerating.value = false;
   }
@@ -265,7 +270,7 @@ async function addToProject(a: AssetMeta) {
     await api.addAssetToProject(a.id, targetProject.value);
     message.success("已挂进该项目画廊墙（运行中窗口已自动刷新）");
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     busyId.value = "";
   }
@@ -294,7 +299,7 @@ async function setAsClip(a: AssetMeta) {
     await api.setVideoAsClip(a.id, targetProject.value, beat);
     message.success(`已拷贝为该项目第 ${beat + 1} 拍正片（clips/beat${beat}.mp4，运行中窗口已自动刷新）`);
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     clipBeatBusy.value = "";
   }
@@ -305,7 +310,7 @@ async function remove(a: AssetMeta) {
     await api.deleteAsset(a.id);
     await refresh();
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   }
 }
 

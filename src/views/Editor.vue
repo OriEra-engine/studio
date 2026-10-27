@@ -5,6 +5,7 @@ import {
   NButton, NCard, NInput, NGi, NGrid, NTag, NSpace, NAlert, NSpin,
   NPopconfirm, NSelect, useMessage,
 } from "naive-ui";
+import { humanizeError } from "../utils/errors";
 import { api, type ProjectDetail } from "../api";
 import { store } from "../store";
 import { charDiff, type Seg } from "../utils/diff";
@@ -53,14 +54,24 @@ onMounted(async () => {
     premise.value = d.story.premise ?? "";
     beats.splice(0, beats.length, ...d.story.beats.map(b => ({ ...b })));
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     loading.value = false;
   }
   baseline = snapshot();
   window.addEventListener("keydown", onKey);
+  window.addEventListener("beforeunload", onBeforeUnload);
 });
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (dirty.value) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+}
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKey);
+  window.removeEventListener("beforeunload", onBeforeUnload);
+});
 
 // ---- 2026-10-26 制作人测评 P0：改一个字必须鼠标点保存、误删无法回退、
 // ---- 切页面静默丢弃——脏检查 + Ctrl+S + 离开守卫 + 结构操作撤销栈。
@@ -139,7 +150,7 @@ async function save() {
     undoDepth.value = 0;
     refreshPreview();
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     saving.value = false;
   }
@@ -153,7 +164,7 @@ async function rewrite(i: number) {
     diffOld.value = pv.old;
     diffNew.value = pv.new;
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     aiBusy.value = -1;
   }
@@ -171,7 +182,7 @@ async function applyDiff() {
     diffIndex.value = -1;
     diffOld.value = diffNew.value = null;
   } catch (e) {
-    message.error(String(e));
+    message.error(humanizeError(e));
   } finally {
     applying.value = false;
   }
@@ -191,9 +202,11 @@ function addChoice(i: number) {
   const b = beats[i];
   if (!b.choices) b.choices = [];
   if (b.choices.length >= 3) return message.warning("一拍最多 3 个选项(别把玩家绕晕)");
+  pushUndo();
   b.choices.push({ label: "新选项", next: null, effect: null });
 }
 function delChoice(i: number, ci: number) {
+  pushUndo();
   beats[i].choices?.splice(ci, 1);
   if (beats[i].choices && beats[i].choices.length === 0) beats[i].choices = null;
 }
@@ -218,21 +231,21 @@ function move(i: number, d: -1 | 1) {
 }
 
 async function run() {
-  try { await api.openProject(id); } catch (e) { message.error(String(e)); }
+  try { await api.openProject(id); } catch (e) { message.error(humanizeError(e)); }
 }
 async function upgrade() {
   upgBusy.value = true;
   try {
     const r = await api.upgradeRuntime(id);
     message.success(r || "已升级");
-  } catch (e) { message.error(String(e)); } finally { upgBusy.value = false; }
+  } catch (e) { message.error(humanizeError(e)); } finally { upgBusy.value = false; }
 }
 async function exportZip() {
   zipBusy.value = true;
   try {
     const p = await api.exportProjectZip(id);
     if (p) message.success(`已导出：${p}（对方解压到自己的 projects 目录即可玩）`);
-  } catch (e) { message.error(String(e)); } finally { zipBusy.value = false; }
+  } catch (e) { message.error(humanizeError(e)); } finally { zipBusy.value = false; }
 }
 
 /* ---- Godot 式工作台：右侧实时预览 ---- */
@@ -249,7 +262,7 @@ async function exportHtml() {
   try {
     const p = await api.exportProjectSinglefile(id);
     if (p) message.success(`已导出双击即玩 HTML：${p}（引擎已内联，发给谁都能直接玩）`);
-  } catch (e) { message.error(String(e)); } finally { htmlBusy.value = false; }
+  } catch (e) { message.error(humanizeError(e)); } finally { htmlBusy.value = false; }
 }
 </script>
 

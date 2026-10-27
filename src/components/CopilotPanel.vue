@@ -275,6 +275,7 @@ async function send(text?: string) {
     const finish = () => {
       flushStream();
       streamProx = null;
+      monthCalls.value += 1; // 徽章实时（月账本由后端落盘，此处同步展示）
       busy.value = false;
       stopElapsed();
       curTaskId = "";

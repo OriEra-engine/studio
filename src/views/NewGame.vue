@@ -5,6 +5,7 @@ import {
   NAlert, NCheckbox, useMessage, NSpin,
 } from "naive-ui";
 import { useRouter } from "vue-router";
+import { humanizeError } from "../utils/errors";
 import { api, type ProjectMeta, type GeneratedStory } from "../api";
 import { GAMEPLAY_PACKS as FALLBACK_PACKS } from "../data/gameplay-packs";
 import { STORY_FRAMEWORKS as FALLBACK_FRAMEWORKS } from "../data/story-frameworks";
@@ -240,21 +241,6 @@ async function aiGenerate() {
   }
 }
 
-/** 2026-10-26 十角色测评 P0：原始异常串直甩=小白天书。映射成人话+下一步；
- *  原始错误折叠在括号里留给排查。 */
-function humanizeError(e: unknown): string {
-  const raw = String(e);
-  const compact = raw.length > 120 ? raw.slice(0, 120) + "…" : raw;
-  if (/401|403|unauthorized|invalid api key|authentication/i.test(raw))
-    return `API Key 无效或已过期——请到「模型中心」重新粘贴并保存 Key。（${compact}）`;
-  if (/429|rate.?limit|quota/i.test(raw))
-    return "请求太频繁或额度用完——等一两分钟再试，或到供应商控制台确认额度。";
-  if (/timeout|timed out|network|fetch|Failed to fetch|ECONN|error sending request/i.test(raw))
-    return "网络不通或超时——检查网络连接后重试；配了代理的确认代理在跑。（" + compact + "）";
-  if (/no api key|未配置|not configured/i.test(raw))
-    return "还没配置模型——到「模型中心」选一个厂商并粘贴 API Key。";
-  return `生成失败，请重试；反复失败请到「模型中心」测试连接。（${compact}）`;
-}
 
 /** 应用 AI 结果：替换前提与节拍，标记已应用（W5 纯文游检查接管） */
 function applyStory(story: GeneratedStory) {

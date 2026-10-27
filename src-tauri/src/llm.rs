@@ -577,15 +577,21 @@ pub fn record_call(kind: &str) {
         *c = json!(c.as_u64().unwrap_or(0) + 1);
     }
     if let Ok(text) = serde_json::to_string(&root) {
-        let _ = std::fs::write(path, text);
+        // 原子写：temp+rename，崩溃不留半个账本
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
     }
 }
 
 fn current_month() -> String {
     // days since epoch → civil year/month（Hinnant 算法），不引 chrono
+    // 东八区口径（Studio 主场为中国大陆用户；无 chrono 依赖，+8h 硬
+    // 口径并注释——其他时区用户月份边界差几小时，可接受）
     let days = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() / 86400)
+        .map(|d| (d.as_secs() + 8 * 3600) / 86400)
         .unwrap_or(0) as i64;
     let z = days + 719_468;
     let era = z.div_euclid(146_097);

@@ -10,28 +10,21 @@ const loading = ref(true);
 const opening = ref("");
 const message = useMessage();
 
-onMounted(async () => {
+const loadError = ref("");
+async function loadDemos() {
+  loading.value = true;
+  loadError.value = "";
   try {
     demos.value = await api.listDemos();
+  } catch (e) {
+    // 2026-10-26 玩家三轮评审 P0：静默空厅=「软件坏了」劝退瞬间——
+    // 失败必须亮牌+给重试（与 Play 三态兜底同款哲学）
+    loadError.value = String(e);
   } finally {
     loading.value = false;
   }
-});
-
-async function open(d: DemoInfo) {
-  opening.value = d.id;
-  try {
-    // 系统浏览器直开本地服务器 URL——WebView2/Edge155 运行时子窗口对
-    // 一切导航静默吞没（studio#25 悬案）：窗口路 open_demo 会无声挂起，
-    // 卡片永远「打开中」。浏览器路是拍板正解，窗口路不再作为入口。
-    await api.openDemoInBrowser(d.id);
-    localStorage.setItem("oe.seenDemo", "1");
-  } catch (e) {
-    message.error(`打开失败：${String(e).slice(0, 120)}`);
-  } finally {
-    opening.value = "";
-  }
 }
+onMounted(loadDemos);
 
 /* 每个demo一条确定性渐变色带（Meshy 画廊风） */
 function hueOf(seed: string): number {
@@ -61,7 +54,7 @@ async function openInBrowser(d: DemoInfo) {
 <template>
   <div class="page">
     <h2 class="page-title">Demo 演示厅</h2>
-    <p class="page-sub">引擎全部示例已内置，点击即在新窗口运行，无需安装任何环境。AI 相关 demo 会自动植入「模型中心」里配置的模型。</p>
+    <p class="page-sub">引擎全部示例已内置，点击即在系统浏览器运行，无需安装任何环境。AI 相关 demo 会自动植入「模型中心」里配置的模型。</p>
 
     <NAlert type="info" style="margin-bottom: 16px" v-if="!loading && demos.some(d => d.featured)">
       推荐从 <b>「隅角咖啡馆」</b> 开始——3D 世界里的 AI NPC 会记忆、聊天、推进剧情。
@@ -70,10 +63,16 @@ async function openInBrowser(d: DemoInfo) {
       完成一次配置（智谱 glm-4-flash 有免费额度，国内直连）。
     </NAlert>
 
+    <NAlert v-if="loadError" type="error" style="margin-bottom: 16px" role="alert">
+      示例列表加载失败——内置服务器可能仍在启动。
+      <NButton size="tiny" style="margin-left: 8px" @click="loadDemos">⟳ 重试</NButton>
+      <span style="opacity: .6; font-size: 12px">（{{ loadError.slice(0, 80) }}）</span>
+    </NAlert>
+
     <NSpin :show="loading">
       <NGrid :cols="4" :x-gap="14" :y-gap="14" responsive="screen" item-responsive>
         <NGi v-for="d in demos" :key="d.id" :span="d.featured ? '4 m:2' : '2 m:1'">
-          <NCard class="demo-card" :class="{ featured: d.featured }" size="small" @click="open(d)">
+          <NCard class="demo-card" :class="{ featured: d.featured }" size="small" @click="openInBrowser(d)">
             <template #header>
               <span style="font-size: 14px">{{ d.title }}</span>
             </template>
@@ -90,7 +89,6 @@ async function openInBrowser(d: DemoInfo) {
               <NButton size="small" type="primary" ghost :loading="opening === d.id" @click.stop="openInBrowser(d)">
                 {{ opening === d.id ? "启动中" : "▶ 运行" }}
               </NButton>
-              <NButton size="small" quaternary @click.stop="open(d)">🪟 独立窗口</NButton>
             </NSpace>
           </NCard>
         </NGi>
