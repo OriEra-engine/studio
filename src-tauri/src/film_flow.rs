@@ -215,6 +215,73 @@ pub async fn tts_doubao(
     Ok(file)
 }
 
+/// 本地语音合成（#108 批③）：OpenAI `/v1/audio/speech` 兼容 wire 打向
+/// 设置里的本地 server（如 piper，`local_voice_base`）——零 key 零云费，
+/// 数据不出机。产物同豆包路：film/vo/{vo_id}.mp3。
+#[tauri::command]
+pub async fn tts_local(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    project: String,
+    text: String,
+    vo_id: String,
+    voice: Option<String>,
+) -> Result<String, String> {
+    let base = crate::settings::load(&app)
+        .local_voice_base
+        .filter(|b| !b.trim().is_empty())
+        .ok_or_else(|| {
+            "本地语音未启用——先到「模型中心 → 本地语音」填入 server 地址".to_string()
+        })?;
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err("台词为空".into());
+    }
+    let safe_vo: String = vo_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
+    if safe_vo.is_empty() {
+        return Err("voId 非法".into());
+    }
+    let mut body = serde_json::json!({
+        "model": "piper",
+        "input": text,
+        "response_format": "mp3",
+    });
+    if let Some(v) = voice.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        body["voice"] = serde_json::json!(v);
+    }
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/audio/speech"))
+        .timeout(std::time::Duration::from_secs(120))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("本地语音请求失败：{e}"))?;
+    let status = resp.status();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取本地语音响应失败：{e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "本地语音 HTTP {}：{}",
+            status,
+            String::from_utf8_lossy(&bytes).chars().take(120).collect::<String>()
+        ));
+    }
+    if bytes.is_empty() {
+        return Err("本地语音返回了空音频（200 但空体）".into());
+    }
+    let dir = film_dir(&state, &project).join("vo");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建配音目录失败：{e}"))?;
+    let file = format!("{safe_vo}.mp3");
+    std::fs::write(dir.join(&file), &bytes).map_err(|e| format!("写入 mp3 失败：{e}"))?;
+    Ok(file)
+}
+
 fn uuid_v4() -> String {
     // 无 uuid crate：时间戳 + 进程内计数足够做 Request-Id（非安全用途）
     use std::sync::atomic::{AtomicU64, Ordering};

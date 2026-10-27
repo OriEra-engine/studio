@@ -247,6 +247,12 @@ export const api = {
   /** 当月 AI 调用账本（copilot/story 次数）——2026-10-26 付费用户测评：消耗可见 */
   chatLedgerMonth: () => invoke<Record<string, number>>("chat_ledger_get"),
 
+  // 本地语音（#108 批③：piper 等 OpenAI /v1/audio/speech 兼容本地 server）
+  setLocalVoice: (base: string) => invoke<void>("set_local_voice", { base }),
+  getLocalVoice: () => invoke<string>("get_local_voice"),
+  ttsLocal: (project: string, text: string, voId: string, voice?: string) =>
+    invoke<string>("tts_local", { project, text, voId, voice: voice ?? null }),
+
   // Ollama
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),
   ollamaServe: () => invoke<void>("ollama_serve"),

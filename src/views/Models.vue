@@ -5,6 +5,7 @@ import {
   NRadioGroup, NRadio, NPopconfirm, NSelect, useMessage,
 } from "naive-ui";
 import { listen } from "@tauri-apps/api/event";
+import { humanizeError } from "../utils/errors";
 import { api, type HardwareInfo, type Recommendation, type ProviderCfg, type OllamaStatus } from "../api";
 import { CLOUD_PRESETS, type CloudPreset } from "../api";
 import { store, refreshStatus, saveProvider as storeSaveProvider, clearProvider as storeClearProvider } from "../store";
@@ -116,6 +117,21 @@ async function loadXliteLive() {
 
 // Ollama
 const ollama = ref<OllamaStatus | null>(null);
+// #108 批③：本地语音 server（piper 等 OpenAI 兼容，零 key 零云费）
+const localVoiceBase = ref("");
+async function saveLocalVoice() {
+  try {
+    await api.setLocalVoice(localVoiceBase.value.trim());
+    message.success(
+      localVoiceBase.value.trim()
+        ? "本地语音已启用——影游配音区可切换「本地 piper」"
+        : "本地语音已关闭",
+    );
+  } catch (e) { message.error(humanizeError(e)); }
+}
+onMounted(async () => {
+  try { localVoiceBase.value = await api.getLocalVoice(); } catch { /* 空默认 */ }
+});
 const pulling = ref("");
 const pullPercent = ref<number | null>(null);
 const pullStatus = ref("");
@@ -455,6 +471,18 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
           </div>
         </NSpace>
       </div>
+    </NCard>
+
+    <NCard title="🔊 本地语音（piper 等本地 server，可选）" size="small" style="margin-bottom: 14px">
+      <p style="font-size: 12px; color: #74747f; margin: 0 0 8px">
+        填入 OpenAI <code>/v1/audio/speech</code> 兼容的本地 server 地址（如 piper：<code>http://127.0.0.1:5000/v1</code>）。
+        零 key、零云费、数据不出机；留空 = 关闭，影游配音走云端豆包。
+      </p>
+      <NSpace size="small" align="center" :wrap="false">
+        <NInput v-model:value="localVoiceBase" size="small" placeholder="http://127.0.0.1:5000/v1"
+          style="max-width: 300px" @keydown.enter.exact.prevent="saveLocalVoice" />
+        <NButton size="small" @click="saveLocalVoice">保存</NButton>
+      </NSpace>
     </NCard>
 
     <!-- 当前配置 -->
