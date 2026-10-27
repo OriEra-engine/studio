@@ -48,6 +48,10 @@ pub struct Settings {
     /// 火绒兼容提醒已展示过（只提示一次）
     #[serde(default)]
     pub huorong_hint_shown: bool,
+    /// 本地语音 server（OpenAI /v1/audio/speech 兼容，如 piper）——
+    /// #108 批③：None/空 = 本地语音关闭，配音走云端豆包
+    #[serde(default)]
+    pub local_voice_base: Option<String>,
 }
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -208,4 +212,20 @@ pub async fn secret_delete(name: String) -> Result<(), String> {
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(format!("删除凭据失败：{e}")),
     }
+}
+
+/// 设置本地语音 server 地址（#108 批③）；空串 = 关闭本地语音。
+#[tauri::command]
+pub fn set_local_voice(app: tauri::AppHandle, base: String) -> Result<(), String> {
+    let mut s = load(&app);
+    let base = base.trim().trim_end_matches('/').to_string();
+    s.local_voice_base = if base.is_empty() { None } else { Some(base) };
+    save(&app, &s)
+}
+
+#[tauri::command]
+pub fn get_local_voice(app: tauri::AppHandle) -> String {
+    load(&app)
+        .local_voice_base
+        .unwrap_or_default()
 }

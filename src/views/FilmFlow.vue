@@ -29,6 +29,15 @@ const exportedZip = ref("");
 const arkKeyInput = ref("");
 const arkKeySaved = ref(false);
 const ttsKeyInput = ref("");
+// #108 批③：配音引擎切换（云端豆包按条计费 / 本地 piper 零费数据不出机）；
+// 机器级偏好存 localStorage（与语音 server 同生命周期）
+const voEngine = ref<"cloud" | "local">(
+  (localStorage.getItem("oe.voEngine") as "cloud" | "local") || "cloud",
+);
+function pickVoEngine(e: "cloud" | "local") {
+  voEngine.value = e;
+  localStorage.setItem("oe.voEngine", e);
+}
 const ttsKeySaved = ref(false);
 
 async function refreshSecrets() {
@@ -319,6 +328,20 @@ const setSpeaker = (role: string, sp: string) => {
 const voBusy = ref("");
 async function genVo(item: VoItem): Promise<boolean> {
   if (!project.value) { message.warning("先选择项目"); return false; }
+  if (voEngine.value === "local") {
+    // 本地 piper：零 key 零费，server 地址在模型中心设置
+    voBusy.value = item.id;
+    try {
+      const f = await api.ttsLocal(project.value, item.text, item.id, speakerOf(item.role));
+      voDone.value[item.id] = f;
+      await save();
+      message.success(`${item.id} 本地配音完成`);
+      return true;
+    } catch (e) {
+      message.error(`${item.id} 失败：${humanizeError(e).slice(0, 120)}`);
+      return false;
+    } finally { voBusy.value = ""; }
+  }
   if (!ttsKeySaved.value) { message.warning("先粘贴并保存豆包语音 API Key"); return false; }
   voBusy.value = item.id;
   try {
@@ -486,7 +509,16 @@ function go(next: number) {
     </NCard>
 
     <!-- Step 4 配音 -->
-    <NCard v-if="step === 4" size="small" title="🎙 配音（豆包语音合成 2.0 · 新版控制台 API Key，区别于方舟 Key）">
+    <NCard v-if="step === 4" size="small" title="🎙 配音">
+      <template #header-extra>
+        <NSpace size="small" align="center">
+          <span style="font-size: 12px; color: #74747f">引擎：</span>
+          <NButton size="tiny" :type="voEngine === 'cloud' ? 'primary' : 'default'"
+            @click="pickVoEngine('cloud')">☁ 云端豆包（按条计费）</NButton>
+          <NButton size="tiny" :type="voEngine === 'local' ? 'primary' : 'default'"
+            @click="pickVoEngine('local')">🏠 本地 piper（零费）</NButton>
+        </NSpace>
+      </template>
       <NSpace style="margin-bottom: 12px" align="center" :wrap="false">
         <NInput v-model:value="ttsKeyInput" type="password" show-password-on="click" size="small"
           :placeholder="ttsKeySaved ? '已保存——粘贴新 Key 可替换' : '豆包语音 API Key'"
