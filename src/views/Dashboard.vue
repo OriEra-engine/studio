@@ -124,7 +124,7 @@ function fmtDate(unix: string) {
           <template #header-extra>
             <span class="oe-badge" :style="status?.provider_configured ? '' : 'color: var(--warn)'">
               <span class="status-dot" :class="status?.provider_configured ? 'on' : ''"></span>
-              {{ status?.provider_configured ? "已植入" : "未配置" }}
+              {{ status?.provider_configured ? "已连接" : "未连接" }}
             </span>
           </template>
           <div class="stat-line">

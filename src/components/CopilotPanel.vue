@@ -42,6 +42,7 @@ const open = ref(false);
 const busy = ref(false);
 const input = ref("");
 const providerLabel = ref("连接中…");
+const monthCalls = ref(0);
 const providerOnline = ref(false);
 const msgs = ref<Msg[]>([]);
 const listEl = ref<HTMLElement>();
@@ -385,6 +386,11 @@ async function refreshStatus() {
     providerOnline.value = false;
     providerLabel.value = "浏览器调试";
   }
+  // 2026-10-26 付费用户测评：消耗必须可见——本月对话/剧情调用次数
+  try {
+    const led = await api.chatLedgerMonth();
+    monthCalls.value = Object.values(led).reduce((a, b) => a + (Number(b) || 0), 0);
+  } catch { /* 账本读取失败不打扰 */ }
 }
 
 function toggle() {
@@ -491,6 +497,9 @@ onBeforeUnmount(() => {
           <b>奥粒 Ori</b>
           <span class="ori-chip" :class="providerOnline ? 'on' : 'off'">
             {{ busy ? "回答中…" : providerOnline ? providerLabel + " · 对话中" : "离线小奥 · 规则应答" }}
+          </span>
+          <span v-if="monthCalls" class="ori-chip small" title="本月 AI 对话/剧情调用次数（按次记账，不折算价格）">
+            本月 {{ monthCalls }} 次
           </span>
         </div>
         <button class="ori-head-btn" title="召唤桌宠 Ori（白蓝悬浮）" aria-label="召唤桌宠 Ori" @click="callPet('ori')">🐾</button>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import {
   NButton, NCard, NGrid, NGi, NInput, NTag, NSpace, NEmpty, NPopconfirm,
   NSelect, useMessage, NSpin, NPopover, NInputNumber,
@@ -272,10 +272,20 @@ async function addToProject(a: AssetMeta) {
 }
 
 // ===== B1 影游 video 桥：把视频资产设为项目某拍正片 =====
-// 拷贝进项目 clips/beatN.mp4 + 写 clips.json（素材库保留原件）；拍号 0-4 弹层选择。
+// 拷贝进项目 clips/beatN.mp4 + 写 clips.json（素材库保留原件）。
+// 2026-10-26 制作人测评：拍号曾硬编码 0-4——第 6 拍起的项目根本挂不上。
+// 改为读目标项目真实节拍数，读取失败保底 0-4。
 const clipBeatDraft = ref<Record<string, number>>({});
 const clipBeatBusy = ref("");
-const beatOptions = [0, 1, 2, 3, 4].map((n) => ({ label: `第 ${n + 1} 拍`, value: n }));
+const beatOptions = ref([0, 1, 2, 3, 4].map((n) => ({ label: `第 ${n + 1} 拍`, value: n })));
+watch(targetProject, async (pid) => {
+  if (!pid) return;
+  try {
+    const d = await api.readProject(pid);
+    const n = d.story?.beats?.length ?? 0;
+    if (n > 0) beatOptions.value = Array.from({ length: n }, (_, i) => ({ label: `第 ${i + 1} 拍`, value: i }));
+  } catch { /* 保底 0-4 */ }
+}, { immediate: true });
 async function setAsClip(a: AssetMeta) {
   if (!targetProject.value) return message.warning("先在右上角选择目标项目（正片要进项目才会被剧情拍引用）");
   const beat = clipBeatDraft.value[a.id] ?? 0;

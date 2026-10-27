@@ -39,7 +39,7 @@ async function save() {
   saving.value = true;
   try {
     await saveProvider({ ...form.value });
-    message.success(`已植入 ${form.value.model}——本游戏与已打开的窗口即时生效`);
+    message.success(`已连接 ${form.value.model}——本游戏与已打开的窗口即时生效`);
   } catch (e) {
     message.error(`保存失败：${e}`);
   } finally {
@@ -66,7 +66,7 @@ const ready = computed(() => !!store.status?.provider_configured);
 <template>
   <div class="qsetup">
     <NAlert v-if="ready" type="success" :show-icon="false" style="margin-bottom: 4px">
-      ✅ 已植入：<b>{{ store.status?.provider?.model }}</b> —— 可直接下一步，或换一个模型。
+      ✅ 已连接：<b>{{ store.status?.provider?.model }}</b> —— 可直接下一步，或换一个模型。
     </NAlert>
 
     <div class="qs-label">1 · 选一个模型（免费/国内直连优先）</div>

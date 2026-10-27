@@ -18,7 +18,7 @@ const form = reactive<ProviderCfg>({ kind: "", key: "", model: "", base: "" });
 const saving = ref(false);
 const testing = ref(false);
 const testResult = ref<{ ok: boolean; text: string } | null>(null);
-// 已植入状态来自全局 store：其他页面保存后回到这里无需重拉
+// 已连接状态来自全局 store：其他页面保存后回到这里无需重拉
 const configured = computed(() => store.status?.provider_configured ?? false);
 
 // ---- 全部厂商(筛选) ----
@@ -460,7 +460,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
     <!-- 当前配置 -->
     <NCard title="🔌 植入引擎" size="small">
       <template #header-extra>
-        <NTag :type="configured ? 'success' : 'warning'" size="small" round>{{ configured ? '已植入' : '未配置' }}</NTag>
+        <NTag :type="configured ? 'success' : 'warning'" size="small" round>{{ configured ? '已连接' : '未连接' }}</NTag>
       </template>
       <NGrid :cols="2" :x-gap="16" responsive="screen" item-responsive>
         <NGi span="2 m:1">
