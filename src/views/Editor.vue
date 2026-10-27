@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import {
   NButton, NCard, NInput, NGi, NGrid, NTag, NSpace, NAlert, NSpin,
   NPopconfirm, NSelect, useMessage,
@@ -57,6 +57,53 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+  baseline = snapshot();
+  window.addEventListener("keydown", onKey);
+});
+onUnmounted(() => window.removeEventListener("keydown", onKey));
+
+// ---- 2026-10-26 制作人测评 P0：改一个字必须鼠标点保存、误删无法回退、
+// ---- 切页面静默丢弃——脏检查 + Ctrl+S + 离开守卫 + 结构操作撤销栈。
+const dirty = ref(false);
+let baseline = "";
+function snapshot(): string {
+  return JSON.stringify({ premise: premise.value, beats });
+}
+watch([premise, beats], () => {
+  if (!loading.value) dirty.value = snapshot() !== baseline;
+}, { deep: true });
+
+// 撤销栈：结构操作（增/删/移/采纳 diff）前压整帧快照，容量 50
+// （undoDepth 是响应式镜像——普通数组的变化模板读不到）
+const undoStack: string[] = [];
+const undoDepth = ref(0);
+function pushUndo() {
+  undoStack.push(snapshot());
+  if (undoStack.length > 50) undoStack.shift();
+  undoDepth.value = undoStack.length;
+}
+function undo() {
+  const prev = undoStack.pop();
+  undoDepth.value = undoStack.length;
+  if (prev === undefined) return message.info("没有可撤销的结构操作");
+  try {
+    const s = JSON.parse(prev) as { premise: string; beats: typeof beats };
+    premise.value = s.premise;
+    beats.splice(0, beats.length, ...s.beats);
+    dirty.value = snapshot() !== baseline;
+    message.success("已撤销（记得保存）");
+  } catch { message.error("撤销失败：快照损坏"); }
+}
+function onKey(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    if (dirty.value && !saving.value) void save();
+  }
+}
+onBeforeRouteLeave(() => {
+  if (!dirty.value) return true;
+  // WebView2 原生 confirm：同步语义正合路由守卫
+  return window.confirm("有未保存的修改——离开会丢失。确定离开吗？（先 Ctrl+S 保存可安全离开）");
 });
 
 async function save() {
@@ -86,6 +133,10 @@ async function save() {
       })),
     });
     message.success("剧情已保存，运行窗口已自动刷新（旧版本备份在 .history/，保留 10 份）");
+    baseline = snapshot();
+    dirty.value = false;
+    undoStack.length = 0; // 保存=新基线，撤销栈清零（撤销只管未保存的结构改动）
+    undoDepth.value = 0;
     refreshPreview();
   } catch (e) {
     message.error(String(e));
@@ -110,6 +161,7 @@ async function rewrite(i: number) {
 
 async function applyDiff() {
   if (diffIndex.value < 0 || !diffNew.value) return;
+  pushUndo();
   applying.value = true;
   try {
     await api.applyBeat(id, diffIndex.value, diffNew.value);
@@ -130,6 +182,7 @@ function discardDiff() {
 }
 
 function addBeat(i: number) {
+  pushUndo();
   beats.splice(i + 1, 0, { phase: beats[i]?.phase ?? "新阶段", title: "新节拍", desc: "描述…" });
 }
 
@@ -154,11 +207,13 @@ const nextOptions = (i: number) => {
 };
 function delBeat(i: number) {
   if (beats.length <= 1) return message.warning("至少保留一个节拍");
+  pushUndo();
   beats.splice(i, 1);
 }
 function move(i: number, d: -1 | 1) {
   const j = i + d;
   if (j < 0 || j >= beats.length) return;
+  pushUndo();
   [beats[i], beats[j]] = [beats[j], beats[i]];
 }
 
@@ -281,7 +336,9 @@ async function exportHtml() {
       </NCard>
 
       <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center">
-        <NButton type="primary" :loading="saving" @click="save">💾 保存剧情</NButton>
+        <NButton type="primary" :loading="saving" @click="save">💾 保存剧情（Ctrl+S）</NButton>
+        <NButton size="small" secondary :disabled="undoDepth === 0" @click="undo">↩ 撤销结构操作</NButton>
+        <span v-if="dirty" style="color: #ff9a3c; font-size: 12px" role="status">● 有未保存修改</span>
         <span style="color: #71717c; font-size: 12px">保存前旧版自动备份；保存后运行窗口自动刷新出新剧情</span>
       </div>
         </NSpin>

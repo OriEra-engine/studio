@@ -82,6 +82,13 @@ fn resolve_snapshot_examples(app: &tauri::App) -> std::path::PathBuf {
     std::path::PathBuf::new()
 }
 
+/// 当月 AI 调用账本（copilot/story 次数）——2026-10-26 付费用户测评：
+/// 消耗必须可见。只记次数不折价，价目在供应商侧。
+#[tauri::command]
+fn chat_ledger_get() -> serde_json::Map<String, serde_json::Value> {
+    llm::month_calls()
+}
+
 #[tauri::command]
 fn get_status(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> AppStatus {
     let provider = settings::load_provider(&app);
@@ -245,7 +252,11 @@ async fn copilot_chat(
         "小奥离线中：先在「模型中心」配置模型（云端或 Ollama 本地），配置好我就能真正对话啦"
             .to_string()
     })?;
-    llm::copilot_chat(&cfg, &system, &history, &user).await
+    let out = llm::copilot_chat(&cfg, &system, &history, &user).await;
+    if out.is_ok() {
+        llm::record_call("copilot");
+    }
+    out
 }
 
 /// 流式 AI 剧情定制：立即返回 task id，增量经 Channel 推送（delta/done/error）。
@@ -298,6 +309,7 @@ async fn generate_story_stream(
         } else {
             match result {
                 Ok(story) => {
+                    llm::record_call("story");
                     let _ = channel.send(AiStreamEvent::Done {
                         result: serde_json::to_value(&story).unwrap_or_default(),
                     });
@@ -347,6 +359,7 @@ async fn copilot_chat_stream(
         } else {
             match result {
                 Ok(text) => {
+                    llm::record_call("copilot");
                     let _ = channel.send(AiStreamEvent::Done {
                         result: serde_json::json!({ "text": text }),
                     });
@@ -386,6 +399,7 @@ pub fn run() {
                 .app_data_dir()
                 .expect("cannot resolve app data dir");
             let projects_dir = server::ensure_projects_dir(&data_dir);
+            llm::init_ledger(data_dir.join("chat_ledger.json"));
 
             let port = server::start(
                 snapshot_examples.clone(),
@@ -466,6 +480,7 @@ pub fn run() {
             settings::secret_save,
             settings::secret_has,
             settings::secret_delete,
+            chat_ledger_get,
             assets::generate_asset_command,
             assets::generate_mesh_command,
             assets::generate_video_command,

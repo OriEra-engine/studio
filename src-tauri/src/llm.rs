@@ -546,3 +546,68 @@ pub async fn copilot_chat_stream(
     messages.push(json!({"role": "user", "content": user}));
     chat_stream(cfg, messages, 1024, 0.7, on_delta, cancelled).await
 }
+
+// ---- 月度调用账本（2026-10-26 付费用户测评 P0：对话消耗不可见）----
+// 只记成功调用次数、按月分桶、不折算价格——价目在供应商侧，诚实不猜。
+// 落 appdata/chat_ledger.json：{"2026-10": {"copilot": 12, "story": 3}}
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static LEDGER_PATH: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// setup 时注入账本文件路径（appdata）。
+pub fn init_ledger(path: PathBuf) {
+    if let Ok(mut guard) = LEDGER_PATH.lock() {
+        *guard = Some(path);
+    }
+}
+
+/// 记一次成功调用（fail-open：账本任何故障都不影响主流程）。
+pub fn record_call(kind: &str) {
+    let Ok(guard) = LEDGER_PATH.lock() else { return };
+    let Some(path) = guard.as_ref() else { return };
+    let month = current_month();
+    let mut root: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let bucket = root.entry(month).or_insert_with(|| json!({}));
+    if let Some(obj) = bucket.as_object_mut() {
+        let c = obj.entry(kind.to_string()).or_insert(json!(0));
+        *c = json!(c.as_u64().unwrap_or(0) + 1);
+    }
+    if let Ok(text) = serde_json::to_string(&root) {
+        let _ = std::fs::write(path, text);
+    }
+}
+
+fn current_month() -> String {
+    // days since epoch → civil year/month（Hinnant 算法），不引 chrono
+    let days = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() / 86400)
+        .unwrap_or(0) as i64;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    format!("{:04}-{:02}", if m <= 2 { y + 1 } else { y }, m)
+}
+
+/// 当月各 kind 的调用次数（前端月度展示用）。
+pub fn month_calls() -> serde_json::Map<String, serde_json::Value> {
+    let Ok(guard) = LEDGER_PATH.lock() else { return Default::default() };
+    let Some(path) = guard.as_ref() else { return Default::default() };
+    let root: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    root.get(&current_month())
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default()
+}

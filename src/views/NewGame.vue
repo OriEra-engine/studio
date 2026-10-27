@@ -441,7 +441,7 @@ const canNext = computed(() => {
     <template v-if="step === 3">
       <NAlert :type="providerReady ? 'success' : 'warning'" style="margin-bottom: 14px">
         <template v-if="providerReady">
-          当前已植入：<b>{{ providerModel }}</b> —— 生成的游戏里 NPC 对话与导演旁白将由它驱动。
+          当前已连接：<b>{{ providerModel }}</b> —— 生成的游戏里 NPC 对话与导演旁白将由它驱动。
         </template>
         <template v-else>
           在下面直接配置（也可跳过——生成的游戏会以<b>离线性格引擎</b>运行，之后随时可植入）。

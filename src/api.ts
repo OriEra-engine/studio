@@ -244,6 +244,8 @@ export const api = {
   secretSave: (name: string, value: string) => invoke<void>("secret_save", { name, value }),
   secretHas: (name: string) => invoke<boolean>("secret_has", { name }),
   secretDelete: (name: string) => invoke<void>("secret_delete", { name }),
+  /** 当月 AI 调用账本（copilot/story 次数）——2026-10-26 付费用户测评：消耗可见 */
+  chatLedgerMonth: () => invoke<Record<string, number>>("chat_ledger_get"),
 
   // Ollama
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

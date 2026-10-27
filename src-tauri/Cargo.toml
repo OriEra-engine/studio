@@ -1,6 +1,6 @@
 [package]
 name = "oriera-studio"
-version = "0.8.2"
+version = "0.8.3"
 description = "OriEra Studio — 开箱即用的 OriEra 世界引擎桌面工作台"
 edition = "2021"
 
