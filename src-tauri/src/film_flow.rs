@@ -210,6 +210,8 @@ pub async fn tts_doubao(
         text.chars().count(),
         audio.len()
     );
+    // 2026-10-26 PM 三轮评审 P0：烧钱大头的 video/mesh/tts 此前不入月账本
+    crate::llm::record_call("tts");
     Ok(file)
 }
 

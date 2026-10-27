@@ -5,6 +5,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import {
   NAlert, NButton, NCard, NInput, NSelect, NSpace, NSteps, NStep, NTag, useDialog, useMessage,
 } from "naive-ui";
+import { humanizeError } from "../utils/errors";
 import { api, type FilmFlow, type ProjectMeta } from "../api";
 import { FilmStory } from "../lib/filmStory";
 
@@ -42,8 +43,12 @@ async function migrateLegacyKeys() {
   for (const [name, lsKey] of legacy) {
     const old = localStorage.getItem(lsKey);
     if (old && old.trim()) {
-      try { await api.secretSave(name, old.trim()); } catch { /* 迁移失败不阻断 */ }
-      localStorage.removeItem(lsKey);
+      // 2026-10-26 PM/安全双评审 P0：先确认入库成功再删明文——曾几何时
+      // keyring 故障时唯一副本被静默删除且未入库
+      try {
+        await api.secretSave(name, old.trim());
+        localStorage.removeItem(lsKey);
+      } catch { /* 入库失败：保留明文副本（宁暂留不丢失），下次再迁 */ }
     }
   }
 }
@@ -55,7 +60,7 @@ async function saveArkKey() {
     arkKeyInput.value = "";
     arkKeySaved.value = true;
     message.success("方舟 Key 已存入系统凭据管理器");
-  } catch (e) { message.error(String(e)); }
+  } catch (e) { message.error(humanizeError(e)); }
 }
 async function saveTtsKey() {
   const v = ttsKeyInput.value.trim();
@@ -65,7 +70,7 @@ async function saveTtsKey() {
     ttsKeyInput.value = "";
     ttsKeySaved.value = true;
     message.success("豆包语音 Key 已存入系统凭据管理器");
-  } catch (e) { message.error(String(e)); }
+  } catch (e) { message.error(humanizeError(e)); }
 }
 const clipTier = ref("doubao-seedance-2-0-mini-260615");
 const clipRatio = ref("9:16");
@@ -258,7 +263,7 @@ async function genShot(shot: Shot) {
     await save();
     message.success(`${shot.id} 完成`);
   } catch (e) {
-    message.error(`${shot.id} 失败：${String(e).slice(0, 120)}`);
+    message.error(`${shot.id} 失败：${humanizeError(e).slice(0, 120)}`);
   } finally {
     clipBusy.value = "";
     clipMsg.value = "";
@@ -323,7 +328,7 @@ async function genVo(item: VoItem): Promise<boolean> {
     message.success(`${item.id} 配音完成`);
     return true;
   } catch (e) {
-    message.error(`${item.id} 失败：${String(e).slice(0, 120)}`);
+    message.error(`${item.id} 失败：${humanizeError(e).slice(0, 120)}`);
     return false;
   } finally { voBusy.value = ""; }
 }

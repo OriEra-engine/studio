@@ -375,7 +375,11 @@ pub async fn generate_mesh_command(
 ) -> Result<AssetMeta, String> {
     // key 从凭据管理器自取（命名条目 rodin）——不再经 webview 传参。
     let key = crate::settings::secret_load("rodin")?;
-    generate_mesh(state, prompt, key, base).await
+    let out = generate_mesh(state, prompt, key, base).await;
+    if out.is_ok() {
+        crate::llm::record_call("mesh");
+    }
+    out
 }
 
 // ====================== 影游供给侧：火山方舟 Seedance 文生视频 ======================
@@ -652,7 +656,11 @@ pub async fn generate_video_command(
 ) -> Result<AssetMeta, String> {
     // key 从凭据管理器自取（命名条目 ark）——不再经 webview 传参。
     let key = crate::settings::secret_load("ark")?;
-    generate_video(state, prompt, key, base, model, ratio).await
+    let out = generate_video(state, prompt, key, base, model, ratio).await;
+    if out.is_ok() {
+        crate::llm::record_call("video");
+    }
+    out
 }
 
 #[tauri::command]
