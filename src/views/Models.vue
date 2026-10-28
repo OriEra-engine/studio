@@ -105,6 +105,8 @@ function slotKindOf(s: { id: string; recKind: string }): string {
 const serverPort = ref<number | null>(null);
 const xliteLive = ref<{ models: string[]; count: number } | null>(null);
 async function loadXliteLive() {
+  // XLite 入口暂时下线（api.ts 同步注释），卡片不在则不拉实时价目
+  if (!CLOUD_PRESETS.some((p) => p.kind === "xlite")) return;
   if (!serverPort.value || xliteLive.value) return;
   try {
     const r = await fetch(`http://127.0.0.1:${serverPort.value}/proxy/xlite/api/pricing`);
@@ -364,15 +366,6 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
                 @click.stop="pickPreset(p, m)" @keydown.enter.stop.prevent="pickPreset(p, m)" @keydown.space.stop.prevent="pickPreset(p, m)"
               >{{ m }}</span>
             </div>
-            <div v-if="p.kind === 'xlite' && xliteLive" class="model-row">
-              <span class="model-pill-mini live-tag" title="来自网关实时价目接口">实时 · {{ xliteLive.count }} 个文本模型</span>
-              <span
-                v-for="m in xliteLive.models" :key="`live-${m}`"
-                class="model-pill-mini" :class="{ on: form.model === m && form.kind === p.kind }"
-                role="button" tabindex="0" :aria-label="`选择模型 ${m}`"
-                @click.stop="pickPreset(p, m)" @keydown.enter.stop.prevent="pickPreset(p, m)" @keydown.space.stop.prevent="pickPreset(p, m)"
-              >{{ m }}</span>
-            </div>
             <div class="rec-actions">
               <NButton size="tiny" secondary @click.stop="pickPreset(p)">选择</NButton>
               <NButton v-if="p.url" size="tiny" quaternary tag="a" :href="p.url" target="_blank">注册入口 ↗</NButton>
@@ -392,7 +385,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       <template #header>🧭 任务槽位 <NTag size="tiny" type="success" round style="margin-left: 6px" :bordered="false">已接入运行时</NTag></template>
       <p style="color: #a0a0ab; font-size: 12.5px; line-height: 1.7; margin: 0 0 12px">
         按「任务」而非全局选模型:对话走 npc_dialog 槽、剧情推进走 director 槽(游戏与咖啡馆 demo 已生效);
-        行为生成/生成审校为预留槽位。Key 留空=同厂商继承全局 Key(XLite 一 Key 多模型最顺手),
+        行为生成/生成审校为预留槽位。Key 留空=同厂商继承全局 Key（一 Key 多模型的厂商最顺手）,
         跨厂商需填该槽自己的 Key,未填则运行时诚实回退全局模型。槽位表存本机(<code>oriera.routing.v1</code>),重开游戏生效。
       </p>
       <NGrid :cols="4" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
