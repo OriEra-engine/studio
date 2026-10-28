@@ -184,6 +184,20 @@ function check() {
 const storyGreen = computed(() => checked.value && storyFindings.value.length === 0);
 const canvasFindings = computed(() => boardFindings(board.value, clips.value));
 
+/** 接线指引：把"建了却没接线"的节拍翻译成画布动作——工坊体检的 dead_end/unreachable 在画布侧的因果层 */
+const unconnectedBeats = computed(() => {
+  const st = story.value;
+  if (!st) return [];
+  return st.nodes
+    .filter((n) => {
+      if (n.type === "scene") return !n.goto;
+      if (n.type === "choice") return !(n.options && n.options.length);
+      if (n.type === "hub") return !(n.routes && n.routes.length);
+      return false; // 结局无需出边
+    })
+    .map((n) => n.id);
+});
+
 /* ── 缺口（待办语义：灰蓝，不搞红色警报） ── */
 const shotsAll = computed(() => (story.value ? storyShots(story.value) : []));
 const voAll = computed(() => (story.value ? storyVoItems(story.value) : []));
@@ -908,6 +922,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
             <NTabPane name="health" :tab="`体检 ${storyFindings.length + canvasFindings.length}`">
               <div class="cv-pane">
                 <NButton size="tiny" block @click="check">🩺 重新体检</NButton>
+                <template v-if="unconnectedBeats.length">
+                  <div class="cv-sec-title">接线指引（{{ unconnectedBeats.length }}）</div>
+                  <div v-for="id in unconnectedBeats" :key="id" class="cv-row">
+                    <code class="mono" style="cursor:pointer" @click="focusFlagNode(id)">{{ id }}</code>
+                    <span class="cv-row-text">尚未接入剧情流——从节点右侧圆点拖线到目标</span>
+                    <NButton size="tiny" @click="focusFlagNode(id)">去接</NButton>
+                  </div>
+                </template>
                 <div v-for="(f, i) in storyFindings" :key="'s' + i" class="cv-row">
                   <NTag size="tiny" :type="f.severity === 'error' ? 'error' : 'warning'">{{ f.severity }}</NTag>
                   <code class="mono">{{ f.node }}</code>

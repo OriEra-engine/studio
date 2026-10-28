@@ -364,6 +364,23 @@ pub fn open_project(
     // 新版 WebView2 运行时（Edge 155 实测）下「建窗即导航」存在时序回归：
     // 窗口停留在 about:blank 不发初始导航。建窗后显式补一次导航（同 URL 幂等）。
     let _ = win.navigate(url.clone());
+    // 导航看门狗：显式补航后仍偶发被吞（2026-10-28 0.9.0 实测复发，窗口停 about:blank）。
+    // 线程内渐进轮询窗口 URL，不在目标路径就再补一次；到位即收工。
+    {
+        let watch_win = win.clone();
+        let watch_url = url.clone();
+        std::thread::spawn(move || {
+            let prefix = watch_url.as_str().trim_end_matches('/').to_string();
+            for wait_ms in [600u64, 1200, 2400] {
+                std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+                let cur = watch_win.url().map(|u| u.to_string()).unwrap_or_default();
+                if cur.starts_with(&prefix) {
+                    return; // 已到位（含用户在运行时内的内部跳转），看门狗收工
+                }
+                let _ = watch_win.navigate(watch_url.clone());
+            }
+        });
+    }
     if crate::settings::load(&app).developer_mode {
         win.open_devtools();
     }

@@ -148,9 +148,13 @@ fn reload_runtime_windows(app: &tauri::AppHandle) {
     }
 }
 
+/// 硬件体检走异步线程：PowerShell CIM 冷启动 2-5 秒，同步跑在主线程会把整个
+/// UI 冻住（0.9.0 实测模型中心进页即卡）。
 #[tauri::command]
-fn detect_hardware() -> hardware::HardwareInfo {
-    hardware::detect()
+async fn detect_hardware() -> hardware::HardwareInfo {
+    tauri::async_runtime::spawn_blocking(hardware::detect)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
