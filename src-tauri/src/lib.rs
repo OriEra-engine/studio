@@ -395,6 +395,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .register_uri_scheme_protocol("oriera", |ctx, request| {
+            #[cfg(debug_assertions)]
+            println!("[oriera-proto] {}", request.uri());
             crate::server::serve_content(ctx.app_handle(), request)
         })
         .setup(|app| {

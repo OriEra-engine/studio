@@ -325,7 +325,7 @@ pub fn list_projects(state: State<'_, crate::AppState>) -> Vec<ProjectMeta> {
 }
 
 #[tauri::command]
-pub fn open_project(
+pub async fn open_project(
     app: AppHandle,
     state: State<'_, crate::AppState>,
     id: String,
@@ -353,32 +353,27 @@ pub fn open_project(
         .and_then(|g| g["name"].as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| id.clone());
 
-    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url.clone()))
+    // Edge 156 下子窗口对外部 URL 的初始导航 / navigate() 补航 / 页面内 JS 全部
+    // 静默失效（0.9.0 实测，窗口死在 about:blank）；而 App 协议首屏（主窗口、
+    // pet.html）始终可靠。故先加载 bootstrap.html（不带任何 fragment/query——
+    // 实测带 fragment 的 App 路径同样死在 about:blank），由页面内 JS 依据窗口
+    // label（project-{id}）自行跳转到目标内容。
+    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("bootstrap.html".into()))
         .title(&format!("🎮 {name} · OriEra 原型"))
         .inner_size(1360.0, 900.0)
         .min_inner_size(1024.0, 700.0);
-    // 不再挂 initialization_script：新版 WebView2 下「先挂脚本再导航」会吞掉初始导航
-    // （子窗口停留 about:blank 的根因规避）。provider 由页面同源拉取 /__provider.json，
-    // 刷新键监听已内建在 runtime 模板中。
     let win = builder.build().map_err(|e| e.to_string())?;
-    // 新版 WebView2 运行时（Edge 155 实测）下「建窗即导航」存在时序回归：
-    // 窗口停留在 about:blank 不发初始导航。建窗后显式补一次导航（同 URL 幂等）。
-    let _ = win.navigate(url.clone());
-    // 导航看门狗：显式补航后仍偶发被吞（2026-10-28 0.9.0 实测复发，窗口停 about:blank）。
-    // 线程内渐进轮询窗口 URL，不在目标路径就再补一次；到位即收工。
+    // 看门狗：5s 后仍在引导页（页面内跳转被吞的极端兜底），用 eval 再跳一次
     {
         let watch_win = win.clone();
         let watch_url = url.clone();
         std::thread::spawn(move || {
-            let prefix = watch_url.as_str().trim_end_matches('/').to_string();
-            for wait_ms in [600u64, 1200, 2400] {
-                std::thread::sleep(std::time::Duration::from_millis(wait_ms));
-                let cur = watch_win.url().map(|u| u.to_string()).unwrap_or_default();
-                if cur.starts_with(&prefix) {
-                    return; // 已到位（含用户在运行时内的内部跳转），看门狗收工
-                }
-                let _ = watch_win.navigate(watch_url.clone());
+            std::thread::sleep(std::time::Duration::from_millis(5000));
+            let cur = watch_win.url().map(|u| u.to_string()).unwrap_or_default();
+            if cur.starts_with("http://oriera.localhost") || cur.starts_with("https://oriera.localhost") {
+                return; // 已落到游戏内容，收工
             }
+            let _ = watch_win.eval(&format!("location.replace('{}')", watch_url.as_str()));
         });
     }
     if crate::settings::load(&app).developer_mode {

@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 打开（或聚焦）桌面宠物窗口。`character`: "ori" | "era"。
 #[tauri::command]
-pub fn open_pet(app: AppHandle, character: String) -> Result<(), String> {
+pub async fn open_pet(app: AppHandle, character: String) -> Result<(), String> {
     let character = if character == "era" { "era" } else { "ori" };
     if let Some(w) = app.get_webview_window("pet") {
         // 已开窗：切换角色只改 localStorage 由前端自理；这里重新导航
