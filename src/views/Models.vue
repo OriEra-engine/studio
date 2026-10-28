@@ -47,6 +47,34 @@ function pickPreset(p: CloudPreset, model?: string) {
   message.info(`已选择 ${model || p.model},粘贴 API Key 后保存`);
 }
 
+// ---- 卡上快捷通道：粘贴 API Key 直接启用（保存 + 连通测试一步到位） ----
+const quickKey = reactive<Record<string, string>>({});
+const quickBusy = ref("");
+const quickMsg = reactive<Record<string, { ok: boolean; text: string }>>({});
+function providerInUse(kind: string): boolean {
+  return !!(store.status?.provider_configured && store.status?.provider?.kind === kind);
+}
+async function quickEnable(kind: string, model: string, base: string) {
+  const key = (quickKey[kind] || "").trim();
+  if (!key) { message.warning("先粘贴该厂商的 API Key"); return; }
+  quickBusy.value = kind;
+  try {
+    await api.saveProvider({ kind, key, model, base });
+    await refreshStatus();
+    let test = "";
+    try { test = await api.testProvider(); } catch (e) { test = String(e); }
+    const ok = !/失败|error|错误|无效/i.test(test);
+    quickMsg[kind] = ok
+      ? { ok: true, text: `已启用 · ${test.slice(0, 70)}` }
+      : { ok: false, text: `已保存但连通失败：${test.slice(0, 100)}` };
+    if (ok) { quickKey[kind] = ""; message.success(`${model} 已启用`); }
+  } catch (e) {
+    quickMsg[kind] = { ok: false, text: humanizeError(e).slice(0, 110) };
+  } finally {
+    quickBusy.value = "";
+  }
+}
+
 // ---- 任务槽位(RFC 0002 槽位路由 · 数据先行预览) ----
 const SLOTS = [
   { id: "npc_dialog", name: "NPC 对话", duty: "高频 · 低延迟 · 成本敏感", recKind: "zhipu", recModel: "glm-4-flash", why: "免费 Flash 档,零成本高频对话", live: true },
@@ -299,6 +327,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
     <!-- 推荐方案 -->
     <NCard v-if="rec" :title="`🧠 ${rec.headline}`" size="small" style="margin-bottom: 14px">
       <p style="color: #a0a0ab; font-size: 13px; line-height: 1.7; margin: 0 0 14px">{{ rec.detail }}</p>
+      <p style="color: #5b8a5e; font-size: 11.5px; margin: -8px 0 12px">🔒 各厂商 API Key 仅保存在本机「Windows 凭据管理器」，不写设置文件、不进任何项目/上传通道；下方输入即存即测。</p>
       <NGrid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="c in rec.cloud" :key="c.kind" span="3 m:1">
           <div class="rec-card" :class="{ sel: form.kind === c.kind }" @click="pickCloud(c.kind, c.model, c.base)">
@@ -310,7 +339,17 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
             <div class="rec-actions">
               <NButton size="tiny" secondary @click.stop="pickCloud(c.kind, c.model, c.base)">选择</NButton>
               <NButton v-if="c.signup_url" size="tiny" quaternary tag="a" :href="c.signup_url" target="_blank">注册入口 ↗</NButton>
+              <NTag v-if="providerInUse(c.kind)" size="tiny" type="success" round>使用中</NTag>
             </div>
+            <div class="quick-row" @click.stop>
+              <NInput
+                v-model:value="quickKey[c.kind]" size="tiny" type="password" show-password-on="click"
+                :placeholder="providerInUse(c.kind) ? '已启用——粘贴新 Key 可换（仍仅存本机）' : '粘贴 API Key，一键启用（仅存本机凭据管理器）'"
+                @keydown.enter.prevent="quickEnable(c.kind, c.model, c.base)"
+              />
+              <NButton size="tiny" type="primary" :loading="quickBusy === c.kind" @click.stop="quickEnable(c.kind, c.model, c.base)">启用</NButton>
+            </div>
+            <div v-if="quickMsg[c.kind]" class="quick-msg" :class="quickMsg[c.kind].ok ? 'ok' : 'bad'">{{ quickMsg[c.kind].text }}</div>
           </div>
         </NGi>
         <NGi v-if="rec.local" span="3 m:1">
@@ -369,7 +408,17 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
             <div class="rec-actions">
               <NButton size="tiny" secondary @click.stop="pickPreset(p)">选择</NButton>
               <NButton v-if="p.url" size="tiny" quaternary tag="a" :href="p.url" target="_blank">注册入口 ↗</NButton>
+              <NTag v-if="providerInUse(p.kind)" size="tiny" type="success" round>使用中</NTag>
             </div>
+            <div class="quick-row" @click.stop>
+              <NInput
+                v-model:value="quickKey[p.kind]" size="tiny" type="password" show-password-on="click"
+                :placeholder="providerInUse(p.kind) ? '已启用——粘贴新 Key 可换（仍仅存本机）' : '粘贴 API Key，一键启用（仅存本机凭据管理器）'"
+                @keydown.enter.prevent="quickEnable(p.kind, form.kind === p.kind ? form.model : p.model, p.base)"
+              />
+              <NButton size="tiny" type="primary" :loading="quickBusy === p.kind" @click.stop="quickEnable(p.kind, form.kind === p.kind ? form.model : p.model, p.base)">启用</NButton>
+            </div>
+            <div v-if="quickMsg[p.kind]" class="quick-msg" :class="quickMsg[p.kind].ok ? 'ok' : 'bad'">{{ quickMsg[p.kind].text }}</div>
           </div>
         </NGi>
       </NGrid>
@@ -538,6 +587,12 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .rec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13.5px; }
 .rec-note { font-size: 12px; color: #74747f; line-height: 1.6; margin-bottom: 10px; }
 .rec-actions { display: flex; gap: 8px; }
+
+.quick-row { display: flex; gap: 6px; margin-top: 8px; }
+.quick-row .n-input { flex: 1; }
+.quick-msg { font-size: 11px; margin-top: 4px; line-height: 1.5; word-break: break-all; }
+.quick-msg.ok { color: #35d07f; }
+.quick-msg.bad { color: #ff6b6b; }
 .rec-card:focus-visible, .model-pill-mini:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 2px; }
 .model-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
 .model-pill-mini { font-size: 11px; color: #a8a8b3; background: #0e0e12; border: 1px solid #30303a; border-radius: 10px; padding: 1px 8px; cursor: pointer; }
