@@ -414,9 +414,9 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
               <NInput
                 v-model:value="quickKey[p.kind]" size="tiny" type="password" show-password-on="click"
                 :placeholder="providerInUse(p.kind) ? '已启用——粘贴新 Key 可换（仍仅存本机）' : '粘贴 API Key，一键启用（仅存本机凭据管理器）'"
-                @keydown.enter.prevent="quickEnable(p.kind, form.kind === p.kind ? form.model : p.model, p.base)"
+                @keydown.enter.prevent="quickEnable(p.kind, form.kind === p.kind ? form.model : (p.models?.[0] || p.model), p.base)"
               />
-              <NButton size="tiny" type="primary" :loading="quickBusy === p.kind" @click.stop="quickEnable(p.kind, form.kind === p.kind ? form.model : p.model, p.base)">启用</NButton>
+              <NButton size="tiny" type="primary" :loading="quickBusy === p.kind" @click.stop="quickEnable(p.kind, form.kind === p.kind ? form.model : (p.models?.[0] || p.model), p.base)">启用</NButton>
             </div>
             <div v-if="quickMsg[p.kind]" class="quick-msg" :class="quickMsg[p.kind].ok ? 'ok' : 'bad'">{{ quickMsg[p.kind].text }}</div>
           </div>
