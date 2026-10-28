@@ -277,7 +277,7 @@ fn json_for_html(v: &serde_json::Value) -> String {
 }
 
 /// 项目 id 白名单：与 slugify 的产出字符集一致，杜绝 ../ 等路径穿越。
-fn valid_project_id(id: &str) -> bool {
+pub(crate) fn valid_project_id(id: &str) -> bool {
     !id.is_empty()
         && id
             .chars()

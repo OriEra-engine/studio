@@ -85,6 +85,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { key: "demos", to: "/demos", label: "Demo 演示厅", activeNames: ["demos"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21 6 3"/></svg>' },
       { key: "projects", to: "/projects", label: "我的项目", activeNames: ["projects", "editor"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>' },
       { key: "film", to: "/film", label: "影游工坊", activeNames: ["film"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 5v14M17 5v14M2 12h20"/></svg>' },
+      { key: "canvas", to: "/canvas", label: "世界画布", activeNames: ["canvas"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M6.8 7.6 10.8 16M17.2 7.6 13.2 16M7.2 6h9.6"/></svg>' },
     ],
   },
   {

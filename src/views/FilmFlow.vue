@@ -2,6 +2,7 @@
 // 影游制作工作流 —— 五步向导：三锁 → 剧情体检 → 镜头量产 → TTS 配音 → 组装导出。
 // 管线沉淀自《末班站台》实战（interfilm/）；状态落项目 film/flow.json 跨会话可续作。
 import { computed, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import {
   NAlert, NButton, NCard, NInput, NSelect, NSpace, NSteps, NStep, NTag, useDialog, useMessage,
 } from "naive-ui";
@@ -11,6 +12,7 @@ import { FilmStory } from "../lib/filmStory";
 
 const message = useMessage();
 const dialog = useDialog();
+const router = useRouter();
 
 /* ── 项目挂载 ── */
 const projects = ref<ProjectMeta[]>([]);
@@ -563,6 +565,8 @@ function go(next: number) {
           <NButton v-if="exportedZip" size="small" @click="navigator.clipboard.writeText(exportedZip)">
             复制 zip 路径
           </NButton>
+          <!-- 向导毕业入口（PLAN-canvas v2.2）：速通走完，想自由编排就去画布 -->
+          <NButton size="small" @click="router.push(`/canvas/${project ?? ''}`)">🎨 画布自由编排</NButton>
         </NSpace>
         <NAlert v-if="exportedZip" type="success" :show-icon="false">
           导出完成：<code style="font-size: 12px">{{ exportedZip }}</code>

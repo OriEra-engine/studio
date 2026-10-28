@@ -237,6 +237,13 @@ export const api = {
   exportFilm: (project: string, flow: FilmFlow) =>
     invoke<string>("export_film", { project, flow }),
 
+  // 世界画布（PLAN-canvas v2.2）：board.json 透明存取（schema 真源在前端 lib/board.ts）
+  canvasLoad: (project: string) => invoke<unknown>("canvas_load", { project }),
+  canvasSave: (project: string, board: unknown) => invoke<void>("canvas_save", { project, board }),
+  /** 导出同款播放器模板渲染（媒体地址改写为内置服务器绝对 URL），供 iframe srcdoc 试玩 */
+  canvasPreviewHtml: (project: string, story: string) =>
+    invoke<string>("canvas_preview_html", { project, story }),
+
   /** 正在运行的项目 id（运行中徽标） */
   runningProjects: () => invoke<string[]>("running_projects"),
 

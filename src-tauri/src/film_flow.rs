@@ -43,7 +43,7 @@ fn film_dir(state: &tauri::State<'_, crate::AppState>, project: &str) -> PathBuf
     state.projects_dir.join(project).join("film")
 }
 
-fn flow_path(state: &tauri::State<'_, crate::AppState>, project: &str) -> PathBuf {
+pub(crate) fn flow_path(state: &tauri::State<'_, crate::AppState>, project: &str) -> PathBuf {
     film_dir(state, project).join("flow.json")
 }
 
@@ -296,11 +296,23 @@ fn uuid_v4() -> String {
 }
 
 /// 渲染播放器：占位符两侧带引号，注入 JSON 字符串字面量。
+/// vo 文件名在此归位为相对路径 `vo/{file}`。
 fn render_player(story: &serde_json::Value, clips: &BTreeMap<String, String>, vo: &BTreeMap<String, String>) -> Result<String, String> {
     let vo_map: BTreeMap<String, String> = vo
         .iter()
         .map(|(k, v)| (k.clone(), format!("vo/{v}")))
         .collect();
+    render_player_with_urls(story, clips, &vo_map)
+}
+
+/// URL 已定型的渲染入口：clips/vo 的值就是最终可访问地址。
+/// 导出走相对路径（zip 内自洽），画布「完整试玩」走内置服务器绝对 URL——
+/// 同一模板，两种基址，预览与成片零漂移。
+pub(crate) fn render_player_with_urls(
+    story: &serde_json::Value,
+    clips: &BTreeMap<String, String>,
+    vo_map: &BTreeMap<String, String>,
+) -> Result<String, String> {
     let html = PLAYER_TEMPLATE
         .to_string()
         .replace(
@@ -313,7 +325,7 @@ fn render_player(story: &serde_json::Value, clips: &BTreeMap<String, String>, vo
         )
         .replace(
             "\"__VOS__\"",
-            &serde_json::to_string(&vo_map).map_err(|e| e.to_string())?,
+            &serde_json::to_string(vo_map).map_err(|e| e.to_string())?,
         );
     Ok(html)
 }
@@ -396,6 +408,37 @@ pub fn export_film(
         flow.vo.len()
     );
     zw.write_all(readme.as_bytes()).map_err(|e| e.to_string())?;
+
+    // MANIFEST.json（PLAN-canvas v2.2 拍板④）：交付包自带"怎么来的"——
+    // 每条镜头/配音的来源素材 + 画布生成任务档案（prompt/模型/时间/Token），
+    // 这是"AI 原生可审计"的实物。board.json 读不到就只出素材表，导出不因此失败。
+    let board: Option<serde_json::Value> = std::fs::read_to_string(
+        state.projects_dir.join(&project).join("canvas").join("board.json"),
+    )
+    .ok()
+    .and_then(|t| serde_json::from_str(&t).ok());
+    let manifest = serde_json::json!({
+        "schema": 1,
+        "app": "OriEra Studio",
+        "project": project,
+        "exported_at": stamp,
+        "story": { "title": title, "nodes": story.get("nodes").and_then(|n| n.as_array()).map(|a| a.len()).unwrap_or(0) },
+        "shots": clips_src.iter().map(|(shot, src)| serde_json::json!({
+            "id": shot, "file": format!("clips/{shot}.mp4"), "source": src.to_string_lossy(),
+        })).collect::<Vec<_>>(),
+        "vo": flow.vo.iter().map(|(id, f)| serde_json::json!({
+            "id": id, "file": format!("vo/{f}"),
+        })).collect::<Vec<_>>(),
+        "generation_tasks": board.as_ref().and_then(|b| b.get("tasks")).cloned().unwrap_or_else(|| serde_json::json!({})),
+    });
+    zw.start_file("MANIFEST.json", plain).map_err(|e| e.to_string())?;
+    zw.write_all(
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|e| e.to_string())?
+            .as_bytes(),
+    )
+    .map_err(|e| e.to_string())?;
+
     zw.finish().map_err(|e| format!("收尾 zip 失败：{e}"))?;
 
     println!(

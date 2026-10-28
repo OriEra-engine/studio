@@ -1,6 +1,7 @@
 //! OriEra Studio —— 开箱即用的 OriEra 世界引擎桌面工作台。
 
 mod assets;
+mod canvas;
 mod demos;
 mod feedback;
 mod film_flow;
@@ -491,6 +492,9 @@ pub fn run() {
             film_flow::tts_doubao,
             film_flow::tts_local,
             film_flow::export_film,
+            canvas::canvas_load,
+            canvas::canvas_save,
+            canvas::canvas_preview_html,
             assets::list_assets,
             assets::delete_asset,
             assets::add_asset_to_project,
