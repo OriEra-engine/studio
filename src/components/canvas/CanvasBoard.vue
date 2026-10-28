@@ -57,7 +57,7 @@ const byRef = computed(() => new Map((props.story?.nodes ?? []).map((n) => [n.id
 const nodesView = computed(() =>
   props.nodes
     .map((p) => {
-      const n = byRef.get(p.ref);
+      const n = byRef.value.get(p.ref); // computed 必须走 .value——漏写会让渲染期抛错冻结整个子树
       if (!n) return null;
       return { pos: p, node: n, w: NODE_W, h: nodeHeight(n) };
     })
@@ -331,7 +331,7 @@ const KIND_COLOR: Record<string, string> = {
           locked: n.pos.locked,
         }]"
         :style="{ left: n.pos.x + 'px', top: n.pos.y + 'px', width: n.w + 'px', height: n.h + 'px' }"
-        @pointerdown="onNodeDown(n.pos, $event, 'node')"
+        @pointerdown="onNodeDown(n, $event, 'node')"
         @dblclick.stop="emit('open-node', n.pos.ref)"
         @contextmenu.prevent.stop="onNodeMenu(n.pos.ref, $event)"
       >

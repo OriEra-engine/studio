@@ -75,9 +75,9 @@ export const VP_MIN = 0.15;
 export const VP_MAX = 3;
 
 export function useViewport(initial?: BoardViewport) {
-  const vp = reactive<BoardViewport>(
-    initial ? { ...initial } : { x: 80, y: 60, scale: 1 },
-  );
+  // 注意：initial 若已是 reactive 代理，reactive() 原样返回同一代理——
+  // 调用方传父级 vp 时，这里必须保持同一对象（曾经 {...initial} 克隆导致父子视口失联）
+  const vp = reactive<BoardViewport>(initial ?? { x: 80, y: 60, scale: 1 });
   function clampScale(s: number) {
     return Math.min(VP_MAX, Math.max(VP_MIN, s));
   }

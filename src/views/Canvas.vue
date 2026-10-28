@@ -109,7 +109,9 @@ function scheduleSave() {
 }
 async function saveBoardNow() {
   if (!project.value || readonly.value) return;
-  board.value.meta.viewport = { x: vp.vp.x, y: vp.vp.y, scale: vp.vp.scale };
+  // 逐字段回写：整对象替换会再次触发 deep watch，形成保存死循环
+  const m = board.value.meta.viewport;
+  m.x = vp.vp.x; m.y = vp.vp.y; m.scale = vp.vp.scale;
   try {
     await api.canvasSave(project.value, JSON.parse(JSON.stringify(board.value)));
   } catch (e) {
