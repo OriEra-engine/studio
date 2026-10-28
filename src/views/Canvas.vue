@@ -140,7 +140,7 @@ async function saveFlow() {
 const undoStack = ref<string[]>([]);
 const redoStack = ref<string[]>([]);
 function boardSnapshot() {
-  return JSON.stringify({ nodes: board.value.nodes, slots: board.value.slots, notes: board.value.notes, flags: board.value.flags });
+  return JSON.stringify({ nodes: board.value.nodes, slots: board.value.slots, notes: board.value.notes, flags: board.value.flags, freeEdges: board.value.freeEdges });
 }
 function pushUndo() {
   undoStack.value.push(boardSnapshot());
@@ -153,6 +153,7 @@ function applySnap(s: string) {
   board.value.slots = o.slots;
   board.value.notes = o.notes;
   board.value.flags = o.flags;
+  board.value.freeEdges = o.freeEdges ?? [];
 }
 function undo() {
   const s = undoStack.value.pop();
@@ -433,8 +434,124 @@ function delNote(id: string) {
   board.value.notes = board.value.notes.filter((n) => n.id !== id);
 }
 
+/* ── 自由创作（画布 = 创作面，不是投影面）：双击空白新建 + 端口连线写回 ── */
+const createMenu = ref<{ show: boolean; x: number; y: number; wx: number; wy: number }>({ show: false, x: 0, y: 0, wx: 0, wy: 0 });
+function onCreateAt(p: { wx: number; wy: number; x: number; y: number }) {
+  createMenu.value = { show: true, x: p.x, y: p.y, wx: p.wx, wy: p.wy };
+}
+const createOptions = [
+  { label: "🎬 场景节拍（写进剧情）", key: "scene" },
+  { label: "🔀 抉择（写进剧情）", key: "choice" },
+  { label: "🧭 分流（写进剧情）", key: "hub" },
+  { label: "🏁 结局（写进剧情）", key: "ending" },
+  { type: "divider", key: "d1" },
+  { label: "📝 便签（仅画布）", key: "note" },
+  { label: "🖼 图片卡（仅画布）", key: "image" },
+];
+function uniqueBeatId(st: RawStory): string {
+  let i = st.nodes.length + 1;
+  while (st.nodes.some((n) => n.id === `b${i}`)) i += 1;
+  return `b${i}`;
+}
+/** 画布自由创作不要求先有剧本：story 缺失就就地初始化，第一个节拍在画布上诞生 */
+function ensureStoryText(): RawStory {
+  if (parsed.value.ok) return parsed.value.story;
+  const fresh: RawStory = { meta: { title: "我的影游" }, vars: {}, nodes: [] };
+  storyText.value = JSON.stringify(fresh, null, 2);
+  return fresh;
+}
+async function ensureFlowInitialized() {
+  if (flow.value) return;
+  flow.value = {
+    step: 2, locks: { protagonist: "", supporting: "", style: "" },
+    story: storyText.value, voices: [...DEFAULT_VOICES], clips: {}, vo: {}, exported_zip: null,
+  };
+  await saveFlow();
+}
+function addBeat(kind: string, wx: number, wy: number) {
+  const st = ensureStoryText();
+  const id = uniqueBeatId(st);
+  const node: RawStory["nodes"][number] =
+    kind === "scene" ? { id, type: "scene", title: "新场景", text: "", shots: [{ frame: "", motion: "", dur: 5, vo: "" }] }
+    : kind === "choice" ? { id, type: "choice", title: "新抉择", options: [] }
+    : kind === "hub" ? { id, type: "hub", title: "新分流", routes: [] }
+    : { id, type: "ending", title: "新结局", text: "" };
+  st.nodes.push(node);
+  storyText.value = JSON.stringify(st, null, 2);
+  pushUndo();
+  board.value.nodes.push({ ref: id, x: wx, y: wy });
+  void ensureFlowInitialized().then(saveFlow);
+  check();
+  message.success(`已创建节拍 ${id} —— 从节点右侧圆点拖线把它接进剧情`);
+}
+function onCreateSelect(key: string) {
+  const m = createMenu.value;
+  createMenu.value.show = false;
+  if (key === "note") {
+    pushUndo();
+    board.value.notes.push({ id: uid("note"), text: "新便签", x: m.wx, y: m.wy });
+  } else if (key === "image") {
+    imagePick = { wx: m.wx, wy: m.wy };
+    imagePickShow.value = true;
+  } else {
+    addBeat(key, m.wx, m.wy);
+  }
+}
+
+/* 图片卡：从素材库挑一张贴上画布（仅画布层） */
+let imagePick: { wx: number; wy: number } = { wx: 0, wy: 0 };
+const imagePickShow = ref(false);
+function pickImage(file: string) {
+  pushUndo();
+  board.value.notes.push({ id: uid("note"), text: "", src: file, x: imagePick.wx, y: imagePick.wy });
+  imagePickShow.value = false;
+  message.success("图片卡已贴上画布");
+}
+
+/* 连线意图：自由参考线 或 写回剧情（goto/选项/路由） */
+const connectMenu = ref<{ show: boolean; x: number; y: number; from: string; to: string }>({ show: false, x: 0, y: 0, from: "", to: "" });
+function onConnect(p: { from: string; to: string; x: number; y: number }) {
+  connectMenu.value = { show: true, x: p.x, y: p.y, from: p.from, to: p.to };
+}
+const connectOptions = computed(() => {
+  const s = story.value?.nodes.find((n) => n.id === connectMenu.value.from);
+  const out: any[] = [{ label: "📌 仅参考连线（不写剧情）", key: "free" }];
+  if (s?.type === "scene") out.push({ label: `➡ 设为直连（${connectMenu.value.from} → ${connectMenu.value.to}）`, key: "goto" });
+  if (s?.type === "choice") out.push({ label: `➕ 加为选项（→ ${connectMenu.value.to}）`, key: "option" });
+  if (s?.type === "hub") out.push({ label: `➕ 加为分流路由（→ ${connectMenu.value.to}）`, key: "route" });
+  return out;
+});
+function applyConnect(key: string) {
+  const { from, to } = connectMenu.value;
+  connectMenu.value.show = false;
+  const st = story.value;
+  const s = st?.nodes.find((n) => n.id === from);
+  if (key === "free" || !st || !s) {
+    pushUndo();
+    board.value.freeEdges.push({ id: uid("fe"), from, to });
+    message.success("已加参考连线（不写剧情，右键可删）");
+    return;
+  }
+  pushUndo();
+  if (key === "goto" && s.type === "scene") {
+    s.goto = to;
+    message.success(`${from} 直连 → ${to}`);
+  } else if (key === "option" && s.type === "choice") {
+    if (!Array.isArray(s.options)) s.options = [];
+    s.options.push({ text: `去 ${to}`, set: null, goto: to });
+    message.success(`已加选项 → ${to}（双击节点可改文案）`);
+  } else if (key === "route" && s.type === "hub") {
+    if (!Array.isArray(s.routes)) s.routes = [];
+    s.routes.push({ when: null, goto: to });
+    message.success(`已加默认路由 → ${to}`);
+  }
+  storyText.value = JSON.stringify(st, null, 2);
+  check();
+  void saveFlow();
+}
+
 /* ── 右键菜单 ── */
-const menu = ref<{ show: boolean; x: number; y: number; kind: "node" | "note" | "bg"; ref?: string; noteId?: string }>({ show: false, x: 0, y: 0, kind: "bg" });
+const menu = ref<{ show: boolean; x: number; y: number; kind: "node" | "note" | "bg" | "edge"; ref?: string; noteId?: string; edgeId?: string }>({ show: false, x: 0, y: 0, kind: "bg" });
 const menuOptions = computed(() => {
   if (menu.value.kind === "node") {
     const pos = board.value.nodes.find((n) => n.ref === menu.value.ref);
@@ -451,6 +568,9 @@ const menuOptions = computed(() => {
       { label: "✏️ 编辑便签", key: "note-edit" },
       { label: "🗑 删除便签", key: "note-del" },
     ];
+  }
+  if (menu.value.kind === "edge") {
+    return [{ label: "🗑 删除参考连线", key: "edge-del" }];
   }
   return [
     { label: "📝 新建便签", key: "note-add" },
@@ -478,6 +598,11 @@ function onMenuSelect(key: string) {
   } else if (m.kind === "note" && m.noteId) {
     if (key === "note-edit") editNote(m.noteId);
     else if (key === "note-del") delNote(m.noteId);
+  } else if (m.kind === "edge" && m.edgeId) {
+    if (key === "edge-del") {
+      pushUndo();
+      board.value.freeEdges = board.value.freeEdges.filter((e) => e.id !== m.edgeId);
+    }
   } else {
     if (key === "note-add") addNote();
     else if (key === "layout") relayout();
@@ -655,9 +780,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         画布数据已损坏，当前只读——可在项目目录 canvas/ 删除 board.json 后重建。
       </NAlert>
       <NAlert v-if="!storyText" type="warning" :show-icon="false" style="margin-bottom: 8px">
-        该项目还没有影游剧情（film/flow.json 为空）——去
-        <a style="color: #4f8ae8; cursor: pointer" @click="goFilm()">影游工坊</a>
-        走一步向导，或载入模板后回来。
+        自由画布模式 —— <b>双击任意空白处</b>即可创建第一个节拍（自动初始化剧本），节点右侧圆点可拖线连接；
+        也可以去 <a style="color: #4f8ae8; cursor: pointer" @click="goFilm()">影游工坊</a> 走向导后再回来精修。
       </NAlert>
 
       <!-- 画布 + 侧栏 -->
@@ -667,6 +791,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
           :story="story"
           :nodes="board.nodes"
           :notes="board.notes"
+          :free-edges="board.freeEdges"
           :clips="clips"
           :vo="voDone"
           :tasks="board.tasks"
@@ -682,6 +807,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
           @open-node="openEdit"
           @menu="(p) => { menu = { show: true, ...p } }"
           @vp-change="scheduleSave"
+          @connect="onConnect"
+          @create-at="onCreateAt"
         />
 
         <aside class="cv-side">
@@ -807,6 +934,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
       <!-- 右键菜单 -->
       <NDropdown trigger="manual" :show="menu.show" :x="menu.x" :y="menu.y" placement="bottom-start"
         :options="menuOptions" @select="onMenuSelect" @clickoutside="menu.show = false" />
+      <!-- 双击空白：新建菜单（自由创作入口） -->
+      <NDropdown trigger="manual" :show="createMenu.show" :x="createMenu.x" :y="createMenu.y" placement="bottom-start"
+        :options="createOptions" @select="onCreateSelect" @clickoutside="createMenu.show = false" />
+      <!-- 拖线落点：连线意图菜单 -->
+      <NDropdown trigger="manual" :show="connectMenu.show" :x="connectMenu.x" :y="connectMenu.y" placement="bottom-start"
+        :options="connectOptions" @select="applyConnect" @clickoutside="connectMenu.show = false" />
+
+      <!-- 图片卡选素材 -->
+      <NModal :show="imagePickShow" preset="card" title="🖼 选一张素材贴上画布" style="max-width: 600px" @close="imagePickShow = false">
+        <div class="cv-pick-grid">
+          <div v-for="a in assetsView.filter(x => x.file.endsWith('.mp4') || (x.kind ?? '') === 'image' || x.file.match(/\.(png|jpe?g|webp|gif)$/))" :key="a.id"
+            class="cv-pick-item" @click="pickImage(a.file)">
+            <video v-if="a.file.endsWith('.mp4')" class="cv-pick-thumb" :src="`${serverBase}/${a.file}`" muted preload="metadata" />
+            <img v-else class="cv-pick-thumb" :src="`${serverBase}/${a.file}`" />
+            <span class="cv-hint">{{ a.prompt.slice(0, 16) || a.file.slice(-14) }}</span>
+          </div>
+        </div>
+        <p v-if="!assetsView.length" class="cv-hint">素材中心还没有素材——先去「AI 素材中心」生成图片/视频，再回来贴。</p>
+      </NModal>
 
       <!-- 编辑弹层 -->
       <NodeEditDialog v-model:show="editShow" :story="story" :node-ref="editRef" :pro="pro" @save="onEditSave" />
@@ -842,7 +988,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
           <p><b>1 · 全貌</b>：剧情自动排成流向图，缺镜头/缺配音的节拍直接标出，缺口清单就是待办。</p>
           <p><b>2 · 点哪改哪</b>：双击节拍改文案；右键生成/定稿/批注；生成完自动挂上，版本可对比切换。</p>
           <p><b>3 · 立刻看得见</b>：▶ 预览逐镜过片（可标记待改），🎮 试玩就是导出同款播放器，体检全绿一键导出。</p>
-          <p class="cv-hint">滚轮缩放 · 空格拖拽平移 · 框选多选 · 右键更多操作。向导照常能用，两边数据同源。</p>
+          <p class="cv-hint">双击空白即建节点 · 节点右侧圆点拖线连接（可选写进剧情或仅作参考线）· 滚轮缩放 · 空格拖拽平移 · 右键更多操作。向导照常能用，两边数据同源。</p>
         </div>
         <template #footer>
           <NButton type="primary" block @click="finishOnboard">开始用</NButton>
@@ -871,4 +1017,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .cv-kind-chip { width: 20px; text-align: center; flex: none; }
 .mono { font-family: Consolas, monospace; color: #71717c; }
 .cv-onboard p { font-size: 13px; line-height: 1.8; color: #b9c7d4; margin: 6px 0; }
+.cv-pick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-height: 340px; overflow-y: auto; }
+.cv-pick-item { display: flex; flex-direction: column; gap: 4px; cursor: pointer; padding: 6px; border: 1px solid #23232b; border-radius: 8px; }
+.cv-pick-item:hover { border-color: #4f8ae8; }
+.cv-pick-thumb { width: 100%; height: 72px; object-fit: cover; border-radius: 6px; background: #0a0a0c; pointer-events: none; }
 </style>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 画布表面（PLAN-canvas v2.2 §3.1）：单容器 CSS transform + 可视区剔除 +
 // 派生连边 SVG + 小地图。剧情内容一律由 props 投影进来，本组件不持有剧情。
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";import type { AiTaskRecord, BoardNodePos, BoardNote, BoardViewport } from "../../lib/board";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import type { AiTaskRecord, BoardNodePos, BoardNote, BoardViewport, FreeEdge } from "../../lib/board";
 import { KIND_LABEL, storyEdges, type RawStory } from "../../lib/canvas/storywalk";
 import { NODE_W, nodeHeight, useViewport } from "../../lib/canvas/layout";
 
@@ -9,6 +10,7 @@ const props = defineProps<{
   story: RawStory | null;
   nodes: BoardNodePos[];
   notes: BoardNote[];
+  freeEdges: FreeEdge[];
   clips: Record<string, string>;
   vo: Record<string, string>;
   tasks: Record<string, AiTaskRecord>;
@@ -25,8 +27,10 @@ const emit = defineEmits<{
   (e: "begin-structural"): void;
   (e: "commit"): void;
   (e: "open-node", ref: string): void;
-  (e: "menu", payload: { kind: "node" | "note" | "bg"; ref?: string; noteId?: string; x: number; y: number }): void;
+  (e: "menu", payload: { kind: "node" | "note" | "bg" | "edge"; ref?: string; noteId?: string; edgeId?: string; x: number; y: number }): void;
   (e: "vp-change"): void;
+  (e: "connect", payload: { from: string; to: string; x: number; y: number }): void;
+  (e: "create-at", payload: { wx: number; wy: number; x: number; y: number }): void;
 }>();
 
 const { vp, screenToWorld, zoomAt, panBy, centerOn, fitAll } = useViewport(props.vp);
@@ -120,12 +124,79 @@ const spaceHeld = ref(false);
 function onWinKey(e: KeyboardEvent) {
   if (e.type === "keydown" && e.code === "Space" && !isTyping(e)) { spaceHeld.value = true; }
   if (e.type === "keyup" && e.code === "Space") { spaceHeld.value = false; }
-  if (e.type === "keydown" && e.key === "Escape") { emit("update:selected", []); rubber.value = null; }
+  if (e.type === "keydown" && e.key === "Escape") { emit("update:selected", []); rubber.value = null; connecting.value = null; }
 }
 function isTyping(e: Event) {
   const t = e.target as HTMLElement | null;
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 }
+
+/* ── 自由连线：从节点端口拖出，落在目标节点上抛 connect（意图由父级决定） ── */
+const connecting = ref<{ from: string; wx: number; wy: number } | null>(null);
+function onPortDown(refId: string, e: PointerEvent) {
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  const p = localXY(e);
+  const w = screenToWorld(p.x, p.y);
+  connecting.value = { from: refId, wx: w.x, wy: w.y };
+  window.addEventListener("pointermove", onConnMove);
+  window.addEventListener("pointerup", onConnUp, { once: true });
+}
+function onConnMove(e: PointerEvent) {
+  if (!connecting.value) return;
+  const p = localXY(e);
+  const w = screenToWorld(p.x, p.y);
+  connecting.value.wx = w.x;
+  connecting.value.wy = w.y;
+}
+function onConnUp(e: PointerEvent) {
+  window.removeEventListener("pointermove", onConnMove);
+  const conn = connecting.value;
+  connecting.value = null;
+  if (!conn) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+  const hit = el?.closest("[data-ref]") as HTMLElement | null;
+  const to = hit?.getAttribute("data-ref") ?? null;
+  if (to && to !== conn.from) emit("connect", { from: conn.from, to, x: e.clientX, y: e.clientY });
+}
+
+/* ── 双击空白：就地新建（坐标换算成世界坐标交父级落点） ── */
+function onStageDblclick(e: MouseEvent) {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.closest(".cb-node") || t.closest(".cb-note") || t.closest(".cb-port") || t.closest(".cb-minimap"))) return;
+  const p = localXY(e);
+  const w = screenToWorld(p.x, p.y);
+  emit("create-at", { wx: Math.round(w.x), wy: Math.round(w.y), x: e.clientX, y: e.clientY });
+}
+
+/* ── 自由连线渲染：虚线橙色，命中区加宽供右键删除 ── */
+const freeEdgePaths = computed(() => {
+  return props.freeEdges
+    .map((fe) => {
+      const a = nodesView.value.find((x) => x.pos.ref === fe.from);
+      const b = nodesView.value.find((x) => x.pos.ref === fe.to);
+      if (!a || !b) return null;
+      const x1 = a.pos.x + a.w;
+      const y1 = a.pos.y + Math.min(56, a.h / 2);
+      const x2 = b.pos.x;
+      const y2 = b.pos.y + Math.min(56, b.h / 2);
+      const dx = Math.max(46, Math.abs(x2 - x1) / 2);
+      const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+      return { id: fe.id, d, label: fe.label ?? "" };
+    })
+    .filter((x): x is NonNullable<typeof x> => !!x);
+});
+function onEdgeMenu(edgeId: string, e: MouseEvent) {
+  emit("menu", { kind: "edge", edgeId, x: e.clientX, y: e.clientY });
+}
+const connFromX = computed(() => {
+  const a = nodesView.value.find((x) => x.pos.ref === connecting.value?.from);
+  return a ? a.pos.x + a.w : 0;
+});
+const connFromY = computed(() => {
+  const a = nodesView.value.find((x) => x.pos.ref === connecting.value?.from);
+  return a ? a.pos.y + Math.min(56, a.h / 2) : 0;
+});
 
 type DragMode =
   | { kind: "pan"; sx: number; sy: number; ox: number; oy: number }
@@ -310,6 +381,7 @@ const KIND_COLOR: Record<string, string> = {
     ref="stageEl" class="cb-stage"
     :class="{ panning: spaceHeld }"
     @wheel="onWheel" @pointerdown="onBgDown" @contextmenu.prevent="onBgMenu"
+    @dblclick="onStageDblclick"
   >
     <div class="cb-world" :style="worldStyle">
       <svg class="cb-edges" :width="1" :height="1">
@@ -317,14 +389,28 @@ const KIND_COLOR: Record<string, string> = {
           <marker id="cb-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L8 4 L0 8 z" fill="#5b6474" />
           </marker>
+          <marker id="cb-arrow-free" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L8 4 L0 8 z" fill="#ff9a3c" />
+          </marker>
         </defs>
         <path v-for="e in edges" :key="e.key" :d="e.d" fill="none" stroke="#5b6474" stroke-width="1.6"
           marker-end="url(#cb-arrow)" :title="e.label" />
+        <!-- 自由连线（仅画布层）：虚线橙，可右键删除 -->
+        <g v-for="fe in freeEdgePaths" :key="fe.id">
+          <path :d="fe.d" fill="none" stroke="transparent" stroke-width="14" style="cursor:pointer"
+            @contextmenu.prevent.stop="onEdgeMenu(fe.id, $event)" />
+          <path :d="fe.d" fill="none" stroke="#ff9a3c" stroke-width="1.6" stroke-dasharray="6 5"
+            marker-end="url(#cb-arrow-free)" :title="`参考连线${fe.label ? ' · ' + fe.label : ''}（右键删除，不写剧情）`" />
+        </g>
+        <!-- 拖线中的临时线 -->
+        <path v-if="connecting" :d="`M ${connFromX} ${connFromY} L ${connecting.wx} ${connecting.wy}`"
+          fill="none" stroke="#ff9a3c" stroke-width="2" stroke-dasharray="4 4" />
       </svg>
 
       <div
         v-for="n in culled" :key="n.pos.ref"
         class="cb-node"
+        :data-ref="n.pos.ref"
         :class="[`cb-${n.node.type}`, {
           sel: selectedSet(n.pos.ref),
           hl: highlightNode === n.pos.ref,
@@ -335,6 +421,7 @@ const KIND_COLOR: Record<string, string> = {
         @dblclick.stop="emit('open-node', n.pos.ref)"
         @contextmenu.prevent.stop="onNodeMenu(n.pos.ref, $event)"
       >
+        <span class="cb-port" title="拖到目标节点连线" @pointerdown.stop.prevent="onPortDown(n.pos.ref, $event)"></span>
         <div class="cb-node-head">
           <span class="cb-kind" :style="{ color: KIND_COLOR[n.node.type] }">{{ KIND_LABEL[n.node.type] || n.node.type }}</span>
           <span class="cb-title">{{ n.node.title || n.pos.ref }}</span>
@@ -376,11 +463,14 @@ const KIND_COLOR: Record<string, string> = {
       <div
         v-for="nt in notes" :key="nt.id"
         class="cb-note"
-        :class="{ sel: selectedSet(nt.id) }"
+        :class="{ sel: selectedSet(nt.id), img: !!nt.src }"
         :style="{ left: nt.x + 'px', top: nt.y + 'px' }"
         @pointerdown="onNodeDown(nt as any, $event, 'note')"
         @contextmenu.prevent.stop="onNoteMenu(nt.id, $event)"
-      >{{ nt.text }}</div>
+      >
+        <img v-if="nt.src" class="cb-note-img" :src="nt.src.startsWith('http') ? nt.src : serverBase + '/' + nt.src.replace(/^\/+/, '')" draggable="false" @pointerdown.stop />
+        <span>{{ nt.text }}</span>
+      </div>
     </div>
 
     <div v-if="rubber" class="cb-rubber" :style="{ left: rubber.x + 'px', top: rubber.y + 'px', width: rubber.w + 'px', height: rubber.h + 'px' }" />
@@ -412,6 +502,14 @@ const KIND_COLOR: Record<string, string> = {
 .cb-node.sel { border-color: #4f8ae8; box-shadow: 0 0 0 2px rgba(79,138,232,.25), 0 4px 14px rgba(0,0,0,.35); }
 .cb-node.hl { border-color: #ff9a3c; box-shadow: 0 0 0 2px rgba(255,154,60,.35); }
 .cb-node.locked { border-style: solid; border-color: #4fc38a66; }
+.cb-port {
+  position: absolute; right: -7px; top: 50%; margin-top: -7px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #16161b; border: 2px solid #ff9a3c;
+  opacity: 0; transition: opacity .12s; cursor: crosshair; z-index: 3;
+}
+.cb-node:hover .cb-port { opacity: 1; }
+.cb-port:hover { background: #ff9a3c; }
 .cb-node-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-width: 0; }
 .cb-kind { font-size: 11px; flex: none; }
 .cb-title { font-size: 13px; font-weight: 600; color: #dce8f2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -436,6 +534,8 @@ const KIND_COLOR: Record<string, string> = {
   border: 1px solid #5a4c28; color: #e8d9ad; border-radius: 8px; padding: 8px 10px;
   font-size: 12px; line-height: 1.5; cursor: grab; box-shadow: 0 4px 14px rgba(0,0,0,.35);
 }
+.cb-note.img { width: 220px; padding: 6px; }
+.cb-note-img { display: block; width: 100%; border-radius: 6px; margin-bottom: 6px; pointer-events: none; }
 .cb-note.sel { border-color: #ff9a3c; }
 .cb-rubber { position: absolute; border: 1px solid #4f8ae8; background: rgba(79,138,232,.12); pointer-events: none; }
 .cb-minimap { position: absolute; right: 14px; bottom: 14px; background: rgba(11,11,14,.85); border: 1px solid #30303a; border-radius: 8px; cursor: crosshair; }

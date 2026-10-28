@@ -57,6 +57,16 @@ export interface BoardNote {
   text: string;
   x: number;
   y: number;
+  /** 图片卡：素材库相对路径（assets/…）或内置服务器绝对 URL；有值即渲染为图片卡 */
+  src?: string;
+}
+
+/** 自由连线（仅画布层，不写剧情）：用户自由发挥的"参考线" */
+export interface FreeEdge {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
 }
 
 export interface BoardFile {
@@ -68,6 +78,8 @@ export interface BoardFile {
   tasks: Record<string, AiTaskRecord>;
   /** 看片批注（M2 拍板③）：storyNodeRef → 批注文本 */
   flags: Record<string, string>;
+  /** 自由连线：画布自由发挥层，永不影响 story */
+  freeEdges: FreeEdge[];
 }
 
 export function defaultBoard(name = "世界画布"): BoardFile {
@@ -79,6 +91,7 @@ export function defaultBoard(name = "世界画布"): BoardFile {
     notes: [],
     tasks: {},
     flags: {},
+    freeEdges: [],
   };
 }
 
@@ -119,7 +132,12 @@ export function sanitizeBoard(v: unknown): BoardFile {
   if (Array.isArray(o.notes)) {
     b.notes = o.notes.filter((n: any) => n && typeof n.id === "string").map((n: any) => ({
       id: n.id, text: String(n.text ?? ""), x: Number(n.x) || 0, y: Number(n.y) || 0,
+      src: typeof n.src === "string" && n.src ? n.src : undefined,
     }));
+  }
+  if (Array.isArray(o.freeEdges)) {
+    b.freeEdges = o.freeEdges.filter((e: any) => e && typeof e.id === "string" && typeof e.from === "string" && typeof e.to === "string")
+      .map((e: any) => ({ id: e.id, from: e.from, to: e.to, label: typeof e.label === "string" ? e.label : undefined }));
   }
   if (o.tasks && typeof o.tasks === "object") {
     for (const [k, t] of Object.entries<any>(o.tasks)) {
