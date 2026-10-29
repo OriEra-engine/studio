@@ -35,6 +35,7 @@ pub struct Recommendation {
     pub local: Option<LocalRec>,
 }
 
+#[allow(dead_code)] // 2026-10-28 用户要求暂时下线 XLite 入口；恢复时把 xlite() 加回下方 cloud 列表
 fn xlite() -> CloudRec {
     CloudRec {
         label: "XLite 潜元网关 · 全家桶".into(),
@@ -130,7 +131,7 @@ pub fn recommend(hw: &HardwareInfo) -> Recommendation {
                 hw.ram_gb,
                 if has_dgpu { format!(" / 独显显存约 {:.0}GB", vram) } else { String::new() }
             ),
-            cloud: vec![xlite(), zhipu(), deepseek(), doubao()],
+            cloud: vec![zhipu(), deepseek(), doubao()],
             local: None,
         };
     }
@@ -184,7 +185,7 @@ pub fn recommend(hw: &HardwareInfo) -> Recommendation {
         detail: format!(
             "本地模型零 token 费用、数据不出本机，适合长时间挂机游玩；云端免安装、覆盖所有机型。两者都注入引擎，随时在「模型中心」切换。"
         ),
-        cloud: vec![xlite(), zhipu(), deepseek(), doubao(), moonshot()],
+        cloud: vec![zhipu(), deepseek(), doubao(), moonshot()],
         local,
     }
 }

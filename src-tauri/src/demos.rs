@@ -129,7 +129,7 @@ pub fn list_demos(app: AppHandle) -> Vec<DemoInfo> {
 }
 
 #[tauri::command]
-pub fn open_demo(
+pub async fn open_demo(
     app: AppHandle,
     state: State<'_, crate::AppState>,
     folder: String,

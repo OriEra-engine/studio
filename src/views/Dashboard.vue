@@ -58,7 +58,7 @@ function fmtDate(unix: string) {
         <button class="hero-go" :disabled="!idea.trim()" @click="startCreate()">开始创造 →</button>
       </div>
       <div class="hero-chips">
-        <span class="hero-chips-label">试试：</span>
+        <span class="hero-chips-label">试试（点击带入向导）：</span>
         <button v-for="c in IDEA_CHIPS" :key="c" @click="startCreate(c)">{{ c }}</button>
       </div>
     </div>

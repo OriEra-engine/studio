@@ -1,6 +1,7 @@
 //! OriEra Studio —— 开箱即用的 OriEra 世界引擎桌面工作台。
 
 mod assets;
+mod canvas;
 mod demos;
 mod feedback;
 mod film_flow;
@@ -147,9 +148,13 @@ fn reload_runtime_windows(app: &tauri::AppHandle) {
     }
 }
 
+/// 硬件体检走异步线程：PowerShell CIM 冷启动 2-5 秒，同步跑在主线程会把整个
+/// UI 冻住（0.9.0 实测模型中心进页即卡）。
 #[tauri::command]
-fn detect_hardware() -> hardware::HardwareInfo {
-    hardware::detect()
+async fn detect_hardware() -> hardware::HardwareInfo {
+    tauri::async_runtime::spawn_blocking(hardware::detect)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -390,6 +395,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .register_uri_scheme_protocol("oriera", |ctx, request| {
+            #[cfg(debug_assertions)]
+            println!("[oriera-proto] {}", request.uri());
             crate::server::serve_content(ctx.app_handle(), request)
         })
         .setup(|app| {
@@ -491,6 +498,9 @@ pub fn run() {
             film_flow::tts_doubao,
             film_flow::tts_local,
             film_flow::export_film,
+            canvas::canvas_load,
+            canvas::canvas_save,
+            canvas::canvas_preview_html,
             assets::list_assets,
             assets::delete_asset,
             assets::add_asset_to_project,

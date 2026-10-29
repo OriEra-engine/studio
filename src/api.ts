@@ -237,6 +237,13 @@ export const api = {
   exportFilm: (project: string, flow: FilmFlow) =>
     invoke<string>("export_film", { project, flow }),
 
+  // 世界画布（PLAN-canvas v2.2）：board.json 透明存取（schema 真源在前端 lib/board.ts）
+  canvasLoad: (project: string) => invoke<unknown>("canvas_load", { project }),
+  canvasSave: (project: string, board: unknown) => invoke<void>("canvas_save", { project, board }),
+  /** 导出同款播放器模板渲染（媒体地址改写为内置服务器绝对 URL），供 iframe srcdoc 试玩 */
+  canvasPreviewHtml: (project: string, story: string) =>
+    invoke<string>("canvas_preview_html", { project, story }),
+
   /** 正在运行的项目 id（运行中徽标） */
   runningProjects: () => invoke<string[]>("running_projects"),
 
@@ -310,28 +317,37 @@ export interface CloudPreset {
   url?: string;
 }
 
+// 2026-10-28 用户要求暂时下线 XLite 入口（推荐卡与预设表同步移除）；恢复时解除本段注释
+// export const CLOUD_PRESETS_XLITE: CloudPreset = { kind: "xlite", label: "XLite 潜元网关", base: "https://xlite.dezai.com/v1", model: "gpt-4o-mini",
+//   models: ["gpt-4o-mini", "gpt-5.2", "claude-sonnet-4-6", "gemini-3.6-flash", "deepseek-v4.1-flash", "glm-5.3", "MiniMax-M3", "qwen3.8-max"],
+//   note: "潜元无限企业网关 · 一个 Key 调用 160+ 家族模型（GPT/Claude/Gemini/Qwen/DeepSeek/GLM/Kimi/豆包）", cn: true, badge: "潜元无限", url: "https://xlite.dezai.com" };
+
+// 2026-10-28：各厂商模型清单对齐官网最新代次（最新置顶，快捷启用默认调首个）；
+// 模型名以网关实时价目与引擎 L7 预设表在库引用为准，未发明新 ID
 export const CLOUD_PRESETS: CloudPreset[] = [
-  { kind: "xlite", label: "XLite 潜元网关", base: "https://xlite.dezai.com/v1", model: "gpt-4o-mini",
-    models: ["gpt-4o-mini", "gpt-5.2", "claude-sonnet-4-6", "gemini-3.6-flash", "deepseek-v4.1-flash", "glm-5.3", "MiniMax-M3", "qwen3.8-max"],
-    note: "潜元无限企业网关 · 一个 Key 调用 160+ 家族模型（GPT/Claude/Gemini/Qwen/DeepSeek/GLM/Kimi/豆包）", cn: true, badge: "潜元无限", url: "https://xlite.dezai.com" },
-  { kind: "zhipu", label: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash",
-    models: ["glm-4-flash", "glm-4.7-flash", "glm-4.6v-flash", "glm-5.3"],
-    note: "国内直连 · Flash 档免费;4.6V 免费视觉", free: true, cn: true, vision: true, url: "https://open.bigmodel.cn" },
+  { kind: "zhipu", label: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", model: "glm-5.3",
+    models: ["glm-5.3", "glm-4.7-flash", "glm-4-flash", "glm-4.6v-flash"],
+    note: "国内直连 · glm-4-flash 免费档;4.6V 免费视觉", free: true, cn: true, vision: true, url: "https://open.bigmodel.cn" },
   { kind: "deepseek", label: "DeepSeek", base: "https://api.deepseek.com/v1", model: "deepseek-chat",
     models: ["deepseek-chat", "deepseek-reasoner"],
-    note: "国内直连 · V4 性价比;错峰时段更省", cn: true, url: "https://platform.deepseek.com" },
-  { kind: "doubao", label: "豆包 · 火山方舟", base: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-seed-1.6",
-    note: "OpenAI 兼容;模型填模型 ID 或 ep-接入点", cn: true, badge: "字节跳动", url: "https://www.volcengine.com/product/doubao" },
+    note: "国内直连 · 官方别名自动跟随最新版(当前 V4.1 世代);错峰时段更省", cn: true, url: "https://platform.deepseek.com" },
+  { kind: "doubao", label: "豆包 · 火山方舟", base: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-seed-2-1-pro-260628",
+    models: ["doubao-seed-2-1-pro-260628", "doubao-seed-2-1-turbo-260628", "doubao-seed-1.6"],
+    note: "文本旗舰 Seed 2.1（2026-06 FORCE 发布）；Seedance 2.5 是视频模型在素材中心", cn: true, badge: "字节跳动", url: "https://www.volcengine.com/product/doubao" },
   { kind: "moonshot", label: "Moonshot Kimi", base: "https://api.moonshot.cn/v1", model: "kimi-k2.6",
     models: ["kimi-k2.6"],
-    note: "国内直连 · 256K 长上下文", cn: true, url: "https://platform.kimi.com" },
-  { kind: "qwen", label: "Qwen 通义", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus",
-    models: ["qwen-turbo", "qwen-plus", "qwen-max"],
+    note: "国内直连 · 256K 长上下文;平台已迁 platform.kimi.ai(K3 已现身,ID 以其模型列表为准)", cn: true, url: "https://platform.kimi.ai" },
+  { kind: "qwen", label: "Qwen 通义", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3.8-max",
+    models: ["qwen3.8-max", "qwen3.7-max", "qwen-max", "qwen-plus", "qwen-turbo"],
     note: "阿里 · 国内直连,OpenAI 兼容模式", cn: true, url: "https://dashscope.console.aliyun.com" },
   { kind: "stepfun", label: "阶跃 Step", base: "https://api.stepfun.com/v1", model: "step-3.7-flash",
+    models: ["step-3.7-flash"],
     note: "国内直连 · 与引擎 L7 预设表同步", cn: true, url: "https://platform.stepfun.com" },
-  { kind: "openai", label: "OpenAI", base: "https://api.openai.com/v1", model: "gpt-4o-mini", note: "需海外网络", url: "https://platform.openai.com" },
-  { kind: "anthropic", label: "Anthropic Claude", base: "https://api.anthropic.com/v1", model: "claude-3-5-haiku-latest", note: "需海外网络", url: "https://console.anthropic.com" },
-  { kind: "openrouter", label: "OpenRouter", base: "https://openrouter.ai/api/v1", model: "openrouter/auto", note: "聚合多家模型", url: "https://openrouter.ai" },
+  { kind: "openai", label: "OpenAI", base: "https://api.openai.com/v1", model: "gpt-6.1-terra",
+    models: ["gpt-6.1-terra", "gpt-6.1-sol", "gpt-4o-mini"], note: "6.1 系列（terra 日常代理 / sol 高阶）· 需海外网络", url: "https://platform.openai.com" },
+  { kind: "anthropic", label: "Anthropic Claude", base: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6",
+    models: ["claude-sonnet-4-6", "claude-3-5-haiku-latest"], note: "需海外网络", url: "https://console.anthropic.com" },
+  { kind: "openrouter", label: "OpenRouter", base: "https://openrouter.ai/api/v1", model: "openrouter/auto",
+    models: ["openrouter/auto", "openai/gpt-5.2", "anthropic/claude-sonnet-4-6"], note: "聚合多家模型", url: "https://openrouter.ai" },
   { kind: "groq", label: "Groq", base: "https://api.groq.com/openai/v1", model: "llama-3.1-8b-instant", note: "免费档速度快 · 需海外网络", free: true, url: "https://console.groq.com" },
 ];

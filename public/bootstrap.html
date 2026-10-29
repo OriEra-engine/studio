@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>loading…</title>
+  <style>html,body{height:100%;margin:0;background:#0b0b0e;color:#93a7b4;font-family:"Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center}</style>
+</head>
+<body>
+<!-- 独立窗口引导页（PLAN-canvas P1）：Edge 156 下子窗口对外部 URL 的初始导航与
+     navigate() 补航均静默失效（0.9.0 实测），且 App 路径带 fragment 也会死在
+     about:blank——故本页零参数加载，目标从窗口 label（project-{id}）推导。 -->
+<div id="tip">正在进入游戏…</div>
+<script>
+  (function () {
+    var label = "";
+    try {
+      var w = window.__TAURI__ && window.__TAURI__.window;
+      label = (w && w.getCurrent ? w.getCurrent() : w && w.Window && w.Window.getCurrent ? (w.getCurrent ? w.getCurrent() : w.Window.getCurrent()) : null)?.label || "";
+    } catch (e) { label = ""; }
+    if (!/^project-[A-Za-z0-9_-]+$/.test(label)) {
+      document.getElementById("tip").textContent = "窗口标识异常（" + (label || "空") + "），请回到 Studio 重新打开";
+      return;
+    }
+    var id = label.slice("project-".length);
+    setTimeout(function () { location.replace("http://oriera.localhost/projects/" + id + "/"); }, 60);
+  })();
+</script>
+</body>
+</html>

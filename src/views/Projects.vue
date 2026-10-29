@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
-import { NCard, NGrid, NGi, NButton, NEmpty, NSpace, NTag, useMessage, NPopconfirm } from "naive-ui";
+import { NCard, NGrid, NGi, NButton, NEmpty, NSpace, NTag, useMessage, NPopconfirm, NSkeleton } from "naive-ui";
 import { useRouter } from "vue-router";
 import { api, type ProjectMeta } from "../api";
 import { refreshStatus } from "../store";
 
 const message = useMessage();
 const router = useRouter();
-const projects = ref<ProjectMeta[]>([]);
+// 首屏缓存：上次的列表立即上屏，后台刷新替换（消除异步加载期的空白闪现）
+const projects = ref<ProjectMeta[]>((() => {
+  try { return JSON.parse(localStorage.getItem("oe.projectsCache") || "[]"); } catch { return []; }
+})());
 const loading = ref(true);
 const running = ref<Set<string>>(new Set());
 
@@ -21,6 +24,7 @@ async function refresh() {
   loading.value = true;
   try {
     projects.value = await api.listProjects();
+    try { localStorage.setItem("oe.projectsCache", JSON.stringify(projects.value)); } catch { /* 配额满不影响功能 */ }
   } finally {
     loading.value = false;
   }
@@ -105,6 +109,18 @@ function fmtDate(unix: string) {
         </NSpace>
       </template>
     </NEmpty>
+
+    <!-- 首屏骨架：缓存未命中且仍在加载时，用骨架卡占位，避免视图闪空 -->
+    <NGrid v-if="loading && !projects.length" :cols="3" :x-gap="14" :y-gap="14" responsive="screen" item-responsive>
+      <NGi v-for="i in 6" :key="i" span="3 m:1">
+        <NCard size="small">
+          <NSkeleton text width="40%" size="small" />
+          <NSkeleton text :repeat="2" style="margin-top: 8px" />
+          <NSkeleton text width="70%" style="margin-top: 8px" />
+          <NSkeleton height="30px" style="margin-top: 12px" />
+        </NCard>
+      </NGi>
+    </NGrid>
 
     <NGrid :cols="3" :x-gap="14" :y-gap="14" responsive="screen" item-responsive>
       <NGi v-for="p in projects" :key="p.id" span="3 m:1">
