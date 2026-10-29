@@ -106,13 +106,22 @@ async fn proxy_passthrough(
     let Some((_, upstream)) = PROXY_UPSTREAMS.iter().find(|(a, _)| *a == alias) else {
         return (StatusCode::NOT_FOUND, "unknown proxy alias").into_response();
     };
-    let url = format!("{upstream}/{path}{}", uri.query().map(|q| format!("?{q}")).unwrap_or_default());
+    let url = format!(
+        "{upstream}/{path}{}",
+        uri.query().map(|q| format!("?{q}")).unwrap_or_default()
+    );
 
-    let method = reqwest::Method::from_bytes(method.as_str().as_bytes())
-        .unwrap_or(reqwest::Method::POST);
+    let method =
+        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::POST);
     let mut req = http_client().request(method, &url).body(body);
     // 只转发语义头；Host/Cookie 等不转（上游按 Bearer 鉴权）
-    for name in ["authorization", "content-type", "accept", "x-api-key", "anthropic-version"] {
+    for name in [
+        "authorization",
+        "content-type",
+        "accept",
+        "x-api-key",
+        "anthropic-version",
+    ] {
         if let Some(v) = headers.get(name) {
             req = req.header(name, v.as_bytes());
         }
@@ -132,11 +141,7 @@ async fn proxy_passthrough(
             resp.body(Body::from_stream(up.bytes_stream()))
                 .unwrap_or_else(|_| (StatusCode::BAD_GATEWAY, "proxy body error").into_response())
         }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            format!("upstream error: {e}"),
-        )
-            .into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, format!("upstream error: {e}")).into_response(),
     }
 }
 
@@ -149,10 +154,20 @@ fn build_router(
     app: AppHandle,
 ) -> Router {
     let examples = ServeDir::new(snapshot_examples).append_index_html_on_directories(true);
-    let demos = ServeDir::new(projects_dir.parent().map(|p| p.join("demos")).unwrap_or_default())
-        .append_index_html_on_directories(true);
-    let assets = ServeDir::new(projects_dir.parent().map(|p| p.join("assets")).unwrap_or_default())
-        .append_index_html_on_directories(true);
+    let demos = ServeDir::new(
+        projects_dir
+            .parent()
+            .map(|p| p.join("demos"))
+            .unwrap_or_default(),
+    )
+    .append_index_html_on_directories(true);
+    let assets = ServeDir::new(
+        projects_dir
+            .parent()
+            .map(|p| p.join("assets"))
+            .unwrap_or_default(),
+    )
+    .append_index_html_on_directories(true);
     let projects = ServeDir::new(projects_dir).append_index_html_on_directories(true);
     let app_for_provider = app.clone();
     Router::new()
@@ -311,7 +326,12 @@ fn cache_control_of(path: &std::path::Path) -> &'static str {
 }
 
 fn not_found() -> tauri::http::Response<Cow<'static, [u8]>> {
-    respond(404, "text/plain; charset=utf-8", "no-store", b"not found".to_vec())
+    respond(
+        404,
+        "text/plain; charset=utf-8",
+        "no-store",
+        b"not found".to_vec(),
+    )
 }
 
 /// 把 URL 相对路径安全解析到 root 之下（v0.7.5 安全加固）。
@@ -330,7 +350,11 @@ fn resolve_under_root(root: &Path, rel: &str) -> Option<PathBuf> {
     {
         return None;
     }
-    let target = if full.is_dir() { full.join("index.html") } else { full };
+    let target = if full.is_dir() {
+        full.join("index.html")
+    } else {
+        full
+    };
     let canonical = target.canonicalize().ok()?;
     let root_canonical = root.canonicalize().ok()?;
     if canonical.starts_with(&root_canonical) {
@@ -351,12 +375,11 @@ pub fn serve_content(
     if path == "/__provider.json" {
         // v0.7.5：与 axum 出口同规则——Host 白名单外（伪造 Host 的远程网页）
         // 一律 403，防止扫描/枚举端口读走明文 key。
-        if let Some(h) = request.uri().host().or_else(|| {
-            request
-                .headers()
-                .get("host")
-                .and_then(|v| v.to_str().ok())
-        }) {
+        if let Some(h) = request
+            .uri()
+            .host()
+            .or_else(|| request.headers().get("host").and_then(|v| v.to_str().ok()))
+        {
             if !host_in_allowlist(h) {
                 return respond(
                     403,
@@ -466,17 +489,17 @@ mod tests {
     /// 在系统临时目录搭一个 root/sub/index.html 骨架，跑穿越探针矩阵。
     #[test]
     fn resolve_under_root_blocks_traversal_and_absolute() {
-        let root = std::env::temp_dir().join(format!(
-            "oriera-server-test-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("oriera-server-test-{}", std::process::id()));
         std::fs::create_dir_all(root.join("sub")).unwrap();
         std::fs::write(root.join("sub").join("index.html"), b"ok").unwrap();
 
         // 正常相对路径（含目录 index 展开）放行
         let ok = resolve_under_root(&root, "sub/index.html").expect("relative ok");
         assert!(ok.ends_with("index.html"));
-        assert!(resolve_under_root(&root, "sub").is_some(), "dir -> index.html");
+        assert!(
+            resolve_under_root(&root, "sub").is_some(),
+            "dir -> index.html"
+        );
 
         // Windows 盘符绝对路径整体替换 root —— v0.7.5 修复的核心探针
         assert!(resolve_under_root(&root, "C:/Windows/win.ini").is_none());
@@ -503,8 +526,14 @@ mod tests {
     #[test]
     fn cache_control_splits_immutable_assets() {
         use std::path::PathBuf as P;
-        assert_eq!(cache_control_of(&P::from("a/b.glb")), "public, max-age=3600");
-        assert_eq!(cache_control_of(&P::from("a/b.PNG")), "public, max-age=3600");
+        assert_eq!(
+            cache_control_of(&P::from("a/b.glb")),
+            "public, max-age=3600"
+        );
+        assert_eq!(
+            cache_control_of(&P::from("a/b.PNG")),
+            "public, max-age=3600"
+        );
         assert_eq!(cache_control_of(&P::from("index.html")), "no-store");
         assert_eq!(cache_control_of(&P::from("engine/kernel.js")), "no-store");
         assert_eq!(cache_control_of(&P::from("data.json")), "no-store");

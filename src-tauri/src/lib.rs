@@ -13,14 +13,15 @@ mod project;
 mod recommend;
 mod server;
 mod settings;
+mod sim;
 mod singlefile;
 mod sse;
 mod templates;
 
 use serde::Serialize;
+use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -294,7 +295,9 @@ async fn generate_story_stream(
     let task_id = id.clone();
     tauri::async_runtime::spawn(async move {
         let mut on_delta = |d: &str| {
-            let _ = ch.send(AiStreamEvent::Delta { text: d.to_string() });
+            let _ = ch.send(AiStreamEvent::Delta {
+                text: d.to_string(),
+            });
             true
         };
         let result = llm::generate_story_stream(
@@ -310,7 +313,9 @@ async fn generate_story_stream(
         )
         .await;
         if flag.load(Ordering::Relaxed) {
-            let _ = channel.send(AiStreamEvent::Error { message: "已取消".into() });
+            let _ = channel.send(AiStreamEvent::Error {
+                message: "已取消".into(),
+            });
         } else {
             match result {
                 Ok(story) => {
@@ -354,13 +359,17 @@ async fn copilot_chat_stream(
     let task_id = id.clone();
     tauri::async_runtime::spawn(async move {
         let mut on_delta = |d: &str| {
-            let _ = ch.send(AiStreamEvent::Delta { text: d.to_string() });
+            let _ = ch.send(AiStreamEvent::Delta {
+                text: d.to_string(),
+            });
             true
         };
-        let result = llm::copilot_chat_stream(&cfg, &system, &history, &user, &mut on_delta, &flag)
-            .await;
+        let result =
+            llm::copilot_chat_stream(&cfg, &system, &history, &user, &mut on_delta, &flag).await;
         if flag.load(Ordering::Relaxed) {
-            let _ = channel.send(AiStreamEvent::Error { message: "已取消".into() });
+            let _ = channel.send(AiStreamEvent::Error {
+                message: "已取消".into(),
+            });
         } else {
             match result {
                 Ok(text) => {
@@ -413,7 +422,7 @@ pub fn run() {
                 projects_dir.clone(),
                 app.handle().clone(),
             )
-                .unwrap_or_else(|e| panic!("static server: {e}"));
+            .unwrap_or_else(|e| panic!("static server: {e}"));
 
             let snapshot_version = snapshot_version(&snapshot_examples);
             app.manage(AppState {
@@ -444,8 +453,7 @@ pub fn run() {
                         return;
                     }
                     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-                    app2
-                        .dialog()
+                    app2.dialog()
                         .message(
                             "检测到火绒安全软件正在运行。
 
@@ -532,6 +540,8 @@ pub fn run() {
             feedback::has_feedback_pat,
             feedback::save_feedback_pat,
             feedback::clear_feedback_pat,
+            sim::sim_export_lerobot,
+            sim::sim_reveal_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running OriEra Studio");

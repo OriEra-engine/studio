@@ -28,6 +28,7 @@ const actions: Action[] = [
   { id: "nav-models", title: "前往 · 模型中心", hint: "云端 / Ollama 双轨配置", keywords: "models llm 模型 key api ollama", run: () => router.push("/models") },
   { id: "nav-projects", title: "前往 · 我的项目", hint: "运行 / 编辑 / 备份", keywords: "projects 项目 存档", run: () => router.push("/projects") },
   { id: "nav-demos", title: "前往 · Demo 演示厅", hint: "引擎 11 个示例", keywords: "demos 示例 demo 演示", run: () => router.push("/demos") },
+  { id: "nav-sim", title: "前往 · 具身仿真台", hint: "真实物理管线 · 抓放采集 · LeRobot 导出", keywords: "sim embodied 具身 仿真 机械臂 robot lerobot 训练", run: () => router.push("/sim") },
   { id: "nav-settings", title: "前往 · 设置", hint: "反馈直达引擎仓库", keywords: "settings 设置 feedback 反馈", run: () => router.push("/settings") },
   {
     id: "copilot-open",

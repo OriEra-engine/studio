@@ -153,7 +153,9 @@ mod tests {
                 panic!("内置包 {} 校验失败: {e}", p["id"].as_str().unwrap_or("?"))
             });
         }
-        let fw = v["story_frameworks"].as_array().expect("story_frameworks 数组");
+        let fw = v["story_frameworks"]
+            .as_array()
+            .expect("story_frameworks 数组");
         assert!(!fw.is_empty(), "story_frameworks 不得为空");
     }
 
@@ -190,16 +192,17 @@ mod tests {
     fn valid_settle_rule(rule: &Value) -> bool {
         match rule.as_str() {
             Some("*") => true,
-            Some(s) => s.trim().split("&&").all(|part| {
-                match part.trim().split_once(">=") {
+            Some(s) => s
+                .trim()
+                .split("&&")
+                .all(|part| match part.trim().split_once(">=") {
                     Some((var, num)) => {
                         !var.is_empty()
                             && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                             && num.trim().parse::<u64>().is_ok()
                     }
                     None => false,
-                }
-            }),
+                }),
             _ => false,
         }
     }
@@ -262,7 +265,10 @@ mod tests {
         // W1 影游体验批：第 0/2 拍补了带 video 的氛围拍——必须是相对路径形态
         //（runtime W4 白名单只放行相对路径与 /assets/、/projects/ 前缀），
         // 且与 runtime/assets/clips/ 下的内置占位片同名（create_project 随项目落盘）
-        for (i, want) in [(0usize, "clips/rain-intro.mp4"), (2usize, "clips/confrontation.mp4")] {
+        for (i, want) in [
+            (0usize, "clips/rain-intro.mp4"),
+            (2usize, "clips/confrontation.mp4"),
+        ] {
             assert_eq!(
                 beats[i]["video"].as_str(),
                 Some(want),
@@ -325,14 +331,25 @@ mod tests {
                     );
                 }
                 if !b["ending"].is_null() {
-                    assert!(b["ending"].is_boolean(), "包 {} 某拍 ending 必须是布尔", p["id"].as_str().unwrap_or("?"));
+                    assert!(
+                        b["ending"].is_boolean(),
+                        "包 {} 某拍 ending 必须是布尔",
+                        p["id"].as_str().unwrap_or("?")
+                    );
                 }
                 if !b["video"].is_null() {
-                    assert!(b["video"].is_string(), "包 {} 某拍 video 必须是字符串", p["id"].as_str().unwrap_or("?"));
+                    assert!(
+                        b["video"].is_string(),
+                        "包 {} 某拍 video 必须是字符串",
+                        p["id"].as_str().unwrap_or("?")
+                    );
                 }
                 if !b["settle"].is_null() {
                     assert!(
-                        b["settle"].as_object().map(|o| o.values().all(valid_settle_rule)).unwrap_or(false),
+                        b["settle"]
+                            .as_object()
+                            .map(|o| o.values().all(valid_settle_rule))
+                            .unwrap_or(false),
                         "包 {} 某拍 settle 形状非法",
                         p["id"].as_str().unwrap_or("?")
                     );
