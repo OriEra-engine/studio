@@ -51,9 +51,10 @@ function toggleRecord() {
   if (recording.value) note.value = "录制中：遥操作或跑策略，每 tick 一行 (state, action)";
 }
 
-const trainCmd = `python engine/scripts/jsonl_to_lerobot_v21.py <导出目录>
-lerobot-train --dataset.repo_id=<user>/<ds> --policy.type=act`;
 async function copyTrainCmd() {
+  const dir = report.value?.dir ?? "<导出目录>";
+  const trainCmd = `python engine/scripts/jsonl_to_lerobot_v21.py "${dir}"
+lerobot-train --dataset.repo_id=<user>/<ds> --policy.type=act`;
   try {
     await navigator.clipboard.writeText(trainCmd);
     note.value = "训练命令已复制到剪贴板";
