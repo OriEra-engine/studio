@@ -51,6 +51,17 @@ function toggleRecord() {
   if (recording.value) note.value = "录制中：遥操作或跑策略，每 tick 一行 (state, action)";
 }
 
+const trainCmd = `python engine/scripts/jsonl_to_lerobot_v21.py <导出目录>
+lerobot-train --dataset.repo_id=<user>/<ds> --policy.type=act`;
+async function copyTrainCmd() {
+  try {
+    await navigator.clipboard.writeText(trainCmd);
+    note.value = "训练命令已复制到剪贴板";
+  } catch {
+    errMsg.value = "剪贴板不可用，请手动复制：" + trainCmd;
+  }
+}
+
 async function doExport() {
   exporting.value = true;
   errMsg.value = "";
@@ -64,7 +75,14 @@ async function doExport() {
 async function onMessage(ev: MessageEvent) {
   const m = ev.data as Partial<SimEpisodesMsg> & { source?: string; type?: string; note?: string };
   if (!m || m.source !== "oriera-sim") return;
-  if (m.type === "episodes") {
+  if (m.type === "progress") {
+    // 所见即所录：录制行数/集数实时跳动（内核每 30 行回报一次）
+    frameCount.value = Number((m as { rows?: number }).rows ?? 0);
+    episodeCount.value = Number((m as { episodes?: number }).episodes ?? 0);
+    if (frameCount.value > 0) {
+      note.value = `录制中：第 ${episodeCount.value} 集，已 ${frameCount.value} 行`;
+    }
+  } else if (m.type === "episodes") {
     const msg = m as unknown as SimEpisodesMsg;
     try {
       report.value = await api.simExportLerobot(JSON.stringify(msg));
@@ -94,7 +112,7 @@ function onFrameLoad() {
   <div class="sim-root">
     <header class="sim-toolbar">
       <div class="sim-title">
-        具身仿真台 <NTag size="small" type="info" :bordered="false">L6 rigid3d × LeRobot v2.1</NTag>
+        具身仿真台 <NTag size="small" type="info" :bordered="false">真实物理 · 一键导出可训练数据</NTag>
       </div>
       <div class="sim-actions">
         <NButton size="small" @click="doReset">↺ 重置</NButton>
@@ -102,10 +120,11 @@ function onFrameLoad() {
         <NButton size="small" :type="recording ? 'error' : 'default'" @click="toggleRecord">
           {{ recording ? "■ 停止录制" : "● 开始录制" }}
         </NButton>
-        <NButton size="small" :loading="exporting" @click="doExport">
-          ⤓ 导出数据集
+        <NButton size="small" :loading="exporting" :disabled="frameCount === 0 && episodeCount === 0" @click="doExport">
+          ⤓ 导出数据集{{ frameCount > 0 ? `（${frameCount} 行）` : "" }}
         </NButton>
         <NButton v-if="report" size="small" quaternary @click="api.simRevealExport()">打开导出目录</NButton>
+        <NButton v-if="report" size="small" quaternary @click="copyTrainCmd">复制训练命令</NButton>
       </div>
     </header>
 

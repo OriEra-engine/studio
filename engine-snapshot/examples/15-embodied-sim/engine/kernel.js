@@ -421,6 +421,7 @@ export async function boot(viewport) {
     } else if (K.episode) {
       if (K.episode.rows.length) K.episodes.push(K.episode);
       K.episode = null;
+      post({ type: "progress", rows: 0, episodes: K.episodes.length });
       log.textContent = `已停。共 ${K.episodes.length} 集 · ${K.episodes.reduce((a, x) => a + x.rows.length, 0)} 行`;
     }
   });
@@ -480,6 +481,9 @@ export async function boot(viewport) {
     rewardAvg = rewardAvg * 0.98 + out.reward * 0.02;
     if (K.recording && K.episode) {
       K.episode.rows.push({ state: out.obs, action });
+      if (K.episode.rows.length % 30 === 0) {
+        post({ type: "progress", rows: K.episode.rows.length, episodes: K.episodes.length + 1 });
+      }
       sliders.forEach((s, i) => (s.val.textContent = K.prevAngles[i].toFixed(2)));
       K.logCb?.(`录制中：${K.episode.rows.length} 行 · r̄=${rewardAvg.toFixed(3)}${K.holding ? " · 🤏已抓住" : ""}`);
     }
