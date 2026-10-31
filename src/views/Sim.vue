@@ -74,6 +74,15 @@ async function doExport() {
 }
 
 async function onMessage(ev: MessageEvent) {
+  // 信任边界：仅接受本 iframe 的消息（source + origin 双校验——
+  // 安全深检：应用内任意 iframe 可伪造 source 驱动落盘）。
+  if (
+    !frame.value ||
+    ev.source !== frame.value.contentWindow ||
+    ev.origin !== `http://127.0.0.1:${store.status?.server?.port}`
+  ) {
+    return;
+  }
   const m = ev.data as Partial<SimEpisodesMsg> & { source?: string; type?: string; note?: string };
   if (!m || m.source !== "oriera-sim") return;
   if (m.type === "progress") {
