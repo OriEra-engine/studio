@@ -1,12 +1,11 @@
 //! 具身仿真台（/sim 工作台）的落盘命令：把 iframe 镜像内核采集的
-//! episode 组装成 **LeRobotDataset v2.1** 目录树（meta 全套 + JSONL 行）
-//! 写到 `%APPDATA%/cn.oriera.studio/sim-lab/exports/<时间戳>/`。
+//! episode 组装成 **LeRobotDataset v2.1** 目录树，写到
+//! `%APPDATA%/cn.oriera.studio/sim-lab/exports/<时间戳>/`。
 //!
-//! 行格式与引擎 Rust 导出器（engine crates/oriera-agent/src/lerobot.rs）
-//! 同契约：data 层 JSONL 列名即 v2.1 parquet 列名，官方转换脚本
-//! `scripts/jsonl_to_lerobot_v21.py`（engine 仓）1:1 转 parquet 后
-//! lerobot-train 直读。serde_json::Value 透明存取，schema 前端持有
-//! （Studio 命令层惯例）。
+//! v2.1 写入走**单源** `crate::lerobot`（engine
+//! crates/oriera-agent/src/lerobot.rs 的 vendored 副本，
+//! sync-engine-snapshot.mjs 防漂移）——本模块只做 payload 解析、
+//! 目录命名与落盘报告，schema 零本地实现（#6 双实现已清除）。
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -27,54 +26,6 @@ fn exports_root() -> Result<std::path::PathBuf, String> {
         .join("exports"))
 }
 
-fn jarr(v: &[f64]) -> String {
-    let parts: Vec<String> = v.iter().map(|x| format!("{x:.6}")).collect();
-    format!("[{}]", parts.join(","))
-}
-
-fn stats_block(rows: &[Vec<Vec<f64>>], dim: usize) -> String {
-    // 逐维 min/max/mean/std（与引擎 lerobot.rs 的 stats.json 同形状）
-    if rows.is_empty() || dim == 0 {
-        return "{\"min\":[],\"max\":[],\"mean\":[],\"std\":[],\"count\":0}".into();
-    }
-    let mut min = vec![f64::INFINITY; dim];
-    let mut max = vec![f64::NEG_INFINITY; dim];
-    let mut sum = vec![0.0f64; dim];
-    let mut sq = vec![0.0f64; dim];
-    let mut count = 0usize;
-    for row in rows {
-        for r in row {
-            count += 1;
-            for (i, x) in r.iter().take(dim).enumerate() {
-                min[i] = min[i].min(*x);
-                max[i] = max[i].max(*x);
-                sum[i] += x;
-                sq[i] += x * x;
-            }
-        }
-    }
-    let mean: Vec<String> = sum
-        .iter()
-        .map(|s| format!("{:.7}", s / count as f64))
-        .collect();
-    let std: Vec<String> = sq
-        .iter()
-        .zip(sum.iter())
-        .map(|(s2, s)| {
-            let var = (s2 / count as f64) - (s / count as f64) * (s / count as f64);
-            format!("{:.7}", var.max(0.0).sqrt())
-        })
-        .collect();
-    format!(
-        "{{\"min\":{},\"max\":{},\"mean\":[{}],\"std\":[{}],\"count\":{}}}",
-        jarr(&min),
-        jarr(&max),
-        mean.join(","),
-        std.join(","),
-        count
-    )
-}
-
 fn write(rel: &std::path::Path, content: &str) -> Result<(), String> {
     if let Some(dir) = rel.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("建目录失败：{e}"))?;
@@ -82,15 +33,15 @@ fn write(rel: &std::path::Path, content: &str) -> Result<(), String> {
     std::fs::write(rel, content).map_err(|e| format!("写文件失败：{e}"))
 }
 
-/// 把 Sim 工作台采集的 episodes 组装成 LeRobot v2.1 目录树。
-/// payload 形如 {task, fps, obsNames, actionNames,
-/// episodes:[{task, rows:[{state:[f32], action:[f32]}]}]}
+/// 把 Sim 工作台采集的 episodes 组装成 LeRobot v2.1 目录树（单源
+/// `crate::lerobot` 写入；payload 形如 {task, fps, obsNames, actionNames,
+/// episodes:[{task, rows:[{state:[f32], action:[f32]}]}]}）。
 #[tauri::command]
 pub fn sim_export_lerobot(
     state: State<'_, crate::AppState>,
     payload: String,
 ) -> Result<SimExportReport, String> {
-    let _ = state.snapshot_version; // 目录名时间戳已含版本语境；占位取用防误删
+    let _ = state.snapshot_version;
     let v: serde_json::Value =
         serde_json::from_str(&payload).map_err(|e| format!("payload 非法：{e}"))?;
     let eps = v
@@ -100,191 +51,99 @@ pub fn sim_export_lerobot(
     if eps.is_empty() {
         return Err("没有可导出的 episode".into());
     }
-    let fps = v.get("fps").and_then(|x| x.as_f64()).unwrap_or(60.0);
+    let fps = v.get("fps").and_then(|x| x.as_f64()).unwrap_or(60.0) as f32;
     let default_task = v
         .get("task")
         .and_then(|x| x.as_str())
         .unwrap_or("pick up the cube")
         .to_string();
-    let obs_names = v
+    let obs_names: Vec<String> = v
         .get("obsNames")
         .and_then(|x| x.as_array())
         .map(|a| {
             a.iter()
-                .filter_map(|s| s.as_str().map(|x| x.to_string()))
-                .collect::<Vec<_>>()
+                .filter_map(|s| s.as_str().map(String::from))
+                .collect()
         })
-        .unwrap_or_default();
-    let act_names = v
+        .ok_or("payload 缺 obsNames")?;
+    let act_names: Vec<String> = v
         .get("actionNames")
         .and_then(|x| x.as_array())
         .map(|a| {
             a.iter()
-                .filter_map(|s| s.as_str().map(|x| x.to_string()))
-                .collect::<Vec<_>>()
+                .filter_map(|s| s.as_str().map(String::from))
+                .collect()
         })
-        .unwrap_or_default();
-    if obs_names.is_empty() || act_names.is_empty() {
-        return Err("payload 缺 obsNames/actionNames".into());
-    }
+        .ok_or("payload 缺 actionNames")?;
 
     let stamp = chrono_like_stamp();
     let root = exports_root()?.join(format!("{stamp}-lerobot-v21"));
 
-    // 逐集落 JSONL 行 + 收集统计
-    let mut tasks: Vec<String> = Vec::new();
-    let mut ep_meta = String::new();
-    let mut all_states: Vec<Vec<Vec<f64>>> = Vec::new();
-    let mut all_actions: Vec<Vec<Vec<f64>>> = Vec::new();
-    let mut all_ts: Vec<Vec<f64>> = Vec::new();
-    let mut total_frames = 0usize;
-    let mut global_index = 0usize;
+    // 单源写入：engine 的 LeRobotV21 承担全部 v2.1 schema。
+    let mut ds = crate::lerobot::LeRobotV21::new(
+        fps,
+        "oriera-arm-6-js",
+        obs_names.clone(),
+        act_names.clone(),
+    );
     for (i, ep) in eps.iter().enumerate() {
-        let rows = ep
-            .get("rows")
-            .and_then(|x| x.as_array())
-            .ok_or(format!("episode {i} 缺 rows"))?;
         let task = ep
             .get("task")
             .and_then(|x| x.as_str())
             .unwrap_or(&default_task)
             .to_string();
-        let task_index = match tasks.iter().position(|t| *t == task) {
-            Some(k) => k,
-            None => {
-                tasks.push(task.clone());
-                tasks.len() - 1
-            }
-        };
-        let mut lines = String::new();
-        let mut ep_states: Vec<Vec<f64>> = Vec::new();
-        let mut ep_actions: Vec<Vec<f64>> = Vec::new();
+        let rows = ep
+            .get("rows")
+            .and_then(|x| x.as_array())
+            .ok_or(format!("episode {i} 缺 rows"))?;
+        ds.start_episode(&task);
         for (ri, row) in rows.iter().enumerate() {
-            let st: Vec<f64> = row
+            let st: Vec<f32> = row
                 .get("state")
                 .and_then(|x| x.as_array())
-                .map(|a| a.iter().filter_map(|f| f.as_f64()).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|f| f.as_f64())
+                        .map(|f| f as f32)
+                        .collect()
+                })
                 .ok_or(format!("episode {i} row {ri} 缺 state"))?;
-            let ac: Vec<f64> = row
+            let ac: Vec<f32> = row
                 .get("action")
                 .and_then(|x| x.as_array())
-                .map(|a| a.iter().filter_map(|f| f.as_f64()).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|f| f.as_f64())
+                        .map(|f| f as f32)
+                        .collect()
+                })
                 .ok_or(format!("episode {i} row {ri} 缺 action"))?;
-            if st.len() != obs_names.len() || ac.len() != act_names.len() {
-                return Err(format!(
-                    "episode {i} row {ri} 维度不符：state {}/{} action {}/{}",
-                    st.len(),
-                    obs_names.len(),
-                    ac.len(),
-                    act_names.len()
-                ));
-            }
-            let ts = ri as f64 / fps;
-            lines.push_str(&format!(
-                "{{\"observation.state\":{},\"action\":{},\"timestamp\":{ts:.6},\"frame_index\":{ri},\"episode_index\":{i},\"index\":{},\"task_index\":{task_index}}}\n",
-                jarr(&st),
-                jarr(&ac),
-                global_index
-            ));
-            global_index += 1;
-            ep_states.push(st);
-            ep_actions.push(ac);
-            all_ts.push(vec![ts]);
+            ds.push_step(&st, &ac)?;
         }
-        total_frames += rows.len();
-        ep_meta.push_str(&format!(
-            "{{\"episode_index\":{i},\"tasks\":[{}],\"length\":{}}}\n",
-            serde_json::to_string(&task).unwrap_or_else(|_| "\"task\"".into()),
-            rows.len()
-        ));
-        all_states.push(ep_states);
-        all_actions.push(ep_actions);
-        let path = root.join(format!("data/chunk-000/episode_{i:06}.jsonl"));
-        write(&path, &lines)?;
+        ds.finish_episode();
     }
+    let frames = ds.total_frames();
+    ds.write_dir(&root)
+        .map_err(|e| format!("写数据集失败：{e}"))?;
+    crate::lerobot::LeRobotV21::write_receipt(
+        &root,
+        concat!("oriera-studio/", env!("CARGO_PKG_VERSION")),
+        "rigid3d-js-mirror",
+        1.0 / fps,
+        &[],
+        0,
+    )
+    .map_err(|e| format!("写回执失败：{e}"))?;
+    crate::lerobot::LeRobotV21::write_card(&root, &default_task)
+        .map_err(|e| format!("写卡片失败：{e}"))?;
 
-    // meta 全套
-    let names_json = |items: &[String]| {
-        let parts: Vec<String> = items.iter().map(|s| format!("\"{s}\"")).collect();
-        format!("[{}]", parts.join(","))
-    };
-    let info = format!(
-        concat!(
-            "{{\"codebase_version\":\"v2.1\",\"robot_type\":\"oriera-arm-6-js\",",
-            "\"total_episodes\":{eps},\"total_frames\":{frames},",
-            "\"total_tasks\":{tasks_n},\"total_videos\":0,\"total_chunks\":1,",
-            "\"chunks_size\":1000,\"fps\":{fps},\"splits\":{{\"train\":\"0:{eps}\"}},",
-            "\"data_path\":\"data/chunk-{{episode_chunk:03d}}/episode_{{episode_index:06d}}.parquet\",",
-            "\"video_path\":\"videos/chunk-{{episode_chunk:03d}}/{{video_key}}/episode_{{episode_index:06d}}.mp4\",",
-            "\"features\":{{",
-            "\"observation.state\":{{\"dtype\":\"float32\",\"shape\":[{sd}],\"names\":{{\"joints\":{on}}}}},",
-            "\"action\":{{\"dtype\":\"float32\",\"shape\":[{ad}],\"names\":{{\"joints\":{an}}}}},",
-            "\"timestamp\":{{\"dtype\":\"float32\",\"shape\":[1],\"names\":null}},",
-            "\"frame_index\":{{\"dtype\":\"int64\",\"shape\":[1],\"names\":null}},",
-            "\"episode_index\":{{\"dtype\":\"int64\",\"shape\":[1],\"names\":null}},",
-            "\"index\":{{\"dtype\":\"int64\",\"shape\":[1],\"names\":null}},",
-            "\"task_index\":{{\"dtype\":\"int64\",\"shape\":[1],\"names\":null}}",
-            "}}}}\n"
-        ),
-        eps = eps.len(),
-        frames = total_frames,
-        tasks_n = tasks.len(),
-        fps = fps,
-        sd = obs_names.len(),
-        ad = act_names.len(),
-        on = names_json(&obs_names),
-        an = names_json(&act_names),
-    );
-    write(&root.join("meta/info.json"), &info)?;
-    write(&root.join("meta/episodes.jsonl"), &ep_meta)?;
-    let tasks_lines: String = tasks
-        .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            format!(
-                "{{\"task_index\":{i},\"task\":{}}}\n",
-                serde_json::to_string(t).unwrap_or_default()
-            )
-        })
-        .collect();
-    write(&root.join("meta/tasks.jsonl"), &tasks_lines)?;
-    let ts_rows: Vec<Vec<Vec<f64>>> = vec![all_ts];
-    let stats = format!(
-        "{{\"observation.state\":{},\"action\":{},\"timestamp\":{}}}\n",
-        stats_block(&all_states, obs_names.len()),
-        stats_block(&all_actions, act_names.len()),
-        stats_block(&ts_rows, 1),
-    );
-    write(&root.join("meta/stats.json"), &stats)?;
-    write(
-        &root.join("meta/oriera_receipt.json"),
-        &format!(
-            concat!(
-                "{{\"codebase_version\":\"oriera-embodied-v2-js\",",
-                "\"engine\":\"oriera-studio/{ver}/{snap}\",",
-                "\"backend\":\"rigid3d-js-mirror\",",
-                "\"note\":\"交互镜像采集；确定性逐集指纹回执请用引擎 embodied_sim_collect\"}}\n"
-            ),
-            ver = env!("CARGO_PKG_VERSION"),
-            snap = state.snapshot_version
-        ),
-    )?;
-    write(
-        &root.join("README.md"),
-        &format!(
-            "# OriEra 具身仿真台采集数据集（LeRobotDataset v2.1）\n\n任务：{task}\n\n转换：python engine/scripts/jsonl_to_lerobot_v21.py <本目录>\n训练：lerobot-train --dataset.repo_id=<user>/<ds> --policy.type=act\n",
-            task = default_task
-        ),
-    )?;
-
-    // 记录最近一次导出路径（reveal 用）
     let latest = exports_root()?.join("LATEST");
     write(&latest, &root.to_string_lossy())?;
 
     Ok(SimExportReport {
         dir: root.to_string_lossy().to_string(),
         episodes: eps.len(),
-        frames: total_frames,
+        frames,
     })
 }
 

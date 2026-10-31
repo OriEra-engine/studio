@@ -6,6 +6,7 @@ mod demos;
 mod feedback;
 mod film_flow;
 mod hardware;
+mod lerobot;
 mod llm;
 mod ollama;
 mod pet;
