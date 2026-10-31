@@ -308,8 +308,14 @@ pub async fn generate_story(
     framework_rhythm: Option<&str>,
     economy_names: &[String],
 ) -> Result<GeneratedStory, String> {
-    let (system, user) =
-        story_prompt(gameplay_name, tagline, user_idea, beat_count, framework_rhythm, economy_names);
+    let (system, user) = story_prompt(
+        gameplay_name,
+        tagline,
+        user_idea,
+        beat_count,
+        framework_rhythm,
+        economy_names,
+    );
 
     let mut last_err = String::from("未知解析错误");
     for attempt in 0..2 {
@@ -510,8 +516,14 @@ pub async fn generate_story_stream(
     on_delta: &mut (dyn FnMut(&str) -> bool + Send),
     cancelled: &AtomicBool,
 ) -> Result<GeneratedStory, String> {
-    let (system, user) =
-        story_prompt(gameplay_name, tagline, user_idea, beat_count, framework_rhythm, economy_names);
+    let (system, user) = story_prompt(
+        gameplay_name,
+        tagline,
+        user_idea,
+        beat_count,
+        framework_rhythm,
+        economy_names,
+    );
     let raw = chat_stream(
         cfg,
         vec![
@@ -540,7 +552,11 @@ pub async fn copilot_chat_stream(
 ) -> Result<String, String> {
     let mut messages = vec![json!({"role": "system", "content": system})];
     for t in history {
-        let role = if t.role == "assistant" { "assistant" } else { "user" };
+        let role = if t.role == "assistant" {
+            "assistant"
+        } else {
+            "user"
+        };
         messages.push(json!({"role": role, "content": t.content}));
     }
     messages.push(json!({"role": "user", "content": user}));
@@ -564,7 +580,9 @@ pub fn init_ledger(path: PathBuf) {
 
 /// 记一次成功调用（fail-open：账本任何故障都不影响主流程）。
 pub fn record_call(kind: &str) {
-    let Ok(guard) = LEDGER_PATH.lock() else { return };
+    let Ok(guard) = LEDGER_PATH.lock() else {
+        return;
+    };
     let Some(path) = guard.as_ref() else { return };
     let month = current_month();
     let mut root: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(path)
@@ -606,8 +624,12 @@ fn current_month() -> String {
 
 /// 当月各 kind 的调用次数（前端月度展示用）。
 pub fn month_calls() -> serde_json::Map<String, serde_json::Value> {
-    let Ok(guard) = LEDGER_PATH.lock() else { return Default::default() };
-    let Some(path) = guard.as_ref() else { return Default::default() };
+    let Ok(guard) = LEDGER_PATH.lock() else {
+        return Default::default();
+    };
+    let Some(path) = guard.as_ref() else {
+        return Default::default();
+    };
     let root: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())

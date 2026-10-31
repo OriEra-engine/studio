@@ -16,6 +16,12 @@ export interface ProviderCfg {
   base: string;
 }
 
+export interface SimExportReport {
+  dir: string;
+  episodes: number;
+  frames: number;
+}
+
 export interface DemoInfo {
   id: string;
   title: string;
@@ -296,6 +302,8 @@ export const api = {
   hasFeedbackPat: () => invoke<boolean>("has_feedback_pat"),
   saveFeedbackPat: (pat: string) => invoke<void>("save_feedback_pat", { pat }),
   clearFeedbackPat: () => invoke<void>("clear_feedback_pat"),
+  simExportLerobot: (payload: string) => invoke<SimExportReport>("sim_export_lerobot", { payload }),
+  simRevealExport: () => invoke<void>("sim_reveal_export"),
 };
 
 /** 云端 provider 预设 —— 与引擎 PROVIDER_PRESETS 对齐(国内可直连的排前面,免费档优先) */

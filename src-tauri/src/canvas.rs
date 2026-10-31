@@ -49,8 +49,7 @@ pub fn canvas_save(
     let json = serde_json::to_string_pretty(&board).map_err(|e| e.to_string())?;
     let tmp = board_path(&state, &project).with_extension("json.tmp");
     std::fs::write(&tmp, json).map_err(|e| format!("写入失败：{e}"))?;
-    std::fs::rename(&tmp, board_path(&state, &project))
-        .map_err(|e| format!("提交失败：{e}"))
+    std::fs::rename(&tmp, board_path(&state, &project)).map_err(|e| format!("提交失败：{e}"))
 }
 
 /// 渲染「完整试玩」预览 HTML：与导出 zip 的 index.html 是同一份模板
@@ -65,8 +64,7 @@ pub fn canvas_preview_html(
     if !crate::project::valid_project_id(&project) {
         return Err(format!("非法项目 id：{project}"));
     }
-    let story: Value =
-        serde_json::from_str(&story).map_err(|e| format!("story.json 无效：{e}"))?;
+    let story: Value = serde_json::from_str(&story).map_err(|e| format!("story.json 无效：{e}"))?;
     let (clips, vo): (BTreeMap<String, String>, BTreeMap<String, String>) =
         match std::fs::read_to_string(crate::film_flow::flow_path(&state, &project)) {
             Ok(text) => serde_json::from_str::<Value>(&text)
@@ -108,12 +106,7 @@ pub fn canvas_preview_html(
         .collect();
     let vo_urls: BTreeMap<String, String> = vo
         .iter()
-        .map(|(k, v)| {
-            (
-                k.clone(),
-                format!("{base}/projects/{project}/film/vo/{v}"),
-            )
-        })
+        .map(|(k, v)| (k.clone(), format!("{base}/projects/{project}/film/vo/{v}")))
         .collect();
     crate::film_flow::render_player_with_urls(&story, &clip_urls, &vo_urls)
 }

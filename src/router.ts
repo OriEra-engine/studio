@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: "/assets", name: "assets", component: () => import("./views/Assets.vue"), meta: { title: "AI 素材中心" } },
     { path: "/film", name: "film", component: () => import("./views/Film.vue"), meta: { title: "影游工坊" } },
     { path: "/canvas/:id?", name: "canvas", component: () => import("./views/Canvas.vue"), meta: { title: "世界画布" } },
+    { path: "/sim", name: "sim", component: () => import("./views/Sim.vue"), meta: { title: "具身仿真台" } },
     { path: "/editor/:id", name: "editor", component: () => import("./views/Editor.vue"), meta: { title: "剧情编辑器" } },
     { path: "/settings", name: "settings", component: () => import("./views/Settings.vue"), meta: { title: "设置" } },
     { path: "/play/:id", name: "play", component: () => import("./views/Play.vue"), meta: { title: "游玩", chrome: false } },

@@ -198,7 +198,10 @@ pub async fn tts_doubao(
         return Err("音频流为空（检查 Key 是否已开通「豆包语音合成2.0」资源）".into());
     }
     if audio.len() < 512 {
-        return Err(format!("音频过短（{} 字节），疑似鉴权或参数问题", audio.len()));
+        return Err(format!(
+            "音频过短（{} 字节），疑似鉴权或参数问题",
+            audio.len()
+        ));
     }
 
     let dir = film_dir(&state, &project).join("vo");
@@ -230,9 +233,7 @@ pub async fn tts_local(
     let base = crate::settings::load(&app)
         .local_voice_base
         .filter(|b| !b.trim().is_empty())
-        .ok_or_else(|| {
-            "本地语音未启用——先到「模型中心 → 本地语音」填入 server 地址".to_string()
-        })?;
+        .ok_or_else(|| "本地语音未启用——先到「模型中心 → 本地语音」填入 server 地址".to_string())?;
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("台词为空".into());
@@ -269,7 +270,10 @@ pub async fn tts_local(
         return Err(format!(
             "本地语音 HTTP {}：{}",
             status,
-            String::from_utf8_lossy(&bytes).chars().take(120).collect::<String>()
+            String::from_utf8_lossy(&bytes)
+                .chars()
+                .take(120)
+                .collect::<String>()
         ));
     }
     if bytes.is_empty() {
@@ -297,7 +301,11 @@ fn uuid_v4() -> String {
 
 /// 渲染播放器：占位符两侧带引号，注入 JSON 字符串字面量。
 /// vo 文件名在此归位为相对路径 `vo/{file}`。
-fn render_player(story: &serde_json::Value, clips: &BTreeMap<String, String>, vo: &BTreeMap<String, String>) -> Result<String, String> {
+fn render_player(
+    story: &serde_json::Value,
+    clips: &BTreeMap<String, String>,
+    vo: &BTreeMap<String, String>,
+) -> Result<String, String> {
     let vo_map: BTreeMap<String, String> = vo
         .iter()
         .map(|(k, v)| (k.clone(), format!("vo/{v}")))
@@ -351,7 +359,12 @@ pub fn export_film(
     let clips_src: BTreeMap<String, PathBuf> = flow
         .clips
         .iter()
-        .map(|(shot, rel)| (shot.clone(), assets_root.join(rel.trim_start_matches("assets/"))))
+        .map(|(shot, rel)| {
+            (
+                shot.clone(),
+                assets_root.join(rel.trim_start_matches("assets/")),
+            )
+        })
         .collect();
 
     // 渲染播放器并写入 zip
@@ -376,14 +389,16 @@ pub fn export_film(
     let plain = zip::write::SimpleFileOptions::default();
     let media = zip::write::SimpleFileOptions::default().large_file(true);
 
-    zw.start_file("index.html", plain).map_err(|e| e.to_string())?;
+    zw.start_file("index.html", plain)
+        .map_err(|e| e.to_string())?;
     zw.write_all(html.as_bytes())
         .map_err(|e| format!("写入 index.html 失败：{e}"))?;
 
-    zw.start_file("story.json", plain).map_err(|e| e.to_string())?;
-    let story_pretty =
-        serde_json::to_string_pretty(&story).map_err(|e| e.to_string())?;
-    zw.write_all(story_pretty.as_bytes()).map_err(|e| e.to_string())?;
+    zw.start_file("story.json", plain)
+        .map_err(|e| e.to_string())?;
+    let story_pretty = serde_json::to_string_pretty(&story).map_err(|e| e.to_string())?;
+    zw.write_all(story_pretty.as_bytes())
+        .map_err(|e| e.to_string())?;
 
     for (shot, src) in &clips_src {
         if let Ok(bytes) = std::fs::read(src) {
@@ -400,7 +415,8 @@ pub fn export_film(
             zw.write_all(&bytes).map_err(|e| e.to_string())?;
         }
     }
-    zw.start_file("玩法说明.txt", plain).map_err(|e| e.to_string())?;
+    zw.start_file("玩法说明.txt", plain)
+        .map_err(|e| e.to_string())?;
     let readme = format!(
         "{}\n\n解压后双击 index.html 即玩（视频/配音缺失的镜头自动氛围兜底）。\n镜头 {} 条 · 配音 {} 条\n由 OriEra Studio 影游工作流导出。",
         title,
@@ -413,7 +429,11 @@ pub fn export_film(
     // 每条镜头/配音的来源素材 + 画布生成任务档案（prompt/模型/时间/Token），
     // 这是"AI 原生可审计"的实物。board.json 读不到就只出素材表，导出不因此失败。
     let board: Option<serde_json::Value> = std::fs::read_to_string(
-        state.projects_dir.join(&project).join("canvas").join("board.json"),
+        state
+            .projects_dir
+            .join(&project)
+            .join("canvas")
+            .join("board.json"),
     )
     .ok()
     .and_then(|t| serde_json::from_str(&t).ok());
@@ -431,7 +451,8 @@ pub fn export_film(
         })).collect::<Vec<_>>(),
         "generation_tasks": board.as_ref().and_then(|b| b.get("tasks")).cloned().unwrap_or_else(|| serde_json::json!({})),
     });
-    zw.start_file("MANIFEST.json", plain).map_err(|e| e.to_string())?;
+    zw.start_file("MANIFEST.json", plain)
+        .map_err(|e| e.to_string())?;
     zw.write_all(
         serde_json::to_string_pretty(&manifest)
             .map_err(|e| e.to_string())?
@@ -465,8 +486,10 @@ mod tests {
     fn b64_decode_golden() {
         assert_eq!(b64_decode("QUJDREVGRw==").unwrap(), b"ABCDEFG");
         assert_eq!(b64_decode("YWJj").unwrap(), b"abc");
-        assert_eq!(b64_decode("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=").unwrap(),
-            b"abcdefghijklmnopqrstuvwxyz");
+        assert_eq!(
+            b64_decode("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=").unwrap(),
+            b"abcdefghijklmnopqrstuvwxyz"
+        );
         // 二进制边界：2 字节 → 3 字符，1 字节 → 2 字符
         assert_eq!(b64_decode("AAEC").unwrap(), vec![0x00, 0x01, 0x02]);
         assert_eq!(b64_decode("AAE=").unwrap(), vec![0x00, 0x01]);

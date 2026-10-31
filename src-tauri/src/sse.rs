@@ -11,7 +11,9 @@ pub struct SseParser {
 
 impl SseParser {
     pub fn new() -> Self {
-        Self { linebuf: Vec::new() }
+        Self {
+            linebuf: Vec::new(),
+        }
     }
 
     /// 喂一段原始字节；返回其中完成的 data 载荷（可能 0~N 个）。
@@ -105,10 +107,9 @@ pub fn classify_error(status: Option<u16>, raw: &str) -> (String, String) {
             "触发限流或额度不足".into(),
             "稍等半分钟再试，或换一个免费档模型".into(),
         ),
-        Some(s) if (500..=599).contains(&s) => (
-            format!("模型服务端暂时故障（{s}）"),
-            "稍后再试一次".into(),
-        ),
+        Some(s) if (500..=599).contains(&s) => {
+            (format!("模型服务端暂时故障（{s}）"), "稍后再试一次".into())
+        }
         _ => {
             let lowered = raw.to_lowercase();
             if lowered.contains("timed out") || lowered.contains("timeout") {
@@ -118,7 +119,10 @@ pub fn classify_error(status: Option<u16>, raw: &str) -> (String, String) {
                 || lowered.contains("network")
                 || lowered.contains("代理")
             {
-                ("网络连接失败".into(), "检查网络/代理后重试；本地模型请确认 Ollama 已启动".into())
+                (
+                    "网络连接失败".into(),
+                    "检查网络/代理后重试；本地模型请确认 Ollama 已启动".into(),
+                )
             } else if lowered.contains("eof") || lowered.contains("reset") {
                 ("连接被中断".into(), "服务端提前断开，请重试一次".into())
             } else {
@@ -163,7 +167,9 @@ mod tests {
     #[test]
     fn anthropic_delta_shape() {
         assert_eq!(
-            anthropic_delta(r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}"#),
+            anthropic_delta(
+                r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}"#
+            ),
             Some("Hi".into())
         );
         assert_eq!(

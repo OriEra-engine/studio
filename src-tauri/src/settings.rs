@@ -173,9 +173,9 @@ pub fn secret_load(name: &str) -> Result<String, String> {
     let entry = secret_entry(name)?;
     match entry.get_password() {
         Ok(v) => Ok(v),
-        Err(keyring::Error::NoEntry) => Err(format!(
-            "尚未保存 {name} 密钥——请先在素材中心粘贴并保存"
-        )),
+        Err(keyring::Error::NoEntry) => {
+            Err(format!("尚未保存 {name} 密钥——请先在素材中心粘贴并保存"))
+        }
         Err(e) => Err(format!("读取凭据失败：{e}")),
     }
 }
@@ -225,7 +225,5 @@ pub fn set_local_voice(app: tauri::AppHandle, base: String) -> Result<(), String
 
 #[tauri::command]
 pub fn get_local_voice(app: tauri::AppHandle) -> String {
-    load(&app)
-        .local_voice_base
-        .unwrap_or_default()
+    load(&app).local_voice_base.unwrap_or_default()
 }

@@ -95,17 +95,21 @@ for (const d of srcDirs.filter((x) => x !== "_template"))
   if (!demosRs.includes(`"${d}"`)) warnings.push(`- demos.rs 缺元数据条目：${d}（Studio 演示厅不显示，需手工补中文简介）`);
 
 // ---------- 输出与落盘 ----------
+let earlyClean = false;
 if (drift.length === 0 && warnings.length === 0) {
   console.log(`快照与引擎 ${engineHead} 一致：${srcDirs.length} 个演示目录，零漂移。`);
-  process.exit(0);
+  earlyClean = true; // 文末还有 lerobot 单源检查，不在中途退出
 }
 if (warnings.length) console.log("WARN（元数据，需人工补）：\n" + warnings.join("\n"));
 if (drift.length) console.log(`漂移 ${drift.length} 项（相对引擎 ${engineHead}）：\n` + drift.join("\n"));
 if (check) {
-  console.log(`\n--check：发现 ${drift.length} 项漂移${warnings.length ? ` + ${warnings.length} 条元数据提醒` : ""}。`);
-  process.exit(drift.length ? 1 : 0);
+  if (!earlyClean) {
+    console.log(`\n--check：发现 ${drift.length} 项漂移${warnings.length ? ` + ${warnings.length} 条元数据提醒` : ""}。`);
+    process.exitCode = drift.length ? 1 : 0;
+  }
 }
 
+if (!check) {
 // 实同步：先删源已无的目录，再整目录覆盖写入（文本 LF 归一）
 for (const d of dstDirs) if (!srcDirs.includes(d)) fs.rmSync(path.join(dstRoot, d), { recursive: true });
 let files = 0;
@@ -131,3 +135,35 @@ fs.writeFileSync(
   JSON.stringify({ engine: engineHead, syncedAt: new Date().toISOString(), demos: srcDirs.length, files }, null, 2) + "\n",
 );
 console.log(`已同步：${srcDirs.length} 个目录 / ${files} 个文件 ← 引擎 ${engineHead}${warnings.length ? `（另有 ${warnings.length} 条元数据 WARN 待人工处理）` : ""}`);
+} // if (!check) — 实同步段结束
+
+// ── 单源漂移检查（PLAN-embodied-sim #6）────────────────────────────
+// src-tauri/src/lerobot.rs 是 engine lerobot.rs 的 vendored 副本；
+// sha256 漂移 = 双实现回潮，同步失败。
+{
+  const { createHash } = await import("node:crypto");
+  const src = path.join(engineRoot, "crates", "oriera-agent", "src", "lerobot.rs");
+  const dst = path.join(repoRoot, "src-tauri", "src", "lerobot.rs");
+  if (fs.existsSync(src) && fs.existsSync(dst)) {
+    const sha = (f) =>
+      createHash("sha256").update(fs.readFileSync(f)).digest("hex").slice(0, 16);
+    // 头部 vendored 声明不计入比较（副本多一段 header）
+    const body = (f) => {
+      const t = fs.readFileSync(f, "utf8");
+      const i = t.indexOf("use std::io::Write");
+      return t.slice(i >= 0 ? i : 0);
+    };
+    if (body(src) !== body(dst)) {
+      const msg = `lerobot.rs 单源漂移（${sha(src)} vs ${sha(dst)}）——重拷 engine/crates/oriera-agent/src/lerobot.rs`;
+      if (check) {
+        console.error("  ✗ " + msg);
+        process.exitCode = 1;
+      } else {
+        fs.copyFileSync(src, dst);
+        console.log("  ✓ lerobot.rs 单源已同步（自动重拷）");
+      }
+    } else {
+      console.log(`  ✓ lerobot.rs 单源一致（${sha(src)}）`);
+    }
+  }
+}
