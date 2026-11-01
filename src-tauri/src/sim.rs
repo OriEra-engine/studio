@@ -42,8 +42,22 @@ pub fn sim_export_lerobot(
     payload: String,
 ) -> Result<SimExportReport, String> {
     let _ = state.snapshot_version;
+    // 资源耗尽护栏（安全深检）：payload 上限 50MB / 2 万行。
+    if payload.len() > 50 * 1024 * 1024 {
+        return Err("payload 超限（>50MB）".into());
+    }
     let v: serde_json::Value =
         serde_json::from_str(&payload).map_err(|e| format!("payload 非法：{e}"))?;
+    if let Some(eps) = v.get("episodes").and_then(|x| x.as_array()) {
+        let total_rows: usize = eps
+            .iter()
+            .filter_map(|e| e.get("rows").and_then(|r| r.as_array()))
+            .map(|r| r.len())
+            .sum();
+        if total_rows > 20_000 {
+            return Err(format!("总行数超限（{total_rows} > 20000）——请分批导出"));
+        }
+    }
     let eps = v
         .get("episodes")
         .and_then(|x| x.as_array())
