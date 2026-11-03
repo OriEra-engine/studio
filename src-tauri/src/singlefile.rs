@@ -7,12 +7,24 @@ pub fn base64_encode(data: &[u8]) -> String {
     const TBL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         out.push(TBL[(n >> 18) as usize & 63] as char);
         out.push(TBL[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { TBL[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TBL[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TBL[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TBL[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -49,9 +61,7 @@ pub fn build_singlefile(
     const START: &str = "<script type=\"importmap\">";
     const END: &str = "</script>";
     let start = html.find(START).ok_or("index.html 里找不到 importmap 块")?;
-    let end_rel = html[start..]
-        .find(END)
-        .ok_or("importmap 块未闭合")?;
+    let end_rel = html[start..].find(END).ok_or("importmap 块未闭合")?;
     let end = start + end_rel;
     let inner = &html[start + START.len()..end];
 
@@ -64,10 +74,16 @@ pub fn build_singlefile(
 
     let mut new_imports = serde_json::Map::new();
     for (key, val) in imports {
-        let url = val.as_str().ok_or_else(|| format!("importmap[{key}] 不是字符串"))?;
+        let url = val
+            .as_str()
+            .ok_or_else(|| format!("importmap[{key}] 不是字符串"))?;
         let bytes = resolve(url).ok_or_else(|| format!("导出依赖缺失：{url}（引擎快照不完整）"))?;
         let bytes = rewrite_vendor_relative(&bytes, key);
-        let data_url = format!("data:{};base64,{}", mime_for_key(key), base64_encode(&bytes));
+        let data_url = format!(
+            "data:{};base64,{}",
+            mime_for_key(key),
+            base64_encode(&bytes)
+        );
         new_imports.insert(key.clone(), serde_json::Value::String(data_url));
     }
     let new_inner = serde_json::to_string(&serde_json::json!({ "imports": new_imports }))
@@ -87,8 +103,18 @@ pub fn build_singlefile(
         let close = result[open..].find('"').ok_or("资产字面量未闭合")? + open;
         let url = &result[open..close];
         let bytes = resolve(url).ok_or_else(|| format!("导出依赖缺失：{url}（引擎快照不完整）"))?;
-        let data_url = format!("\"data:{};base64,{}\"", "application/octet-stream", base64_encode(&bytes));
-        result = format!("{}{}{}{}", &result[..open - 1], data_url, &result[close + 1..], "");
+        let data_url = format!(
+            "\"data:{};base64,{}\"",
+            "application/octet-stream",
+            base64_encode(&bytes)
+        );
+        result = format!(
+            "{}{}{}{}",
+            &result[..open - 1],
+            data_url,
+            &result[close + 1..],
+            ""
+        );
         search_from = open - 1 + data_url.len();
     }
     Ok(result)
@@ -119,12 +145,10 @@ mod tests {
 
     #[test]
     fn inlines_all_mappings_as_data_urls() {
-        let out = build_singlefile(&fixture(), &|url| {
-            match url {
-                "/examples/x/engine/kernel.js" => Some(b"export const k=1".to_vec()),
-                "/examples/x/vendor/RobotExpressive.glb" => Some(vec![0x67, 0x6c, 0x54, 0x46]),
-                _ => None,
-            }
+        let out = build_singlefile(&fixture(), &|url| match url {
+            "/examples/x/engine/kernel.js" => Some(b"export const k=1".to_vec()),
+            "/examples/x/vendor/RobotExpressive.glb" => Some(vec![0x67, 0x6c, 0x54, 0x46]),
+            _ => None,
         })
         .unwrap();
         assert!(out.contains("data:text/javascript;base64,"), "{out}");
@@ -154,7 +178,10 @@ mod tests {
             }
         })
         .unwrap();
-        assert!(out.contains("data:application/octet-stream;base64,"), "{out}");
+        assert!(
+            out.contains("data:application/octet-stream;base64,"),
+            "{out}"
+        );
         assert!(!out.contains("/examples/v/model.glb"));
     }
 

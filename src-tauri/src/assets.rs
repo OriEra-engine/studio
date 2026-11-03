@@ -9,7 +9,7 @@ use tauri::AppHandle;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetMeta {
     pub id: String,
-    pub file: String,   // 形如 assets/1737500000-a1b2.png（对页面是 /assets/...）
+    pub file: String, // 形如 assets/1737500000-a1b2.png（对页面是 /assets/...）
     pub prompt: String,
     pub created: String,
     /// 素材类别：image（插画，M1）| mesh（3D 模型，Rodin）。旧 meta 无此
@@ -83,8 +83,9 @@ pub async fn generate_asset(
     prompt: String,
     model: Option<String>,
 ) -> Result<AssetMeta, String> {
-    let cfg = crate::settings::load_provider(&app)
-        .ok_or_else(|| "插画生成需要先在模型中心配置智谱 API Key（CogView 免费档可用）".to_string())?;
+    let cfg = crate::settings::load_provider(&app).ok_or_else(|| {
+        "插画生成需要先在模型中心配置智谱 API Key（CogView 免费档可用）".to_string()
+    })?;
     if cfg.kind != "zhipu" {
         return Err("插画生成当前仅支持智谱 CogView——请在模型中心选择智谱并填入 API Key".into());
     }
@@ -114,7 +115,10 @@ pub async fn generate_asset(
         .map_err(|e| format!("请求失败：{e}"))?;
 
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("读取响应失败：{e}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
         let short: String = text.chars().take(300).collect();
         return Err(format!("CogView 返回 {}：{}", status.as_u16(), short));
@@ -124,7 +128,12 @@ pub async fn generate_asset(
         serde_json::from_str(&text).map_err(|e| format!("解析响应失败：{e}"))?;
     let img_url = parsed["data"][0]["url"]
         .as_str()
-        .ok_or_else(|| format!("响应中无图片 URL：{}", text.chars().take(200).collect::<String>()))?
+        .ok_or_else(|| {
+            format!(
+                "响应中无图片 URL：{}",
+                text.chars().take(200).collect::<String>()
+            )
+        })?
         .to_string();
 
     // 下载图片（Zhipu 返回签名 URL，不带鉴权直接 GET）
@@ -247,7 +256,10 @@ pub async fn generate_mesh(
         .await
         .map_err(|e| format!("创建 Rodin 任务失败：{e}"))?;
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("读取响应失败：{e}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
         let short: String = text.chars().take(300).collect();
         let hint = match status.as_u16() {
@@ -262,7 +274,12 @@ pub async fn generate_mesh(
     let uuid = created["uuid"]
         .as_str()
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("Rodin 未受理任务：{}", text.chars().take(200).collect::<String>()))?
+        .ok_or_else(|| {
+            format!(
+                "Rodin 未受理任务：{}",
+                text.chars().take(200).collect::<String>()
+            )
+        })?
         .to_string();
     let subkey = created["jobs"]["subscription_key"]
         .as_str()
@@ -318,7 +335,10 @@ pub async fn generate_mesh(
         .send()
         .await
         .map_err(|e| format!("请求下载清单失败：{e}"))?;
-    let dl: serde_json::Value = resp.json().await.map_err(|e| format!("解析下载清单失败：{e}"))?;
+    let dl: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析下载清单失败：{e}"))?;
     let glb_url = dl["list"]
         .as_array()
         .and_then(|list| {
@@ -462,12 +482,16 @@ pub async fn generate_video(
         .to_string();
     let prompt = prompt.trim().to_string();
     if prompt.is_empty() {
-        return Err("先描述你想要的镜头（例如：雨夜地铁站台，镜头缓推，霓虹反射在湿地面上）".into());
+        return Err(
+            "先描述你想要的镜头（例如：雨夜地铁站台，镜头缓推，霓虹反射在湿地面上）".into(),
+        );
     }
     let model = model
         .filter(|m| !m.trim().is_empty())
         .unwrap_or_else(|| SEEDANCE_DEFAULT_MODEL.into());
-    let ratio = ratio.filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "16:9".into());
+    let ratio = ratio
+        .filter(|r| !r.trim().is_empty())
+        .unwrap_or_else(|| "16:9".into());
 
     // 防双倍扣费（评审 R2 三方 P1）：同 prompt 有在途任务 → 续查而不是
     // 再创建。Key 用本次传入的（纪律：pending 不存 Key）。
@@ -476,7 +500,10 @@ pub async fn generate_video(
         .find(|t| t.prompt == prompt);
     let client = reqwest::Client::new();
     let task_id = if let Some(pending) = existing {
-        println!("[assets] 续查在途视频任务 {}（不重复创建）", pending.task_id);
+        println!(
+            "[assets] 续查在途视频任务 {}（不重复创建）",
+            pending.task_id
+        );
         pending.task_id.clone()
     } else {
         create_video_task(&client, &base, &key, &model, &ratio, &prompt, &state).await?
@@ -552,7 +579,10 @@ async fn create_video_task(
         .await
         .map_err(|e| format!("创建 Seedance 任务失败：{}", short_err(&e)))?;
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("读取响应失败：{e}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{e}"))?;
     if !status.is_success() {
         let short: String = text.chars().take(300).collect();
         let hint = match status.as_u16() {
@@ -561,14 +591,24 @@ async fn create_video_task(
             429 => "（触发限流，稍后再试）",
             _ => "",
         };
-        return Err(format!("Seedance 返回 {}{}：{}", status.as_u16(), hint, short));
+        return Err(format!(
+            "Seedance 返回 {}{}：{}",
+            status.as_u16(),
+            hint,
+            short
+        ));
     }
     let created: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("解析创建响应失败：{e}"))?;
     let task_id = created["id"]
         .as_str()
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("方舟未受理任务：{}", text.chars().take(200).collect::<String>()))?
+        .ok_or_else(|| {
+            format!(
+                "方舟未受理任务：{}",
+                text.chars().take(200).collect::<String>()
+            )
+        })?
         .to_string();
     let mut pend = read_pending(state);
     pend.retain(|t| t.prompt != prompt);
@@ -598,7 +638,9 @@ async fn poll_video_task(
         // 抖动容忍：连续 SEEDANCE_TOLERATED_BLIPS 次网络/解析失败才放弃，
         // 单次抖动不再报废已付费任务。
         let v = match client
-            .get(format!("{base}/api/v3/contents/generations/tasks/{task_id}"))
+            .get(format!(
+                "{base}/api/v3/contents/generations/tasks/{task_id}"
+            ))
             .header("Authorization", format!("Bearer {key}"))
             .timeout(std::time::Duration::from_secs(30))
             .send()
@@ -664,18 +706,11 @@ pub async fn generate_video_command(
 }
 
 #[tauri::command]
-pub fn delete_asset(
-    state: tauri::State<'_, crate::AppState>,
-    id: String,
-) -> Result<(), String> {
+pub fn delete_asset(state: tauri::State<'_, crate::AppState>, id: String) -> Result<(), String> {
     let mut list = read_meta(&state);
     if let Some(pos) = list.iter().position(|a| a.id == id) {
         let meta = list.remove(pos);
-        let file = assets_dir(&state).join(
-            meta.file
-                .strip_prefix("assets/")
-                .unwrap_or(&meta.file),
-        );
+        let file = assets_dir(&state).join(meta.file.strip_prefix("assets/").unwrap_or(&meta.file));
         let _ = std::fs::remove_file(file);
         write_meta(&state, &list)?;
     }
@@ -701,7 +736,11 @@ pub fn add_asset_to_project(
     if asset.kind != "image" {
         return Err(format!(
             "画廊墙只挂插画；{} 类资产的场景挂载随素材中心 M2 跟进（当前可导出收藏）",
-            if asset.kind == "video" { "视频" } else { "3D 模型" }
+            if asset.kind == "video" {
+                "视频"
+            } else {
+                "3D 模型"
+            }
         ));
     }
 
@@ -751,7 +790,11 @@ pub fn set_video_as_clip(
     if asset.kind != "video" {
         return Err(format!(
             "只有视频类资产能设为正片（该资产是 {} 类）",
-            if asset.kind == "mesh" { "3D 模型" } else { "插画" }
+            if asset.kind == "mesh" {
+                "3D 模型"
+            } else {
+                "插画"
+            }
         ));
     }
     let dir = state.projects_dir.join(&project_id);
@@ -775,7 +818,8 @@ pub fn set_video_as_clip(
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
-    let beat_key = |c: &serde_json::Value| c.get("beat").and_then(|b| b.as_u64()).unwrap_or(u64::MAX);
+    let beat_key =
+        |c: &serde_json::Value| c.get("beat").and_then(|b| b.as_u64()).unwrap_or(u64::MAX);
     clips.retain(|c| beat_key(c) != beat_index as u64);
     clips.push(json!({
         "beat": beat_index,

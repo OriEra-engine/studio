@@ -19,7 +19,11 @@ pub async fn open_pet(app: AppHandle, character: String) -> Result<(), String> {
         let _ = w.set_focus();
         return Ok(());
     }
-    let (w, h) = if character == "ori" { (240.0, 330.0) } else { (250.0, 430.0) };
+    let (w, h) = if character == "ori" {
+        (240.0, 330.0)
+    } else {
+        (250.0, 430.0)
+    };
     WebviewWindowBuilder::new(
         &app,
         "pet",

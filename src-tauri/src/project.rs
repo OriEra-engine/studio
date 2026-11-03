@@ -358,10 +358,11 @@ pub async fn open_project(
     // pet.html）始终可靠。故先加载 bootstrap.html（不带任何 fragment/query——
     // 实测带 fragment 的 App 路径同样死在 about:blank），由页面内 JS 依据窗口
     // label（project-{id}）自行跳转到目标内容。
-    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("bootstrap.html".into()))
-        .title(&format!("🎮 {name} · OriEra 原型"))
-        .inner_size(1360.0, 900.0)
-        .min_inner_size(1024.0, 700.0);
+    let mut builder =
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("bootstrap.html".into()))
+            .title(&format!("🎮 {name} · OriEra 原型"))
+            .inner_size(1360.0, 900.0)
+            .min_inner_size(1024.0, 700.0);
     let win = builder.build().map_err(|e| e.to_string())?;
     // 看门狗：5s 后仍在引导页（页面内跳转被吞的极端兜底），用 eval 再跳一次
     {
@@ -370,7 +371,9 @@ pub async fn open_project(
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(5000));
             let cur = watch_win.url().map(|u| u.to_string()).unwrap_or_default();
-            if cur.starts_with("http://oriera.localhost") || cur.starts_with("https://oriera.localhost") {
+            if cur.starts_with("http://oriera.localhost")
+                || cur.starts_with("https://oriera.localhost")
+            {
                 return; // 已落到游戏内容，收工
             }
             let _ = watch_win.eval(&format!("location.replace('{}')", watch_url.as_str()));
@@ -561,7 +564,10 @@ pub async fn preview_regenerate_beat(
     )
     .await?;
 
-    Ok(llm::BeatPreview { old: cur, new: rewritten })
+    Ok(llm::BeatPreview {
+        old: cur,
+        new: rewritten,
+    })
 }
 
 /// 采纳重写结果：替换对应节拍并落盘（含 .history 备份与运行窗口热重载）。
@@ -638,7 +644,8 @@ pub async fn export_project_singlefile(
         return Ok(String::new()); // 用户取消
     };
     let out = file.into_path().map_err(|e| format!("路径无效：{e}"))?;
-    let html = std::fs::read_to_string(dir.join("index.html")).map_err(|e| format!("读取失败：{e}"))?;
+    let html =
+        std::fs::read_to_string(dir.join("index.html")).map_err(|e| format!("读取失败：{e}"))?;
     let snapshot = state.snapshot_examples.clone();
     let built = crate::singlefile::build_singlefile(&html, &|url| {
         // url 形如 /examples/11-ai-cafe/...；快照根即 examples 目录
@@ -656,7 +663,12 @@ pub async fn import_project_zip(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
-    let Some(file) = app.dialog().file().add_filter("zip", &["zip"]).blocking_pick_file() else {
+    let Some(file) = app
+        .dialog()
+        .file()
+        .add_filter("zip", &["zip"])
+        .blocking_pick_file()
+    else {
         return Ok(String::new()); // 用户取消
     };
     let path = file.into_path().map_err(|e| format!("路径无效：{e}"))?;
@@ -676,13 +688,17 @@ pub async fn import_project_zip(
     const MAX_ENTRIES: usize = 20_000;
     if archive.len() > MAX_ENTRIES {
         let _ = std::fs::remove_dir_all(&target);
-        return Err(format!("zip 条目数超限（>{MAX_ENTRIES}），疑似异常包，已中止导入"));
+        return Err(format!(
+            "zip 条目数超限（>{MAX_ENTRIES}），疑似异常包，已中止导入"
+        ));
     }
     let mut total: u64 = 0;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         // enclosed_name 拒绝 ../ 与绝对路径等穿越形态
-        let Some(rel) = entry.enclosed_name() else { continue };
+        let Some(rel) = entry.enclosed_name() else {
+            continue;
+        };
         let dest = target.join(rel);
         if entry.is_dir() {
             std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;

@@ -29,6 +29,7 @@ const DEMOS: &[( &str, &str, &str, &str, bool)] = &[
     ("12-memory-atlas", "12 · 记忆图谱 Memory Atlas", "长期记忆可视化：MemoryStore 的检索式记忆以图谱呈现——写入、衰减、召回一览。", "L9 记忆", false),
     ("13-genai-gallery", "13 · 生成式画廊 GenAI Gallery", "一句话装帧世界：L8 生成管线（文生图/文生3D）+ L4 命名热替换，配 Key 后海报与穹顶实时生成。", "L8 生成", false),
     ("14-film-game", "14 · 影游内核 Film-Game", "互动影游内核：L9 叙事原语的浏览器镜像——场景/分支/倒计时/结局结算，与 Rust 逐句对照零漂移。", "影游 · L9", false),
+    ("15-embodied-sim", "15 · 具身仿真台 Embodied Sim", "真实物理管线具身训练台：rapier3d 关节臂桌面抓放，键鼠遥操作/IK 脚本策略/episode 录制，导出 LeRobot v2.1 数据集直连 lerobot-train。", "具身智能 · L6×L9", true),
 ];
 
 pub fn catalog() -> Vec<DemoInfo> {
@@ -82,7 +83,11 @@ fn user_entry(app: &AppHandle, id: &str) -> Option<String> {
 /// 自定义协议窗口跟随即 404。文件形态（含 .）原样返回。
 fn normalize_entry(entry: &str) -> String {
     let e = entry.trim_matches('/');
-    if e.contains('.') { e.to_string() } else { format!("{e}/") }
+    if e.contains('.') {
+        e.to_string()
+    } else {
+        format!("{e}/")
+    }
 }
 
 /// 内置 + 用户合并目录。用户 id 与内置冲突时内置优先（不可被覆盖）。
@@ -185,7 +190,8 @@ mod tests {
     use super::*;
 
     fn tmp_root(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("oriera-demos-test-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("oriera-demos-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

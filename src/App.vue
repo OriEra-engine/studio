@@ -86,6 +86,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { key: "projects", to: "/projects", label: "我的项目", activeNames: ["projects", "editor"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>' },
       { key: "film", to: "/film", label: "影游工坊", activeNames: ["film"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 5v14M17 5v14M2 12h20"/></svg>' },
       { key: "canvas", to: "/canvas", label: "世界画布", activeNames: ["canvas"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M6.8 7.6 10.8 16M17.2 7.6 13.2 16M7.2 6h9.6"/></svg>' },
+      { key: "sim", to: "/sim", label: "具身仿真台", activeNames: ["sim"], svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20h14M6 20V9a6 6 0 0 1 12 0v11M9 12l3 3 3-3"/></svg>' },
     ],
   },
   {
