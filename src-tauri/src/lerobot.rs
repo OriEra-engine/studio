@@ -648,7 +648,7 @@ mod tests {
         ] {
             assert!(root.join(rel).exists(), "missing {rel}");
         }
-        LeRobotV21::write_receipt(&root, "test/0.1", "rigid3d", 1.0 / 60.0, &[0xbeef], 1)
+        LeRobotV21::write_receipt(&root, "test/0.1", "rigid3d", 1.0 / 60.0, "abc123", &[0xbeef], 1, "v1", &[])
             .expect("receipt");
         assert!(root.join("meta/oriera_receipt.json").exists());
         LeRobotV21::write_card(&root, "pick up the cube").expect("card");
