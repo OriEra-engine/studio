@@ -24,6 +24,10 @@ import specIndexJson from "../../engine-snapshot/specs/INDEX.json";
 interface SimEpisode {
   task: string;
   rows: Array<{ state: number[]; action: number[] }>;
+  /** 每集回执指纹（wasm 十进制 u64 串）：v1 = 状态口径；旧内核快照可能缺省 */
+  fingerprint?: string;
+  /** scheme-v2 完整身份指纹（状态 ⊕ 机器人身份 ⊕ spec_hash） */
+  fingerprintV2?: string;
 }
 
 interface SimEpisodesMsg {
@@ -34,6 +38,10 @@ interface SimEpisodesMsg {
   actionNames: string[];
   task: string;
   fps: number;
+  /** 机器人名（内核按解析后的 spec 透传 robot.name）——落 info.json 的 robot_type */
+  robot?: string;
+  /** spec 身份哈希（16 hex）——落 oriera_receipt.json */
+  specHash?: string;
 }
 
 // ── 预设库 ────────────────────────────────────────────────────────
@@ -422,14 +430,24 @@ lerobot-train --dataset.repo_id=<user>/<ds> --policy.type=act`;
   }
 }
 
+// 导出收尾以「收到内核 episodes + Tauri 落盘完成」为准；内核侧无数据/
+// 页面冻结时收不到消息，5 秒看门狗兜底（诚实 spinner：不再 setTimeout
+// 假完成——SRE-4/5 实测发现）。
+let exportWatchdog: ReturnType<typeof setTimeout> | undefined;
+const EXPORT_ACK_MS = 5000;
+
 async function doExport() {
+  if (exporting.value) return;
   exporting.value = true;
   errMsg.value = "";
-  try {
-    send({ cmd: "export" }); // 触发 iframe 把 episodes 发回来（message 事件里落盘）
-  } finally {
-    setTimeout(() => { exporting.value = false; }, 800);
-  }
+  // 看门狗先挂再发消息：postMessage 万一同步抛错，spinner 也有兜底自愈。
+  clearTimeout(exportWatchdog);
+  exportWatchdog = setTimeout(() => {
+    if (!exporting.value) return;
+    exporting.value = false;
+    errMsg.value = `未收到画面内核的数据（${EXPORT_ACK_MS / 1000} 秒无回应）——请重试；反复失败就「重载画面」后再录一次。`;
+  }, EXPORT_ACK_MS);
+  send({ cmd: "export" }); // 触发 iframe 把 episodes 发回来（message 事件里落盘）
 }
 
 async function onMessage(ev: MessageEvent) {
@@ -445,13 +463,15 @@ async function onMessage(ev: MessageEvent) {
   const m = ev.data as Partial<SimEpisodesMsg> & { source?: string; type?: string; note?: string; specHash?: string };
   if (!m || m.source !== "oriera-sim") return;
   if (m.type === "progress") {
-    // 所见即所录：录制行数/集数实时跳动（内核每 30 行回报一次）
+    // 所见即所录：录制行数/集数实时跳动（内核每 30 行回报累计值；停止
+    // 录制时也回报一次总数）——「录制中」措辞只在真在录时说。
     frameCount.value = Number((m as { rows?: number }).rows ?? 0);
     episodeCount.value = Number((m as { episodes?: number }).episodes ?? 0);
-    if (frameCount.value > 0) {
+    if (recording.value && frameCount.value > 0) {
       note.value = `录制中：第 ${episodeCount.value} 集，已 ${frameCount.value} 行`;
     }
   } else if (m.type === "episodes") {
+    clearTimeout(exportWatchdog);
     const msg = m as unknown as SimEpisodesMsg;
     try {
       report.value = await api.simExportLerobot(JSON.stringify(msg));
@@ -462,6 +482,8 @@ async function onMessage(ev: MessageEvent) {
       note.value = `已导出 ${report.value.episodes} 集 / ${report.value.frames} 行 → ${report.value.dir}`;
     } catch (e) {
       errMsg.value = String(e);
+    } finally {
+      exporting.value = false; // 落盘完成（含失败）才收 spinner
     }
   } else if (m.type === "state" && m.note === "ready") {
     // 内核启动完成（自带作业基线）；期望态不同就立刻换装。
@@ -488,6 +510,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("message", onMessage);
   clearTimeout(pendingTimer);
   clearTimeout(readyTimer);
+  clearTimeout(exportWatchdog);
 });
 
 function onFrameLoad() {
@@ -616,6 +639,10 @@ function onFrameLoad() {
           录制以 60Hz 逐拍记一行（观测, 动作）——维数跟着机器人走（4 轴臂 = 21 维观测 + 5 维动作）；导出为
           <b>LeRobotDataset v2.1</b> 目录（meta 全套 + 每集回执），
           用 engine 仓脚本转 parquet 后 <code>lerobot-train</code> 直读。换预设前先导出：不同预设的数据不能混在一个数据集里。
+        </p>
+        <!-- 上限数字与内核 kernel.js 的 REC_CAP（200 集 / 20000 行）一致——内核侧改动时同步这里 -->
+        <p v-if="episodeCount > 0 || frameCount > 0" class="muted">
+          已录 <b class="hl">{{ episodeCount }}</b> 集 · <b class="hl">{{ frameCount }}</b> 行{{ recording ? "（录制中）" : "" }}——软上限 200 集 / 20000 行（先到为准），到限画面内核会自动停止录制并提示，已录数据照常可导出。
         </p>
         <h3>状态</h3>
         <p class="muted">{{ note || "进场即预载作业基线；点上方卡片换预设，重置换随机种子，脚本策略可全自动演示。" }}</p>

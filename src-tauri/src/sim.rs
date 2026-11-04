@@ -34,8 +34,10 @@ fn write(rel: &std::path::Path, content: &str) -> Result<(), String> {
 }
 
 /// 把 Sim 工作台采集的 episodes 组装成 LeRobot v2.1 目录树（单源
-/// `crate::lerobot` 写入；payload 形如 {task, fps, obsNames, actionNames,
-/// episodes:[{task, rows:[{state:[f32], action:[f32]}]}]}）。
+/// `crate::lerobot` 写入；payload 形如 {task, fps, robot, specHash,
+/// obsNames, actionNames, episodes:[{task, fingerprint, fingerprintV2,
+/// rows:[{state:[f32], action:[f32]}]}]}——robot/specHash/逐集指纹由
+/// 内核随消息透传（P2-W5A），落盘侧不再硬编码机器人名）。
 #[tauri::command]
 pub fn sim_export_lerobot(
     state: State<'_, crate::AppState>,
@@ -71,6 +73,45 @@ pub fn sim_export_lerobot(
         .and_then(|x| x.as_str())
         .unwrap_or("pick up the cube")
         .to_string();
+    // robot 名透传（内核按解析后的 spec 出 robot.name，如 tabletop-4dof /
+    // panda7）——info.json 的 robot_type 不再硬编码；旧内核快照缺字段时
+    // 兜底一个不冒领型号的通用名。
+    let robot = v
+        .get("robot")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("oriera-arm")
+        .to_string();
+    // spec 身份哈希（内核 spec_hash()，16 hex）——进 oriera_receipt.json。
+    let spec_hash = v
+        .get("specHash")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    // 逐集回执指纹（P2-W5A）：内核每集结束抓 wasm 的 fingerprint()（v1
+    // 状态口径）与 fingerprint_v2()（状态⊕身份⊕spec_hash），十进制 u64 串
+    // 随 episode 透传。任一集缺字段或解析失败（旧内核快照）→ 整组置空：
+    // 回执宁可没有逐集指纹，也不写错位/半截的。
+    let mut fp_v1: Vec<u64> = Vec::new();
+    let mut fp_v2: Vec<u64> = Vec::new();
+    let parse_fps = |key: &str| -> Option<Vec<u64>> {
+        eps.iter()
+            .map(|ep| {
+                ep.get(key)
+                    .and_then(|x| x.as_str())
+                    .and_then(|s| s.parse::<u64>().ok())
+            })
+            .collect()
+    };
+    if eps.iter().all(|ep| {
+        ep.get("fingerprint").and_then(|x| x.as_str()).is_some()
+            && ep.get("fingerprintV2").and_then(|x| x.as_str()).is_some()
+    }) {
+        if let (Some(a), Some(b)) = (parse_fps("fingerprint"), parse_fps("fingerprintV2")) {
+            fp_v1 = a;
+            fp_v2 = b;
+        }
+    }
     let obs_names: Vec<String> = v
         .get("obsNames")
         .and_then(|x| x.as_array())
@@ -96,7 +137,7 @@ pub fn sim_export_lerobot(
     // 单源写入：engine 的 LeRobotV21 承担全部 v2.1 schema。
     let mut ds = crate::lerobot::LeRobotV21::new(
         fps,
-        "oriera-arm-6-js",
+        &robot,
         obs_names.clone(),
         act_names.clone(),
     );
@@ -139,13 +180,20 @@ pub fn sim_export_lerobot(
     let frames = ds.total_frames();
     ds.write_dir(&root)
         .map_err(|e| format!("写数据集失败：{e}"))?;
+    // 回执按新签名（scheme/v2 两参数，M0b 三口径指纹）：逐集 v1/v2 来自
+    // 内核消息；v2 为空时 write_receipt 自动省略 scheme 字段（旧内核
+    // 快照 = 字节兼容的退化回执）。successes 恒 0：工作台不判成功率
+    // （作业证据以 CLI eval_report 为准，见工作台「确定性说明」）。
     crate::lerobot::LeRobotV21::write_receipt(
         &root,
         concat!("oriera-studio/", env!("CARGO_PKG_VERSION")),
         "rigid3d-js-mirror",
         1.0 / fps,
-        &[],
+        &spec_hash,
+        &fp_v1,
         0,
+        "v2",
+        &fp_v2,
     )
     .map_err(|e| format!("写回执失败：{e}"))?;
     crate::lerobot::LeRobotV21::write_card(&root, &default_task)
