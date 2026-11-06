@@ -100,7 +100,10 @@ for (const f of goldenNames) {
 //                         extends 键不进 hash——spec_hash 仍以 INDEX.json 为准（内核版本守卫逐个核对）。
 // 展开规则逐条移植 spec.rs merge_overlay：对象逐键合并、数组逐下标合并（多出的追加）、其余替换；
 // `kind` 标签不同 / 单键外部标签变体换了键（{"fixed":…} 盖 {"range":…}）= 整体替换。
-const specsSrc = path.join(engineRoot, "crates", "oriera-agent", "specs");
+// L9 拆分后（engine #175）spec 库搬进 oriera-embodied；旧路径兜底读老引擎。
+const specsSrc = ["crates/oriera-embodied/specs", "crates/oriera-agent/specs"]
+  .map((rel) => path.join(engineRoot, ...rel.split("/")))
+  .find((p) => fs.existsSync(p)) ?? path.join(engineRoot, "crates", "oriera-agent", "specs");
 const specsDst = path.join(repoRoot, "engine-snapshot", "specs");
 const officialDir = path.join(specsSrc, "official");
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);

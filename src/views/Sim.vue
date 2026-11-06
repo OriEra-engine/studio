@@ -13,7 +13,8 @@ import tabletopSpec from "../../engine-snapshot/specs/resolved/tabletop-4dof-pic
 import pandaSpec from "../../engine-snapshot/specs/resolved/panda-7dof-pick.json";
 import stackSpec from "../../engine-snapshot/specs/resolved/stack-4dof.json";
 import binPickSpec from "../../engine-snapshot/specs/resolved/bin-pick-4dof.json";
-import drawerSpec from "../../engine-snapshot/specs/resolved/drawer-4dof.json";
+import drawerV2Spec from "../../engine-snapshot/specs/resolved/drawer-4dof-v2.json";
+import mobileArmSpec from "../../engine-snapshot/specs/resolved/mobile-arm-4dof.json";
 import specIndexJson from "../../engine-snapshot/specs/INDEX.json";
 
 /* 具身仿真台 · 三库工作台：iframe 内嵌引擎 example/15-embodied-sim（oriera-wasm
@@ -58,7 +59,13 @@ interface SpecJson {
   };
   task: { id: string; params: { goal: Placement; min_separation?: number } };
 }
-type PresetKey = "tabletop-4dof-pick" | "panda-7dof-pick" | "stack-4dof" | "bin-pick-4dof" | "drawer-4dof";
+type PresetKey =
+  | "tabletop-4dof-pick"
+  | "panda-7dof-pick"
+  | "stack-4dof"
+  | "bin-pick-4dof"
+  | "drawer-4dof-v2"
+  | "mobile-arm-4dof";
 interface Preset {
   key: PresetKey;
   /** 卡片名（人话） */
@@ -106,13 +113,24 @@ const PRESETS: readonly Preset[] = [
     spec: binPickSpec as unknown as SpecJson,
   },
   {
-    key: "drawer-4dof",
-    title: "拉抽屉",
-    pitch: "抓住抽屉把手，朝机械臂方向拉出 8 厘米再松手。",
+    key: "drawer-4dof-v2",
+    title: "拉抽屉 · 真滑轨",
+    pitch: "抓住抽屉面板，沿 prismatic 滑轨拉出 8 厘米再松手（v2 真滑轨几何）。",
     difficultyFallback: "进阶",
     goalTweak: false,
-    spec: drawerSpec as unknown as SpecJson,
+    spec: drawerV2Spec as unknown as SpecJson,
   },
+  {
+    key: "mobile-arm-4dof",
+    title: "移动底盘抓放",
+    pitch: "底盘先滑到方块跟前，再伸臂抓起、放到另一侧的目标区——移动后才能抓。",
+    difficultyFallback: "挑战",
+    goalTweak: true,
+    spec: mobileArmSpec as unknown as SpecJson,
+  },
+  // drawer-4dof（v1，spec_hash ef18ac07）是 drawer@v2 的对照档案：可动盒体近似
+  // 「抽屉把手」，已不在卡片墙下发；快照 specs/{official,resolved}/drawer-4dof.json
+  // 留作 CLI 对照（--spec specs/official/drawer-4dof.json），Studio 不再引用。
 ];
 const INDEX = (specIndexJson as unknown as { specs: Record<string, { hash: string }> }).specs;
 const presetOf = (key: PresetKey): Preset => PRESETS.find((p) => p.key === key) ?? PRESETS[0];
@@ -165,9 +183,11 @@ function placementText(p: Placement): string {
   if (p.range) return `x ${f2(p.range.x[0])}–${f2(p.range.x[1])} · z ${f2(p.range.z[0])}–${f2(p.range.z[1])}（每集随机）`;
   return "—";
 }
-/** 能放的范围：桌面（fixture "table"）内缩 3 cm。 */
+/** 能放的范围：桌面（fixture "table"）内缩 3 cm；没桌子的场景（移动底盘
+ *  只有地面）退回第一块 fixture（地面）内缩——出生/目标带（z ±0.5）必须在
+ *  界限内，硬编码默认值罩不住它们。 */
 function tableBounds(s: SpecJson): { x: [number, number]; z: [number, number] } {
-  const t = s.scene.fixtures.find((f) => f.name === "table") ?? s.scene.fixtures[1];
+  const t = s.scene.fixtures.find((f) => f.name === "table") ?? s.scene.fixtures[0];
   if (!t) return { x: [0, 0.6], z: [-0.3, 0.3] };
   const m = 0.03;
   return {
