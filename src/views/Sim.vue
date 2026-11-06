@@ -15,6 +15,7 @@ import stackSpec from "../../engine-snapshot/specs/resolved/stack-4dof.json";
 import binPickSpec from "../../engine-snapshot/specs/resolved/bin-pick-4dof.json";
 import drawerV2Spec from "../../engine-snapshot/specs/resolved/drawer-4dof-v2.json";
 import mobileArmSpec from "../../engine-snapshot/specs/resolved/mobile-arm-4dof.json";
+import pandaContactSpec from "../../engine-snapshot/specs/resolved/panda-contact-criterion.json";
 import specIndexJson from "../../engine-snapshot/specs/INDEX.json";
 
 /* 具身仿真台 · 三库工作台：iframe 内嵌引擎 example/15-embodied-sim（oriera-wasm
@@ -65,7 +66,8 @@ type PresetKey =
   | "stack-4dof"
   | "bin-pick-4dof"
   | "drawer-4dof-v2"
-  | "mobile-arm-4dof";
+  | "mobile-arm-4dof"
+  | "panda-contact-criterion";
 interface Preset {
   key: PresetKey;
   /** 卡片名（人话） */
@@ -127,6 +129,14 @@ const PRESETS: readonly Preset[] = [
     difficultyFallback: "挑战",
     goalTweak: true,
     spec: mobileArmSpec as unknown as SpecJson,
+  },
+  {
+    key: "panda-contact-criterion",
+    title: "接触判据 · Panda 变体",
+    pitch: "和 Panda 七轴同一份抓放，但「夹住」按真实接触力判定（≥1N 且不打滑），消除预接触假标签。",
+    difficultyFallback: "进阶",
+    goalTweak: true,
+    spec: pandaContactSpec as unknown as SpecJson,
   },
   // drawer-4dof（v1，spec_hash ef18ac07）是 drawer@v2 的对照档案：可动盒体近似
   // 「抽屉把手」，已不在卡片墙下发；快照 specs/{official,resolved}/drawer-4dof.json
