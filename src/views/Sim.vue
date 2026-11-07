@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { NButton, NInputNumber, NTag, useDialog } from "naive-ui";
+import { NButton, NInputNumber, NSelect, NTag, useDialog } from "naive-ui";
 import { api, type SimExportReport } from "../api";
 import { refreshStatus, store } from "../store";
 // 官方预设库（M2-C 三库工作台）：engine-snapshot/specs/ 由
@@ -21,7 +21,8 @@ import specIndexJson from "../../engine-snapshot/specs/INDEX.json";
 /* 具身仿真台 · 三库工作台：iframe 内嵌引擎 example/15-embodied-sim（oriera-wasm
    物理内核，与 CLI 同一份 Rust 代码），顶部预设墙点选 → postMessage
    {cmd:"spec", json} 整份换装（内核 M1 协议，无重载）；左侧控制经 postMessage
-   驱动；导出走 tauri 命令落盘 LeRobotDataset v2.1（见 src-tauri/src/sim.rs）。 */
+   驱动；导出走 tauri 命令落盘 LeRobotDataset（格式可选：v2.1 默认 / v3.0 /
+   npz 裸导出，见 src-tauri/src/sim.rs）。 */
 
 interface SimEpisode {
   task: string;
@@ -448,9 +449,36 @@ function toggleRecord() {
   if (recording.value) note.value = "录制中：遥操作或跑策略，每 tick 一行 (state, action)";
 }
 
+// ── 导出格式（一份采集，三种编码；缺省 v2.1 = 既有导出字节冻结） ────
+type ExportFormat = "v21" | "v3" | "npz";
+const exportFormat = ref<ExportFormat>("v21");
+const FORMAT_META: Record<ExportFormat, { label: string; hint: string }> = {
+  v21: {
+    label: "LeRobot v2.1",
+    hint: "默认。既有转换链：jsonl_to_lerobot_v21.py 转 parquet 后 lerobot-train 直读。",
+  },
+  v3: {
+    label: "LeRobot v3.0",
+    hint: "lerobot ≥ 0.4 直读的新目录布局（episodes 合并进共享 file）；同一份转换脚本自动识别 v2.1/v3.0。",
+  },
+  npz: {
+    label: "npz 裸导出",
+    hint: "每集一个 .npz（obs/act float32 数组 + meta.json），numpy.load 直读，免转换。",
+  },
+};
+const formatOptions = (Object.keys(FORMAT_META) as ExportFormat[]).map((v) => ({
+  label: FORMAT_META[v].label + (v === "v21" ? "（默认）" : ""),
+  value: v,
+}));
+const formatHint = computed(() => FORMAT_META[exportFormat.value].hint);
+
 async function copyTrainCmd() {
   const dir = report.value?.dir ?? "<导出目录>";
-  const trainCmd = `python engine/scripts/jsonl_to_lerobot_v21.py "${dir}"
+  // npz 免转换（numpy 直读）；LeRobot 两代都走同一份转换脚本（自动识别
+  // v2.1/v3.0 目录），转换后 lerobot-train 直读。
+  const trainCmd = report.value?.format === "npz"
+    ? `python -c "import numpy as np; d = np.load(r'''${dir}\\episode_000000.npz'''); print(d.files)"`
+    : `python engine/scripts/jsonl_to_lerobot_v21.py "${dir}"
 lerobot-train --dataset.repo_id=<user>/<ds> --policy.type=act`;
   try {
     await navigator.clipboard.writeText(trainCmd);
@@ -504,12 +532,12 @@ async function onMessage(ev: MessageEvent) {
     clearTimeout(exportWatchdog);
     const msg = m as unknown as SimEpisodesMsg;
     try {
-      report.value = await api.simExportLerobot(JSON.stringify(msg));
+      report.value = await api.simExportLerobot(JSON.stringify(msg), exportFormat.value);
       recording.value = false;
       // 内核交出 episodes 后已清空自己的列表：计数归零（换预设不再拦）
       episodeCount.value = 0;
       frameCount.value = 0;
-      note.value = `已导出 ${report.value.episodes} 集 / ${report.value.frames} 行 → ${report.value.dir}`;
+      note.value = `已导出 ${report.value.episodes} 集 / ${report.value.frames} 行〔${FORMAT_META[exportFormat.value].label}〕→ ${report.value.dir}`;
     } catch (e) {
       errMsg.value = String(e);
     } finally {
@@ -569,6 +597,15 @@ function onFrameLoad() {
         <NButton size="small" :type="recording ? 'error' : 'default'" @click="toggleRecord">
           {{ recording ? "■ 停止录制" : "● 开始录制" }}
         </NButton>
+        <NSelect
+          v-model:value="exportFormat"
+          size="small"
+          :options="formatOptions"
+          :disabled="exporting"
+          aria-label="导出格式"
+          style="width: 158px"
+          :title="formatHint"
+        />
         <NButton size="small" :loading="exporting" :disabled="frameCount === 0 && episodeCount === 0" @click="doExport">
           ⤓ 导出数据集{{ frameCount > 0 ? `（${frameCount} 行）` : "" }}
         </NButton>
@@ -666,9 +703,15 @@ function onFrameLoad() {
 
         <h3>采集</h3>
         <p class="muted">
-          录制以 60Hz 逐拍记一行（观测, 动作）——维数跟着机器人走（4 轴臂 = 21 维观测 + 5 维动作）；导出为
-          <b>LeRobotDataset v2.1</b> 目录（meta 全套 + 每集回执），
-          用 engine 仓脚本转 parquet 后 <code>lerobot-train</code> 直读。换预设前先导出：不同预设的数据不能混在一个数据集里。
+          录制以 60Hz 逐拍记一行（观测, 动作）——维数跟着机器人走（4 轴臂 = 21 维观测 + 5 维动作）。
+          导出可选三种编码（同一份采集，都带逐集回执指纹 <code>meta/oriera_receipt.json</code>）：
+          <b>{{ formatHint }}</b>
+          换预设前先导出：不同预设的数据不能混在一个数据集里。
+        </p>
+        <p class="muted small">
+          多相机 / 深度视频轨：画面内核目前只逐行记 state/action，不采相机帧（俯视小窗只是屏上渲染），
+          所以三种格式导出的都是<b>纯状态数据集</b>（v3 树无视频轨，npz 只含 obs/act 数组）。
+          多相机采集待内核支持后开放——落盘侧（vendored LeRobot 出口的相机轨契约）已就绪，届时透传即可；不会造假帧。
         </p>
         <!-- 上限数字与内核 kernel.js 的 REC_CAP（200 集 / 20000 行）一致——内核侧改动时同步这里 -->
         <p v-if="episodeCount > 0 || frameCount > 0" class="muted">
@@ -682,8 +725,8 @@ function onFrameLoad() {
         </p>
         <h3>训练三步</h3>
         <ol class="muted small">
-          <li>本页遥操作/跑策略 → 录制 → 导出</li>
-          <li><code>python engine/scripts/jsonl_to_lerobot_v21.py &lt;导出目录&gt;</code></li>
+          <li>本页遥操作/跑策略 → 录制 → 导出（LeRobot v2.1/v3.0）</li>
+          <li><code>python engine/scripts/jsonl_to_lerobot_v21.py &lt;导出目录&gt;</code>（自动识别 v2.1/v3.0；npz 免转换）</li>
           <li><code>lerobot-train --dataset.repo_id=&lt;user&gt;/&lt;ds&gt; --policy.type=act</code></li>
         </ol>
         <h3>在 CLI 跑同一份预设</h3>

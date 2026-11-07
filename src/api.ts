@@ -20,6 +20,8 @@ export interface SimExportReport {
   dir: string;
   episodes: number;
   frames: number;
+  /** 本次落盘编码（"v21" / "v3" / "npz"）——与所选导出格式一致 */
+  format?: string;
 }
 
 export interface DemoInfo {
@@ -302,7 +304,12 @@ export const api = {
   hasFeedbackPat: () => invoke<boolean>("has_feedback_pat"),
   saveFeedbackPat: (pat: string) => invoke<void>("save_feedback_pat", { pat }),
   clearFeedbackPat: () => invoke<void>("clear_feedback_pat"),
-  simExportLerobot: (payload: string) => invoke<SimExportReport>("sim_export_lerobot", { payload }),
+  // format 缺省 = v2.1（字节冻结默认路径）；"v3" / "npz" 为新出口。
+  simExportLerobot: (payload: string, format?: string) =>
+    invoke<SimExportReport>(
+      "sim_export_lerobot",
+      format ? { payload, format } : { payload },
+    ),
   simRevealExport: () => invoke<void>("sim_reveal_export"),
 };
 
