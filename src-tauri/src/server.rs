@@ -59,7 +59,9 @@ pub fn cors_allow_origin(origin: Option<&str>) -> Option<String> {
     allowed.then(|| origin.to_string())
 }
 
-fn http_client() -> &'static reqwest::Client {
+/// 全局共享 HTTP 客户端：连接池 + TLS 会话复用（llm.rs 的对话流与此同池，
+/// 免每轮重建客户端重做握手——v0.13.0 快速响应批）。
+pub(crate) fn http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| reqwest::Client::builder().build().unwrap_or_default())
 }

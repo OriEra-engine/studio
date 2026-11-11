@@ -32,18 +32,18 @@ const actions: Action[] = [
   { id: "nav-settings", title: "前往 · 设置", hint: "反馈直达引擎仓库", keywords: "settings 设置 feedback 反馈", run: () => router.push("/settings") },
   {
     id: "copilot-open",
-    title: "召唤奥粒(工作台助手)",
-    hint: "随时问我怎么做出游戏",
+    title: "打开 Agent 工作台(奥粒)",
+    hint: "会派活改剧情、查项目、出计划",
     keys: "Ctrl+J",
-    keywords: "copilot 奥粒 助手 agent help 帮助",
-    run: () => window.dispatchEvent(new CustomEvent("oriera:copilot:open")),
+    keywords: "copilot 奥粒 助手 agent help 帮助 工作台",
+    run: () => router.push("/agent"),
   },
   {
-    id: "copilot-reset",
-    title: "清空奥粒的记忆",
-    hint: "删除本地对话历史",
-    keywords: "copilot reset 清空 记忆 history 隐私",
-    run: () => window.dispatchEvent(new CustomEvent("oriera:copilot:reset")),
+    id: "copilot-new",
+    title: "新建 Agent 任务",
+    hint: "去工作台开一段新任务,历史保留",
+    keywords: "copilot new agent 会话 任务 新建 新对话",
+    run: () => { router.push("/agent"); setTimeout(() => window.dispatchEvent(new CustomEvent("oriera:agent:new")), 120); },
   },
 ];
 

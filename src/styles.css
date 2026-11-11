@@ -23,14 +23,14 @@
   --radius: 12px;
   --radius-sm: 8px;
   --mono: "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", monospace;
-  --topbar-h: 46px;
+  --topbar-h: 44px;   /* v0.13.0：Codex 式更紧凑的顶栏 */
   --sider-w: 208px;
 }
 
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
 body {
-  font-family: "Segoe UI", "Microsoft YaHei", -apple-system, sans-serif;
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
@@ -46,10 +46,11 @@ a { color: var(--accent); text-decoration: none; }
 
 .mono { font-family: var(--mono); font-size: .93em; }
 
-/* 底部留白 = FAB 安全区：悬浮球(bottom 22px + 58px 高)不再遮页面底部按钮 */
-.page { padding: 22px 26px 96px; max-width: 1240px; margin: 0 auto; }
-.page-title { font-size: 21px; font-weight: 700; margin: 4px 0 4px; letter-spacing: .2px; }
-.page-sub { color: var(--text-3); font-size: 13px; margin-bottom: 18px; }
+/* 底部留白 = FAB 安全区：悬浮球(bottom 22px + 58px 高)不再遮页面底部按钮
+   v0.13.0：内边距 22→18px 对齐 Codex 紧凑排版 */
+.page { padding: 18px 24px 96px; max-width: 1240px; margin: 0 auto; }
+.page-title { font-size: 17px; font-weight: 700; margin: 2px 0 4px; letter-spacing: .2px; }
+.page-sub { color: var(--text-3); font-size: 12px; margin-bottom: 16px; }
 
 /* ===== 状态点系统（运行中=脉冲绿 / 在线=绿 / 离线=灰 / 警告=橙） ===== */
 .status-dot {

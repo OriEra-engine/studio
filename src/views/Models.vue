@@ -307,7 +307,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 
     <!-- 硬件体检 -->
     <NSpin :show="detecting">
-      <NCard title="🖥️ 硬件体检" size="small" style="margin-bottom: 14px">
+      <NCard title="硬件体检" size="small" style="margin-bottom: 14px">
         <template #header-extra>
           <NButton size="tiny" quaternary @click="detect">重新检测</NButton>
         </template>
@@ -325,21 +325,21 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
     </NSpin>
 
     <!-- 推荐方案 -->
-    <NCard v-if="rec" :title="`🧠 ${rec.headline}`" size="small" style="margin-bottom: 14px">
+    <NCard v-if="rec" :title="rec.headline" size="small" style="margin-bottom: 14px">
       <p style="color: #a0a0ab; font-size: 13px; line-height: 1.7; margin: 0 0 14px">{{ rec.detail }}</p>
-      <p style="color: #5b8a5e; font-size: 11.5px; margin: -8px 0 12px">🔒 各厂商 API Key 仅保存在本机「Windows 凭据管理器」，不写设置文件、不进任何项目/上传通道；下方输入即存即测。</p>
+      <p class="key-note">各厂商 API Key 仅保存在本机「Windows 凭据管理器」，不写设置文件、不进任何项目/上传通道；下方输入即存即测。</p>
       <NGrid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <NGi v-for="c in rec.cloud" :key="c.kind" span="3 m:1">
           <div class="rec-card" :class="{ sel: form.kind === c.kind }" @click="pickCloud(c.kind, c.model, c.base)">
             <div class="rec-head">
               <b>{{ c.label }}</b>
-              <NTag v-if="c.free" type="success" size="tiny" round>免费额度</NTag>
+              <span class="chip-muted">免费额度</span>
             </div>
             <div class="rec-note">{{ c.note }}</div>
             <div class="rec-actions">
               <NButton size="tiny" secondary @click.stop="pickCloud(c.kind, c.model, c.base)">选择</NButton>
               <NButton v-if="c.signup_url" size="tiny" quaternary tag="a" :href="c.signup_url" target="_blank">注册入口 ↗</NButton>
-              <NTag v-if="providerInUse(c.kind)" size="tiny" type="success" round>使用中</NTag>
+              <span class="in-use"><span class="status-dot on"></span>使用中</span>
             </div>
             <div class="quick-row" @click.stop>
               <NInput
@@ -355,8 +355,8 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
         <NGi v-if="rec.local" span="3 m:1">
           <div class="rec-card local" :class="{ sel: form.model === rec.local.provider.model }" @click="pickLocal">
             <div class="rec-head">
-              <b>🏠 本地 Ollama · {{ rec.local.ollama_model }}</b>
-              <NTag type="info" size="tiny" round>零 token 费</NTag>
+              <b>本地 Ollama · {{ rec.local.ollama_model }}</b>
+              <span class="chip-muted">零 token 费</span>
             </div>
             <div class="rec-note">{{ rec.local.size_note }} · 约需 {{ rec.local.vram_need_gb }}GB 显存 / {{ rec.local.disk_gb }}GB 磁盘</div>
             <div class="rec-actions">
@@ -371,7 +371,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
     <!-- 全部云厂商（渐进披露：默认收起，推荐方案已够用） -->
     <NCard size="small" style="margin-bottom: 14px">
       <NCollapse>
-        <template #header>☁️ 全部云厂商 · 自由选择（<span style="color:#35d07f">点开</span>）</template>
+        <template #header>全部云厂商 · 自由选择</template>
         <template #header-extra>
           <NSpace size="small" :wrap="false">
             <NTag
@@ -392,8 +392,8 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
             <div class="rec-head">
               <b>{{ p.label }}</b>
               <span>
-                <NTag v-if="p.badge" size="tiny" round type="success" style="margin-right: 4px">{{ p.badge }}</NTag>
-                <NTag v-if="p.free" type="success" size="tiny" round>免费</NTag>
+                <span class="chip-muted" style="margin-right: 4px">{{ p.badge }}</span>
+                <span class="chip-muted">免费</span>
               </span>
             </div>
             <div class="rec-note">{{ p.note }}</div>
@@ -408,7 +408,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
             <div class="rec-actions">
               <NButton size="tiny" secondary @click.stop="pickPreset(p)">选择</NButton>
               <NButton v-if="p.url" size="tiny" quaternary tag="a" :href="p.url" target="_blank">注册入口 ↗</NButton>
-              <NTag v-if="providerInUse(p.kind)" size="tiny" type="success" round>使用中</NTag>
+              <span class="in-use"><span class="status-dot on"></span>使用中</span>
             </div>
             <div class="quick-row" @click.stop>
               <NInput
@@ -431,7 +431,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 
     <!-- 任务槽位(v0.7.3 已接入运行时:对话/导演槽生效;行为/审校预留) -->
     <NCard size="small" style="margin-bottom: 14px">
-      <template #header>🧭 任务槽位 <NTag size="tiny" type="success" round style="margin-left: 6px" :bordered="false">已接入运行时</NTag></template>
+      <template #header>任务槽位 <span class="chip-muted" style="margin-left: 8px">已接入运行时</span></template>
       <p style="color: #a0a0ab; font-size: 12.5px; line-height: 1.7; margin: 0 0 12px">
         按「任务」而非全局选模型:对话走 npc_dialog 槽、剧情推进走 director 槽(游戏与咖啡馆 demo 已生效);
         行为生成/生成审校为预留槽位。Key 留空=同厂商继承全局 Key（一 Key 多模型的厂商最顺手）,
@@ -468,7 +468,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
     </NCard>
 
     <!-- Ollama 本地管理 -->
-    <NCard v-if="rec?.local" title="🏠 本地模型（Ollama）" size="small" style="margin-bottom: 14px">
+    <NCard v-if="rec?.local" title="本地模型（Ollama）" size="small" style="margin-bottom: 14px">
       <template #header-extra>
         <NTag :type="ollama?.running ? 'success' : ollama?.installed ? 'warning' : 'default'" size="small" round>
           {{ ollama?.running ? "运行中" : ollama?.installed ? "已安装未运行" : "未安装" }}
@@ -515,7 +515,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
       </div>
     </NCard>
 
-    <NCard title="🔊 本地语音（piper 等本地 server，可选）" size="small" style="margin-bottom: 14px">
+    <NCard title="本地语音（piper 等本地 server，可选）" size="small" style="margin-bottom: 14px">
       <p style="font-size: 12px; color: #74747f; margin: 0 0 8px">
         填入 OpenAI <code>/v1/audio/speech</code> 兼容的本地 server 地址（如 piper：<code>http://127.0.0.1:5000/v1</code>）。
         零 key、零云费、数据不出机；留空 = 关闭，影游配音走云端豆包。
@@ -528,7 +528,7 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
     </NCard>
 
     <!-- 当前配置 -->
-    <NCard title="🔌 植入引擎" size="small">
+    <NCard title="植入引擎" size="small">
       <template #header-extra>
         <NTag :type="configured ? 'success' : 'warning'" size="small" round>{{ configured ? '已连接' : '未连接' }}</NTag>
       </template>
@@ -573,9 +573,12 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .hw-item { background: #141418; border-radius: 10px; padding: 10px 14px; }
 .hw-k { font-size: 11px; color: #6f6f7a; margin-bottom: 4px; }
 .hw-v { font-size: 13px; color: #cdd6ec; }
-.rec-card { background: #141418; border: 1.5px solid #202027; border-radius: 12px; padding: 14px; cursor: pointer; height: 100%; transition: border-color .12s; }
-.rec-card:hover { border-color: #3a3a46; }
-.rec-card.sel { border-color: #7eb8ff; background: #1a1a20; }
+.rec-card { background: #131318; border: 1px solid #232329; border-radius: 12px; padding: 14px; cursor: pointer; height: 100%; transition: border-color .12s, background .12s; }
+.rec-card:hover { border-color: #2e2e38; }
+.rec-card.sel { border-color: #45454f; background: #17171d; }
+.chip-muted { font-size: 10.5px; color: var(--text-3); border: 1px solid #26262e; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.in-use { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--good); white-space: nowrap; }
+.key-note { color: var(--text-3); font-size: 11.5px; margin: -6px 0 12px; }
 .model-pill { display: inline-flex; align-items: center; gap: 8px; background: #141418; border: 1px solid #30303a; border-radius: 20px; padding: 4px 12px; font-size: 12px; }
 .model-pill:hover { border-color: #3a3a46; }
 .model-del {
@@ -597,9 +600,9 @@ const vramGb = () => (hw.value?.max_vram_mb ? (hw.value.max_vram_mb / 1024).toFi
 .model-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
 .model-pill-mini { font-size: 11px; color: #a8a8b3; background: #0e0e12; border: 1px solid #30303a; border-radius: 10px; padding: 1px 8px; cursor: pointer; }
 .model-pill-mini:hover { border-color: #3a3a46; color: #9fd0ff; }
-.model-pill-mini.on { border-color: #7eb8ff; color: #9fd0ff; background: #1a1a20; }
+.model-pill-mini.on { border-color: #4a4a56; color: #e2e4ec; background: #1a1a20; }
 .live-tag { color: #7ce38b; border-style: dashed; cursor: default; }
-.slot-card { background: #141418; border: 1.5px solid #202027; border-radius: 12px; padding: 12px; height: 100%; }
+.slot-card { background: #131318; border: 1px solid #232329; border-radius: 12px; padding: 12px; height: 100%; }
 .slot-card.slot-off { opacity: .55; }
 .slot-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-size: 13.5px; }
 .slot-id { font-size: 10.5px; color: #71717c; font-family: Consolas, monospace; }

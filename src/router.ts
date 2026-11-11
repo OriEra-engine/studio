@@ -4,6 +4,9 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/", name: "dashboard", component: () => import("./views/Dashboard.vue"), meta: { title: "仪表盘" } },
+    { path: "/agent", name: "agent", component: () => import("./views/AgentWorkbench.vue"), meta: { title: "Agent 工作台" } },
+    { path: "/agent/state", name: "agent-state", component: () => import("./views/StateView.vue"), meta: { title: "奥粒状态" } },
+    { path: "/agent/lab", name: "agent-lab", component: () => import("./views/LabView.vue"), meta: { title: "进化实验室" } },
     { path: "/demos", name: "demos", component: () => import("./views/Demos.vue"), meta: { title: "Demo 演示厅" } },
     { path: "/new-game", name: "new-game", component: () => import("./views/NewGame.vue"), meta: { title: "新建游戏" } },
     { path: "/models", name: "models", component: () => import("./views/Models.vue"), meta: { title: "模型中心" } },

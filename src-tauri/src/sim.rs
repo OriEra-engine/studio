@@ -498,7 +498,7 @@ mod tests {
         ("meta/episodes.jsonl", 149, 0x1bed_8a05_e5da_36ad),
         ("meta/info.json", 987, 0xd5cc_d26e_70e9_7191),
         ("meta/modality.json", 294, 0x2857_3f71_1205_9c70),
-        ("meta/oriera_receipt.json", 412, 0xe2e7_7b34_23db_0f49),
+        ("meta/oriera_receipt.json", 412, 0x5fb3_bc84_2f5d_018d),
         ("meta/stats.json", 1003, 0xaa68_f7b8_bc4d_134d),
         ("meta/tasks.jsonl", 115, 0x78ad_b614_a5cb_c1b2),
     ];
@@ -514,7 +514,7 @@ mod tests {
     );
 
     const GOLDEN_RECEIPT: &str = concat!(
-        r#"{"codebase_version":"oriera-embodied-v2","engine":"oriera-studio/0.12.0","backend":"rigid3d-js-mirror","dt":0.01666667,"spec_hash":"a1b2c3d4e5f60718","fingerprint_scheme":"v2","episode_fingerprints_v2":[9876543210987654321,7],"episode_fingerprints_v1":[12345678901234567890,42],"episode_state_hashes":[12345678901234567890,42],"episode_state_hashes_note":"legacy alias of episode_fingerprints_v1","successes":0}"#,
+        r#"{"codebase_version":"oriera-embodied-v2","engine":"oriera-studio/0.16.0","backend":"rigid3d-js-mirror","dt":0.01666667,"spec_hash":"a1b2c3d4e5f60718","fingerprint_scheme":"v2","episode_fingerprints_v2":[9876543210987654321,7],"episode_fingerprints_v1":[12345678901234567890,42],"episode_state_hashes":[12345678901234567890,42],"episode_state_hashes_note":"legacy alias of episode_fingerprints_v1","successes":0}"#,
         "\n",
     );
 

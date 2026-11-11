@@ -56,19 +56,20 @@ pub async fn chat(
 }
 
 /// 一次对话补全调用（消息数组由调用方组装；首条 system 消息按协议归位）。
-async fn post_chat(
+/// lab.rs 的评估/优化循环复用（非流式、case 粒度上报）。
+pub(crate) async fn post_chat(
     cfg: &ProviderCfg,
     messages: Vec<serde_json::Value>,
     max_tokens: u32,
     temperature: f32,
 ) -> Result<String, String> {
-    let client = reqwest::Client::new();
+    let client = crate::server::http_client();
     if cfg.kind == "anthropic" {
         return post_anthropic(&client, cfg, messages, max_tokens, temperature).await;
     }
 
     let url = chat_endpoint(&cfg.base);
-    let body = request_body(cfg, messages, max_tokens, temperature, false);
+    let body = request_body(cfg, messages, max_tokens, temperature, false, None);
 
     let resp = client
         .post(&url)
@@ -111,13 +112,15 @@ async fn post_chat(
 }
 
 /// 请求体统一构造：DeepSeek V4 默认 high 档思考会吃光 max_tokens 导致空正文/半句截断
-/// （引擎侧已踩平的坑），这里注入 thinking disabled；stream 标记供流式通道复用。
+/// （引擎侧已踩平的坑），这里注入 thinking disabled；stream 标记供流式通道复用；
+/// tools 为 Agent 工作台的工具 schema（OpenAI function calling 格式）。
 fn request_body(
     cfg: &ProviderCfg,
     messages: Vec<serde_json::Value>,
     max_tokens: u32,
     temperature: f32,
     stream: bool,
+    tools: Option<&[serde_json::Value]>,
 ) -> serde_json::Value {
     let mut body = json!({
         "model": cfg.model,
@@ -127,6 +130,13 @@ fn request_body(
     });
     if stream {
         body["stream"] = json!(true);
+        // token 计量：流末尾追加一帧 choices=[] + usage（v0.15.0 成本可观测）
+        if cfg.kind != "anthropic" {
+            body["stream_options"] = json!({"include_usage": true});
+        }
+    }
+    if let Some(t) = tools {
+        body["tools"] = json!(t);
     }
     if cfg.kind == "deepseek" {
         body["thinking"] = json!({"type": "disabled"});
@@ -400,19 +410,62 @@ use crate::sse;
 use futures_util::StreamExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// 流式对话补全：每收到一段正文增量就调 `on_delta`；
-/// `cancelled` 置真后在下个增量边界停止读取。返回完整正文。
-/// `on_delta` 返回 false 表示调用方要求提前停止（同样返回已累计文本）。
-pub async fn chat_stream(
+/// 一次调用的 token 用量（学 Penguin 成本中心：消耗必须可见）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TokenUsage {
+    pub input: u64,
+    pub output: u64,
+}
+
+impl TokenUsage {
+    pub fn total(&self) -> u64 {
+        self.input + self.output
+    }
+}
+
+/// 打开一条流式补全连接（chat_stream / chat_stream_agent 共用）。
+/// 学 Penguin「错误收敛为消息」：retryable 错误（网络/超时/429/5xx）在
+/// 建连阶段自动重试 ≤2 次、指数退避；401/403/404 等请求性错误直接失败。
+async fn open_stream(
     cfg: &ProviderCfg,
-    messages: Vec<serde_json::Value>,
-    max_tokens: u32,
-    temperature: f32,
-    on_delta: &mut (dyn FnMut(&str) -> bool + Send),
-    cancelled: &AtomicBool,
-) -> Result<String, String> {
-    let client = reqwest::Client::new();
-    let anthropic = cfg.kind == "anthropic";
+    body: serde_json::Value,
+    anthropic: bool,
+) -> Result<reqwest::Response, String> {
+    let mut attempt = 0u32;
+    loop {
+        match open_stream_once(cfg, &body, anthropic).await {
+            Ok(r) => return Ok(r),
+            Err(e) if attempt < 2 && is_retryable_err(&e) => {
+                attempt += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(800 * u64::from(attempt))).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// 网络抖动/限流/服务端故障 → 可自动重试；鉴权与请求错误 → 不重试。
+fn is_retryable_err(err: &str) -> bool {
+    let lowered = err.to_lowercase();
+    lowered.contains("429")
+        || lowered.contains("500")
+        || lowered.contains("502")
+        || lowered.contains("503")
+        || lowered.contains("504")
+        || lowered.contains("请求超时")
+        || lowered.contains("网络连接失败")
+        || lowered.contains("连接被中断")
+        || lowered.contains("暂时故障")
+        || lowered.contains("timed out")
+        || lowered.contains("connection")
+}
+
+async fn open_stream_once(
+    cfg: &ProviderCfg,
+    body: &serde_json::Value,
+    anthropic: bool,
+) -> Result<reqwest::Response, String> {
+    let client = crate::server::http_client();
     let url = if anthropic {
         let b = cfg.base.trim_end_matches('/');
         if b.ends_with("/messages") {
@@ -423,8 +476,6 @@ pub async fn chat_stream(
     } else {
         chat_endpoint(&cfg.base)
     };
-
-    let body = request_body(cfg, messages, max_tokens, temperature, true);
     let req = if anthropic {
         client
             .post(&url)
@@ -441,21 +492,37 @@ pub async fn chat_stream(
             .timeout(std::time::Duration::from_secs(180))
             .json(&body)
     };
-
     let resp = req.send().await.map_err(|e| {
         let (title, hint) = sse::classify_error(None, &e.to_string());
         format!("{title}：{hint}")
     })?;
-
     let status = resp.status();
     if !status.is_success() {
         let text = resp.text().await.unwrap_or_default();
         return Err(format_http_error(status.as_u16(), &text));
     }
+    Ok(resp)
+}
+
+/// 流式对话补全：每收到一段正文增量就调 `on_delta`；
+/// `cancelled` 置真后在下个增量边界停止读取。返回完整正文。
+/// `on_delta` 返回 false 表示调用方要求提前停止（同样返回已累计文本）。
+pub async fn chat_stream(
+    cfg: &ProviderCfg,
+    messages: Vec<serde_json::Value>,
+    max_tokens: u32,
+    temperature: f32,
+    on_delta: &mut (dyn FnMut(&str) -> bool + Send),
+    cancelled: &AtomicBool,
+) -> Result<(String, TokenUsage), String> {
+    let anthropic = cfg.kind == "anthropic";
+    let body = request_body(cfg, messages, max_tokens, temperature, true, None);
+    let resp = open_stream(cfg, body, anthropic).await?;
 
     let mut stream = resp.bytes_stream();
     let mut parser = sse::SseParser::new();
     let mut full = String::new();
+    let mut usage = TokenUsage::default();
 
     while let Some(item) = stream.next().await {
         if cancelled.load(Ordering::Relaxed) {
@@ -467,11 +534,23 @@ pub async fn chat_stream(
         })?;
         for payload in parser.feed(&chunk) {
             if payload.trim() == "[DONE]" {
-                return Ok(full);
+                return Ok((full, usage));
             }
             if let Some(msg) = sse::error_payload(&payload) {
                 let (title, hint) = sse::classify_error(None, &msg);
                 return Err(format!("{title}：{hint}"));
+            }
+            // usage 帧采集（OpenAI 收尾帧 / Anthropic message_start+delta）
+            if anthropic {
+                if let Some(i) = sse::anthropic_usage_in(&payload) {
+                    usage.input = i;
+                }
+                if let Some(o) = sse::anthropic_usage_out(&payload) {
+                    usage.output = o;
+                }
+            } else if let Some((i, o)) = sse::openai_usage(&payload) {
+                usage.input = i;
+                usage.output = o;
             }
             let delta = if anthropic {
                 sse::anthropic_delta(&payload)
@@ -484,7 +563,7 @@ pub async fn chat_stream(
                 }
                 full.push_str(&d);
                 if !on_delta(&d) {
-                    return Ok(full);
+                    return Ok((full, usage));
                 }
             }
         }
@@ -501,7 +580,164 @@ pub async fn chat_stream(
     if full.is_empty() {
         return Err("模型未返回内容（流提前结束），请重试一次".into());
     }
-    Ok(full)
+    Ok((full, usage))
+}
+
+// ====================== Agent 工作台：带工具调用的流式一轮 ======================
+
+/// 一轮结束后完整收口的工具调用（分片已按 index 拼齐）。
+#[derive(Debug, Clone)]
+pub struct CompletedToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// 一轮流式结果：纯文本收尾，或模型请求了工具调用。
+#[derive(Debug)]
+pub enum TurnOutcome {
+    Text(String),
+    ToolCalls(Vec<CompletedToolCall>),
+}
+
+/// Agent 一流的回调集合：文本增量 / 工具开始 / 工具参数增量。
+pub struct AgentTurnEvents<'a> {
+    pub on_delta: &'a mut (dyn FnMut(&str) -> bool + Send),
+    pub on_tool_start: &'a mut (dyn FnMut(&str, &str) + Send),
+    pub on_tool_args: &'a mut (dyn FnMut(&str, &str) + Send),
+}
+
+/// 带工具 schema 的流式一轮：文本 delta 与 tool_calls 分片同时上报。
+/// 结束时按 finish_reason / 是否有工具分片收口为 Text 或 ToolCalls。
+pub async fn chat_stream_agent(
+    cfg: &ProviderCfg,
+    messages: Vec<serde_json::Value>,
+    max_tokens: u32,
+    temperature: f32,
+    tools: &[serde_json::Value],
+    events: AgentTurnEvents<'_>,
+    cancelled: &AtomicBool,
+) -> Result<(TurnOutcome, TokenUsage), String> {
+    let body = request_body(cfg, messages, max_tokens, temperature, true, Some(tools));
+    let resp = open_stream(cfg, body, false).await?;
+
+    let mut stream = resp.bytes_stream();
+    let mut parser = sse::SseParser::new();
+    let mut full = String::new();
+    let mut usage = TokenUsage::default();
+    // 分片拼装：index → 槽位；id/name 首帧出现，arguments 逐帧追加
+    let mut calls: Vec<CompletedToolCall> = Vec::new();
+    let mut slot_of: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut saw_tool_calls = false;
+
+    while let Some(item) = stream.next().await {
+        if cancelled.load(Ordering::Relaxed) {
+            break;
+        }
+        let chunk = item.map_err(|e| {
+            let (title, hint) = sse::classify_error(None, &e.to_string());
+            format!("{title}：{hint}")
+        })?;
+        for payload in parser.feed(&chunk) {
+            if payload.trim() == "[DONE]" {
+                return Ok((finish_agent_turn(full, calls, saw_tool_calls), usage));
+            }
+            if let Some(msg) = sse::error_payload(&payload) {
+                let (title, hint) = sse::classify_error(None, &msg);
+                return Err(format!("{title}：{hint}"));
+            }
+            if let Some((i, o)) = sse::openai_usage(&payload) {
+                usage.input = i;
+                usage.output = o;
+            }
+            // 文本增量（可与工具分片同帧混出）
+            if let Some(d) = sse::openai_delta(&payload) {
+                if !d.is_empty() {
+                    full.push_str(&d);
+                    if !(events.on_delta)(&d) {
+                        return Ok((finish_agent_turn(full, calls, saw_tool_calls), usage));
+                    }
+                }
+            }
+            // 工具分片
+            for tc in sse::openai_tool_delta(&payload) {
+                saw_tool_calls = true;
+                let slot = *slot_of.entry(tc.index).or_insert_with(|| {
+                    calls.push(CompletedToolCall {
+                        id: String::new(),
+                        name: String::new(),
+                        arguments: String::new(),
+                    });
+                    calls.len() - 1
+                });
+                let call = &mut calls[slot];
+                if let Some(id) = tc.id {
+                    call.id = id;
+                }
+                if let Some(name) = tc.name {
+                    if call.name != name {
+                        let is_first = call.name.is_empty();
+                        call.name = name;
+                        if is_first {
+                            let cid = if call.id.is_empty() {
+                                format!("call-{slot}")
+                            } else {
+                                call.id.clone()
+                            };
+                            (events.on_tool_start)(&cid, &call.name);
+                        }
+                    }
+                }
+                if let Some(frag) = tc.arguments_fragment {
+                    call.arguments.push_str(&frag);
+                    let cid = if call.id.is_empty() {
+                        format!("call-{slot}")
+                    } else {
+                        call.id.clone()
+                    };
+                    (events.on_tool_args)(&cid, &frag);
+                }
+            }
+            if sse::openai_finished_tool_calls(&payload) {
+                saw_tool_calls = true;
+            }
+        }
+    }
+    for payload in parser.flush() {
+        if let Some(d) = sse::openai_delta(&payload) {
+            full.push_str(&d);
+        }
+    }
+    Ok((finish_agent_turn(full, calls, saw_tool_calls), usage))
+}
+
+/// 一轮收口：有工具调用 → ToolCalls（id 缺省补 call-N），否则 Text。
+fn finish_agent_turn(
+    full: String,
+    mut calls: Vec<CompletedToolCall>,
+    saw_tool_calls: bool,
+) -> TurnOutcome {
+    if saw_tool_calls && !calls.is_empty() {
+        for (i, c) in calls.iter_mut().enumerate() {
+            if c.id.is_empty() {
+                c.id = format!("call-{i}");
+            }
+            if c.arguments.trim().is_empty() {
+                c.arguments = "{}".into();
+            }
+        }
+        TurnOutcome::ToolCalls(std::mem::take(&mut calls))
+    } else {
+        TurnOutcome::Text(full)
+    }
+}
+
+/// 4xx 且错误原文提及 tool/function → 大概率该端点不支持 function calling
+/// （宽容启发式：误判也只是降级为纯对话，永远可用）。
+pub fn looks_like_tools_rejected(err: &str) -> bool {
+    let lowered = err.to_lowercase();
+    (err.contains("400") || err.contains("422") || err.contains("404"))
+        && (lowered.contains("tool") || lowered.contains("function"))
 }
 
 /// 流式剧情定制：一边吐增量一边积累，结束后解析 JSON（单次尝试，失败给可行动的错误）。
@@ -524,7 +760,7 @@ pub async fn generate_story_stream(
         framework_rhythm,
         economy_names,
     );
-    let raw = chat_stream(
+    let (raw, _usage) = chat_stream(
         cfg,
         vec![
             json!({"role": "system", "content": system}),
@@ -560,7 +796,8 @@ pub async fn copilot_chat_stream(
         messages.push(json!({"role": role, "content": t.content}));
     }
     messages.push(json!({"role": "user", "content": user}));
-    chat_stream(cfg, messages, 1024, 0.7, on_delta, cancelled).await
+    let (text, _usage) = chat_stream(cfg, messages, 1024, 0.7, on_delta, cancelled).await?;
+    Ok(text)
 }
 
 // ---- 月度调用账本（2026-10-26 付费用户测评 P0：对话消耗不可见）----
@@ -579,28 +816,36 @@ pub fn init_ledger(path: PathBuf) {
 }
 
 /// 记一次成功调用（fail-open：账本任何故障都不影响主流程）。
+/// v0.13.0：读改写挪到独立线程 fire-and-forget——流式收尾不再被写盘阻塞。
 pub fn record_call(kind: &str) {
-    let Ok(guard) = LEDGER_PATH.lock() else {
-        return;
+    let path = {
+        let Ok(guard) = LEDGER_PATH.lock() else {
+            return;
+        };
+        let Some(path) = guard.as_ref() else { return };
+        path.clone()
     };
-    let Some(path) = guard.as_ref() else { return };
-    let month = current_month();
-    let mut root: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    let bucket = root.entry(month).or_insert_with(|| json!({}));
-    if let Some(obj) = bucket.as_object_mut() {
-        let c = obj.entry(kind.to_string()).or_insert(json!(0));
-        *c = json!(c.as_u64().unwrap_or(0) + 1);
-    }
-    if let Ok(text) = serde_json::to_string(&root) {
-        // 原子写：temp+rename，崩溃不留半个账本
-        let tmp = path.with_extension("json.tmp");
-        if std::fs::write(&tmp, text).is_ok() {
-            let _ = std::fs::rename(&tmp, path);
+    let kind = kind.to_string();
+    std::thread::spawn(move || {
+        let month = current_month();
+        let mut root: serde_json::Map<String, serde_json::Value> =
+            std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+        let bucket = root.entry(month).or_insert_with(|| json!({}));
+        if let Some(obj) = bucket.as_object_mut() {
+            let c = obj.entry(kind).or_insert(json!(0));
+            *c = json!(c.as_u64().unwrap_or(0) + 1);
         }
-    }
+        if let Ok(text) = serde_json::to_string(&root) {
+            // 原子写：temp+rename，崩溃不留半个账本
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, text).is_ok() {
+                let _ = std::fs::rename(&tmp, path);
+            }
+        }
+    });
 }
 
 fn current_month() -> String {

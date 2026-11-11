@@ -1,7 +1,10 @@
 //! OriEra Studio —— 开箱即用的 OriEra 世界引擎桌面工作台。
 
+mod agent;
+mod agent_state;
 mod assets;
 mod canvas;
+mod lab;
 mod demos;
 mod feedback;
 mod film_flow;
@@ -168,7 +171,7 @@ fn get_recommendations(hw: hardware::HardwareInfo) -> recommend::Recommendation 
 #[derive(Default)]
 pub struct AiTasks(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
 
-fn next_task_id() -> String {
+pub(crate) fn next_task_id() -> String {
     let n = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -177,10 +180,37 @@ fn next_task_id() -> String {
 }
 
 /// 推送给前端的 AI 流事件（tauri Channel）。
+/// v0.13.0 Agent 工作台扩展：工具卡 / 计划卡 / 审批卡 / 用量 / 降级提示。
 #[derive(Clone, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum AiStreamEvent {
     Delta { text: String },
+    ToolStart { id: String, name: String },
+    ToolArgs { id: String, fragment: String },
+    ToolEnd {
+        id: String,
+        ok: bool,
+        summary: String,
+        duration_ms: u64,
+    },
+    Plan { steps: serde_json::Value },
+    /// A2UI 选项卡：模型给出多个方案让用户点选（点击后作为新消息进入会话）。
+    Choices { options: serde_json::Value },
+    ApprovalRequest {
+        id: String,
+        tool: String,
+        title: String,
+        detail: String,
+        diff: serde_json::Value,
+    },
+    Usage {
+        context_chars: usize,
+        turns: usize,
+        tokens_in: u64,
+        tokens_out: u64,
+    },
+    /// 当前端点不支持 function calling，已降级纯对话。
+    ToolUnsupported,
     Done { result: serde_json::Value },
     Error { message: String },
 }
@@ -201,7 +231,7 @@ async fn test_provider(
         seen += d.chars().count();
         seen < 60
     };
-    let reply = llm::chat_stream(
+    let (reply, _usage) = llm::chat_stream(
         &cfg,
         vec![
             serde_json::json!({"role": "system", "content": "你是连通性测试助手。"}),
@@ -400,6 +430,82 @@ fn cancel_ai(tasks: tauri::State<'_, AiTasks>, id: String) -> Result<(), String>
     Ok(())
 }
 
+// ====================== v0.13.0 Agent 工作台 ======================
+
+/// Agent 任务入口：预检 provider 与会话后，spawn 完整工具循环（事件经 Channel）。
+#[tauri::command]
+async fn agent_run(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    tasks: tauri::State<'_, AiTasks>,
+    session_id: String,
+    user_text: String,
+    channel: Channel<AiStreamEvent>,
+) -> Result<String, String> {
+    // invoke 层预检：无模型立即 Err，前端可走规则降级（不进后台任务）
+    settings::load_provider(&app).ok_or_else(|| {
+        "小奥离线中：先在「模型中心」配置模型（云端或 Ollama 本地），配置好我就能真正对话啦"
+            .to_string()
+    })?;
+
+    let flag = Arc::new(AtomicBool::new(false));
+    let id = next_task_id();
+    tasks.0.lock().unwrap().insert(id.clone(), flag.clone());
+
+    let ctx = agent::ToolCtx {
+        app: app.clone(),
+        projects_dir: state.projects_dir.clone(),
+        snapshot_version: state.snapshot_version.clone(),
+        port: state.port,
+        app_version: app.package_info().version.to_string(),
+    };
+    let app2 = app.clone();
+    let task_id = id.clone();
+    let session_for_trace = session_id.clone();
+    let model_for_trace = settings::load_provider(&app)
+        .map(|p| p.model)
+        .unwrap_or_default();
+    tauri::async_runtime::spawn(async move {
+        // 可审计 trace（Penguin：每个分数/每次运行都能追溯）——任务级一行 jsonl
+        let started = std::time::Instant::now();
+        let mut usage = llm::TokenUsage::default();
+        let result = agent::run(
+            app2.clone(),
+            ctx,
+            session_id,
+            user_text,
+            channel.clone(),
+            flag,
+            &mut usage,
+        )
+        .await;
+        lab::trace_agent_run(
+            &app2,
+            &session_for_trace,
+            &task_id,
+            &model_for_trace,
+            result.is_ok(),
+            started.elapsed().as_millis() as u64,
+            result.as_ref().err().map(|e| e.chars().take(160).collect::<String>()).as_deref(),
+            usage.input,
+            usage.output,
+        );
+        if let Err(e) = result {
+            let _ = channel.send(AiStreamEvent::Error { message: e });
+        }
+        if let Some(t) = app2.try_state::<AiTasks>() {
+            t.0.lock().unwrap().remove(&task_id);
+        }
+    });
+    Ok(id)
+}
+
+/// 裁决待审批请求（true=允许 / false=拒绝）；id 不存在返回 false。
+#[tauri::command]
+fn agent_approve(hub: tauri::State<'_, agent::ApprovalHub>, id: String, approved: bool) -> bool {
+    agent::resolve_approval(&hub, &id, approved)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -433,6 +539,26 @@ pub fn run() {
                 snapshot_version,
             });
             app.manage(AiTasks::default());
+            app.manage(agent::ApprovalHub::default());
+            // Agent State 与 Benchmark/记分板/技能 seed（缺则补，永不覆盖既有）
+            agent_state::ensure_seeded(app.handle());
+            agent_state::ensure_skill_seeds(app.handle());
+            lab::ensure_seeded(app.handle());
+
+            // 启动动画兜底：主窗默认隐藏，等前端就绪后自行 show；
+            // 若前端 8 秒仍未接管（脚本错误等），这里强制亮出主窗、关掉 splash
+            {
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(8));
+                    if let Some(w) = h.get_webview_window("main") {
+                        let _ = w.show();
+                    }
+                    if let Some(w) = h.get_webview_window("splash") {
+                        let _ = w.close();
+                    }
+                });
+            }
 
             // 火绒兼容提醒（只弹一次）：其浏览器防护可能拦截游戏子窗口
             {
@@ -487,6 +613,25 @@ pub fn run() {
             copilot_chat,
             copilot_chat_stream,
             cancel_ai,
+            agent_run,
+            agent_approve,
+            agent::agent_session_new,
+            agent::agent_session_list,
+            agent::agent_session_load,
+            agent::agent_session_delete,
+            agent::agent_session_rename,
+            agent_state::agent_state_get,
+            agent_state::agent_state_save,
+            agent_state::agent_state_snapshots,
+            agent_state::agent_state_restore,
+            agent_state::skill_list,
+            agent_state::skill_get,
+            agent_state::skill_save,
+            agent_state::skill_delete,
+            lab::benchmark_get,
+            lab::lab_scoreboard_get,
+            lab::lab_eval_run,
+            lab::lab_optimize_run,
             demos::list_demos,
             demos::open_demo,
             pet::open_pet,

@@ -150,9 +150,90 @@ export type AiStreamEvent =
   | { event: "done"; result: unknown }
   | { event: "error"; message: string };
 
+/** Agent 工作台事件（v0.13.0：Rust AiStreamEvent 全量，含工具/审批/计划） */
+export type DiffLine = { kind: "same" | "del" | "add" | "note"; text: string };
+
+export type AgentStreamEvent =
+  | { event: "delta"; text: string }
+  | { event: "tool_start"; id: string; name: string }
+  | { event: "tool_args"; id: string; fragment: string }
+  | { event: "tool_end"; id: string; ok: boolean; summary: string; duration_ms: number }
+  | { event: "plan"; steps: { step: string; status: string }[] }
+  | { event: "choices"; options: { label: string; detail: string }[] }
+  | { event: "approval_request"; id: string; tool: string; title: string; detail: string; diff: DiffLine[] }
+  | { event: "usage"; context_chars: number; turns: number; tokens_in?: number; tokens_out?: number }
+  | { event: "tool_unsupported" }
+  | { event: "done"; result: { text?: string; session_id?: string } }
+  | { event: "error"; message: string };
+
+/* ================= 进化实验室（v0.14.0，学 PenguinHarness） ================= */
+
+export type EvalEvent =
+  | { event: "round_start"; kind: string; total_cases: number }
+  | { event: "proposal"; hypothesis: string; change_summary: string; diff: DiffLine[] }
+  | { event: "case_done"; index: number; total: number; case_id: string; score: number; duration_ms: number; note: string }
+  | { event: "round_done"; kind: string; avg_score: number; prev_avg: number | null; adopted: boolean | null; state_version: number }
+  | { event: "done"; message: string }
+  | { event: "error"; message: string };
+
+export interface AgentConfig {
+  version: number;
+  max_turns: number;
+  temperature: number;
+  max_tokens: number;
+  tools: Record<string, boolean>;
+}
+export interface SnapshotMeta { version: number; saved_at: number; note: string }
+export interface AgentStateOut { system_prompt: string; config: AgentConfig; snapshots: SnapshotMeta[] }
+
+export interface CaseRecord { id: string; score: number; duration_ms: number; note: string }
+export interface ScoreRecord {
+  ts: number;
+  kind: string;
+  state_version: number;
+  model: string;
+  avg_score: number;
+  avg_duration_ms: number;
+  calls: number;
+  summary_title: string;
+  summary: string;
+  adopted: boolean | null;
+  cases: CaseRecord[];
+}
+export interface RubricItem { name: string; weight: number; guide: string }
+export interface BenchmarkCase { id: string; statement: { context: string; beat: { phase: string; title: string; desc: string }; task: string }; rubric: RubricItem[] }
+export interface BenchmarkOut { manifest: Record<string, unknown>; cases: BenchmarkCase[] }
+
+/** 奥粒技能（SKILL.md 索引元数据） */
+export interface SkillMeta { name: string; description: string; version: string; chars: number }
+
+/** Agent 会话元数据（Rust SessionMeta 一一对应） */
+export interface AgentSessionMeta {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  model: string;
+  turns: number;
+}
+
+/** Agent 会话全文（messages 已被后端剥离，turns 为展示块） */
+export interface AgentSessionFull {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  model: string;
+  turns: AgentTurnRecord[];
+}
+
+export type AgentTurnRecord =
+  | { role: "user"; text: string }
+  | { role: "assistant"; blocks: unknown[] };
+
 /** 发起流式任务：返回 task id（可传给 cancelAi），增量经 onEvent 推送。 */
-function streamTask(cmd: string, args: Record<string, unknown>, onEvent: (e: AiStreamEvent) => void): Promise<string> {
-  const channel = new Channel<AiStreamEvent>();
+function streamTask<T = AiStreamEvent>(cmd: string, args: Record<string, unknown>, onEvent: (e: T) => void): Promise<string> {
+  const channel = new Channel<T>();
   channel.onmessage = onEvent;
   return invoke<string>(cmd, { ...args, channel });
 }
@@ -202,6 +283,35 @@ export const api = {
     invoke<string>("copilot_chat", { system, history, user }),
   copilotChatStream: (system: string, history: CopilotTurn[], user: string, onEvent: (e: AiStreamEvent) => void) =>
     streamTask("copilot_chat_stream", { system, history, user }, onEvent),
+
+  // Agent 工作台（v0.13.0：工具调用循环 + 审批 + 多会话）
+  agentRun: (sessionId: string, userText: string, onEvent: (e: AgentStreamEvent) => void) =>
+    streamTask<AgentStreamEvent>("agent_run", { sessionId, userText }, onEvent),
+  agentApprove: (id: string, approved: boolean) => invoke<boolean>("agent_approve", { id, approved }),
+  agentSessionNew: (firstHint?: string) => invoke<AgentSessionFull>("agent_session_new", { firstHint: firstHint ?? null }),
+  agentSessionList: () => invoke<AgentSessionMeta[]>("agent_session_list"),
+  agentSessionLoad: (id: string) => invoke<AgentSessionFull>("agent_session_load", { id }),
+  agentSessionDelete: (id: string) => invoke<void>("agent_session_delete", { id }),
+  agentSessionRename: (id: string, title: string) => invoke<void>("agent_session_rename", { id, title }),
+
+  // Agent State（奥粒的 prompt/config 文件化 + 快照回滚）
+  agentStateGet: () => invoke<AgentStateOut>("agent_state_get"),
+  agentStateSave: (systemPrompt: string, config: AgentConfig, note?: string) =>
+    invoke<number>("agent_state_save", { systemPrompt, config, note: note ?? null }),
+  agentStateSnapshots: () => invoke<SnapshotMeta[]>("agent_state_snapshots"),
+  agentStateRestore: (version: number) => invoke<number>("agent_state_restore", { version }),
+
+  // 进化实验室（Benchmark + 评估 + 优化，Penguin 式严格提升才保留）
+  benchmarkGet: () => invoke<BenchmarkOut>("benchmark_get"),
+  labScoreboardGet: () => invoke<ScoreRecord[]>("lab_scoreboard_get"),
+  labEvalRun: (onEvent: (e: EvalEvent) => void) => streamTask<EvalEvent>("lab_eval_run", {}, onEvent),
+  labOptimizeRun: (rounds: number, onEvent: (e: EvalEvent) => void) => streamTask<EvalEvent>("lab_optimize_run", { rounds }, onEvent),
+
+  // 奥粒技能（SKILL.md）
+  skillList: () => invoke<SkillMeta[]>("skill_list"),
+  skillGet: (name: string) => invoke<string>("skill_get", { name }),
+  skillSave: (name: string, content: string) => invoke<void>("skill_save", { name, content }),
+  skillDelete: (name: string) => invoke<void>("skill_delete", { name }),
 
   // 我的项目
   listProjects: () => invoke<ProjectMeta[]>("list_projects"),

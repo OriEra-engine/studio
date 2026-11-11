@@ -46,8 +46,8 @@ function fmtDate(unix: string) {
   <div class="page">
     <!-- prompt-first hero（Codex 式：首页即任务） -->
     <div class="hero-v2">
-      <h1>今天想做<span class="grad">什么游戏</span>？</h1>
-      <p class="hero-tip">一句话描述，五步向导带你出成品——没配模型也能玩默认剧情。</p>
+      <h1>今天想做什么游戏？</h1>
+      <p class="hero-tip">一句话描述，五步向导带你出成品——没配模型也能玩默认剧情。想直接派活给奥粒？Ctrl+J 唤起 Agent 工作台。</p>
       <div class="hero-composer">
         <textarea
           v-model="idea"
@@ -64,7 +64,7 @@ function fmtDate(unix: string) {
     </div>
 
     <!-- 首启三步欢迎流（零项目且未配模型时展示） -->
-    <NCard v-if="!loading && isFresh()" title="👋 欢迎来到 OriEra——三步开启你的 AI 游戏" size="small" style="margin-bottom: 18px">
+    <NCard v-if="!loading && isFresh()" title="欢迎来到 OriEra——三步开启你的 AI 游戏" size="small" style="margin-bottom: 18px">
       <NGrid :cols="3" :x-gap="12" responsive="screen" item-responsive>
         <NGi span="3 m:1">
           <div class="step-card" :class="{ done: seenDemo }">
@@ -87,7 +87,7 @@ function fmtDate(unix: string) {
             <div class="step-no">3</div>
             <div class="step-t">生成你的游戏</div>
             <div class="step-d">选玩法 → 定剧情 → 五步拥有自己的 AI 原生游戏</div>
-            <RouterLink to="/new-game"><NButton size="small" type="primary">🚀 开始</NButton></RouterLink>
+            <RouterLink to="/new-game"><NButton size="small" type="primary">开始</NButton></RouterLink>
           </div>
         </NGi>
       </NGrid>
@@ -154,19 +154,15 @@ function fmtDate(unix: string) {
 <style scoped>
 /* ---- prompt-first hero（ZCode 中性黑：灰阶层次 + 极淡顶部提亮） ---- */
 .hero-v2 {
-  border-radius: 16px;
-  padding: 34px 34px 26px;
+  border-radius: 14px;
+  padding: 26px 28px 22px;
   margin-bottom: 18px;
   background:
     radial-gradient(1100px 280px at 30% -70%, rgba(255, 255, 255, .045), transparent 60%),
     linear-gradient(160deg, #17171c 0%, #111114 55%, #0d0d10 100%);
   border: 1px solid var(--line);
 }
-.hero-v2 h1 { margin: 0 0 6px; font-size: 27px; letter-spacing: .3px; }
-.hero-v2 h1 .grad {
-  background: linear-gradient(120deg, #9fd0ff, #4f8ae8);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
+.hero-v2 h1 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: .2px; color: #eceef4; }
 .hero-tip { color: var(--text-3); font-size: 13px; margin: 0 0 18px; }
 
 .hero-composer {
@@ -183,11 +179,11 @@ function fmtDate(unix: string) {
 .hero-composer textarea::placeholder { color: var(--text-3); }
 .hero-go {
   flex: none; border: none; border-radius: 10px; padding: 0 22px;
-  background: var(--accent-strong); color: #fff; font-size: 14px; font-weight: 600;
+  background: #e8e8f0; color: #101014; font-size: 14px; font-weight: 600;
   cursor: pointer; font-family: inherit; transition: background .12s ease;
 }
 .hero-go:disabled { opacity: .4; cursor: default; }
-.hero-go:not(:disabled):hover { background: #6ba1f2; }
+.hero-go:not(:disabled):hover { background: #ffffff; }
 
 .hero-chips { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 14px; }
 .hero-chips-label { color: var(--text-3); font-size: 12px; }
@@ -196,7 +192,7 @@ function fmtDate(unix: string) {
   border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px;
   cursor: pointer; font-family: inherit; transition: all .12s ease;
 }
-.hero-chips button:hover { color: var(--accent); border-color: #3a5f9e; background: var(--bg-hover); }
+.hero-chips button:hover { color: var(--text); border-color: #3a3a46; background: var(--bg-hover); }
 
 /* ---- 最近项目（会话列表式：hover 高亮整行） ---- */
 .recent { margin: 20px 0 18px; }
@@ -224,7 +220,7 @@ function fmtDate(unix: string) {
 
 .step-card { background: var(--bg-raise); border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; height: 100%; display: flex; flex-direction: column; gap: 6px; }
 .step-card.done { opacity: .6; }
-.step-no { width: 26px; height: 26px; border-radius: 50%; background: var(--accent-deep); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+.step-no { width: 26px; height: 26px; border-radius: 50%; background: #2e2e38; color: #eceef4; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
 .step-card.done .step-no { background: transparent; }
 .step-t { font-weight: 700; font-size: 14px; }
 .step-d { color: var(--text-3); font-size: 12px; line-height: 1.6; margin-bottom: 4px; flex: 1; }

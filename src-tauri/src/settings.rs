@@ -80,20 +80,39 @@ pub fn save(app: &tauri::AppHandle, s: &Settings) -> Result<(), String> {
     std::fs::write(path, json).map_err(|e| e.to_string())
 }
 
+/// provider 内存缓存（v0.13.0 快速响应批）：外层 None=未缓存；
+/// 内层 Some/None=有/无 provider。每条 AI 消息不再重读 settings.json +
+/// Windows 凭据管理器（后者是跨进程 COM 调用，十毫秒级）。save/clear 即失效。
+static PROVIDER_CACHE: std::sync::Mutex<Option<Option<ProviderCfg>>> = std::sync::Mutex::new(None);
+
 /// 读取完整 provider（含凭据管理器里的 key）。
 pub fn load_provider(app: &tauri::AppHandle) -> Option<ProviderCfg> {
-    let stored = load(app).provider?;
-    let key = keyring_get().unwrap_or_default();
-    let cfg = ProviderCfg {
-        kind: stored.kind,
-        model: stored.model,
-        base: stored.base,
-        key,
-    };
-    if cfg.is_usable() {
-        Some(cfg)
-    } else {
-        None
+    if let Ok(cache) = PROVIDER_CACHE.lock() {
+        if let Some(hit) = cache.as_ref() {
+            return hit.clone();
+        }
+    }
+    let computed = (|| {
+        let stored = load(app).provider?;
+        let key = keyring_get().unwrap_or_default();
+        let cfg = ProviderCfg {
+            kind: stored.kind,
+            model: stored.model,
+            base: stored.base,
+            key,
+        };
+        cfg.is_usable().then_some(cfg)
+    })();
+    if let Ok(mut cache) = PROVIDER_CACHE.lock() {
+        *cache = Some(computed.clone());
+    }
+    computed
+}
+
+/// provider 变更后失效缓存（save/clear 时调用）。
+fn invalidate_provider_cache() {
+    if let Ok(mut cache) = PROVIDER_CACHE.lock() {
+        *cache = None;
     }
 }
 
@@ -110,14 +129,22 @@ pub fn save_provider(app: &tauri::AppHandle, cfg: &ProviderCfg) -> Result<(), St
         model: cfg.model.clone(),
         base: cfg.base.clone(),
     });
-    save(app, &s)
+    let out = save(app, &s);
+    if out.is_ok() {
+        invalidate_provider_cache();
+    }
+    out
 }
 
 pub fn clear_provider(app: &tauri::AppHandle) -> Result<(), String> {
     let _ = keyring_del();
     let mut s = load(app);
     s.provider = None;
-    save(app, &s)
+    let out = save(app, &s);
+    if out.is_ok() {
+        invalidate_provider_cache();
+    }
+    out
 }
 
 fn keyring_entry() -> Result<keyring::Entry, String> {

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>启动中</title>
+<style>
+  /* 启动画面（学 Codex 的克制启动体验）：潜元无限 ∞ 描边动画 + 字标渐入 + hairline 进度条 */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    background: transparent;
+    font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    transition: opacity .38s ease;
+  }
+  /* 圆角深色悬浮卡（透明窗体 + CSS 圆角 = 桌面上的悬浮卡片观感） */
+  .card {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: #0d0d10;
+    border: 1px solid #26262e;
+    border-radius: 16px;
+    box-shadow: 0 10px 44px rgba(0, 0, 0, .55);
+  }
+  body.bye { opacity: 0; }
+  .wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .mark { width: 132px; height: 66px; }
+  .mark path {
+    fill: none; stroke-width: 3.2; stroke-linecap: round;
+    stroke: url(#g);
+    stroke-dasharray: 300; stroke-dashoffset: 300;
+    animation: draw 1.05s cubic-bezier(.4, 0, .2, 1) forwards, pulse 2.6s ease-in-out .55s infinite;
+    filter: drop-shadow(0 0 6px rgba(126, 184, 255, .35));
+  }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @keyframes pulse { 0%, 100% { filter: drop-shadow(0 0 5px rgba(126, 184, 255, .28)); } 50% { filter: drop-shadow(0 0 11px rgba(126, 184, 255, .5)); } }
+  .wordmark {
+    font-size: 17px; font-weight: 600; letter-spacing: 10px; text-indent: 10px;
+    color: #e9e9ee; opacity: 0; animation: rise .6s ease .55s forwards;
+  }
+  .sub {
+    font-size: 10.5px; letter-spacing: 2.4px; text-indent: 2.4px;
+    color: #5c5c68; opacity: 0; animation: rise .6s ease .8s forwards;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .bar {
+    width: 108px; height: 2px; border-radius: 2px; overflow: hidden;
+    background: #1d1d24; margin-top: 4px; opacity: 0; animation: rise .5s ease .9s forwards;
+  }
+  .bar i {
+    display: block; width: 40%; height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, rgba(126,184,255,.25), rgba(126,184,255,.9));
+    animation: slide 1.15s cubic-bezier(.45, 0, .55, 1) .9s infinite;
+  }
+  @keyframes slide { from { transform: translateX(-110%); } to { transform: translateX(280%); } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="wrap">
+    <svg class="mark" viewBox="0 0 132 66" aria-hidden="true">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#9fd0ff" />
+          <stop offset=".55" stop-color="#7eb8ff" />
+          <stop offset="1" stop-color="#4f8ae8" />
+        </linearGradient>
+      </defs>
+      <!-- 潜元无限 · ∞ -->
+      <path d="M33 33 C33 20 50 20 66 33 C82 46 99 46 99 33 C99 20 82 20 66 33 C50 46 33 46 33 33 Z" />
+    </svg>
+    <div class="wordmark">潜元无限</div>
+    <div class="sub">ORIERA STUDIO</div>
+    <div class="bar"><i></i></div>
+    </div>
+  </div>
+  <script>
+    // 关闭时机由主窗接管：主窗 show() 之后 320ms 由前端 splash.close() 关闭本窗。
+    // 这里不做自隐——避免「splash 先隐、主窗未亮」的空窗期。
+  </script>
+</body>
+</html>

@@ -11,28 +11,31 @@ function petAutoStart() {
     }
   } catch { /* 非 Tauri 环境 */ }
 }
-import { useRoute, RouterLink, RouterView } from "vue-router";
+import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { NConfigProvider, NMessageProvider, NDialogProvider, darkTheme, zhCN, dateZhCN } from "naive-ui";
 import type { GlobalThemeOverrides } from "naive-ui";
 import CommandPalette from "./components/CommandPalette.vue";
-import CopilotPanel from "./components/CopilotPanel.vue";
 import { store, refreshStatus } from "./store";
 
 const route = useRoute();
+const router = useRouter();
+// 启动动画计时起点（主窗就绪后至少让 splash 完整走一遍描边动画）
+const appStart = performance.now();
 const collapsed = ref(localStorage.getItem("oe.siderCollapsed") === "1");
 const palette = ref<InstanceType<typeof CommandPalette>>();
 
 /* ZCode 中性黑：naive 全家与自绘组件同一套灰阶；蓝只保留在主按钮/链接 */
 const themeOverrides: GlobalThemeOverrides = {
   common: {
-    primaryColor: "#4f8ae8",
-    primaryColorHover: "#6ba1f2",
-    primaryColorPressed: "#3d76cf",
-    primaryColorSuppl: "#4f8ae8",
-    infoColor: "#4f8ae8",
-    infoColorHover: "#6ba1f2",
-    infoColorPressed: "#3d76cf",
-    infoColorSuppl: "#4f8ae8",
+    // v0.15.1 Codex 化：主按钮 = 白底深字（中性主色），蓝只留给链接/焦点
+    primaryColor: "#d9dce3",
+    primaryColorHover: "#e8eaef",
+    primaryColorPressed: "#c2c6cf",
+    primaryColorSuppl: "#d9dce3",
+    infoColor: "#8ab4ec",
+    infoColorHover: "#a3c4f2",
+    infoColorPressed: "#6d9de0",
+    infoColorSuppl: "#8ab4ec",
     borderRadius: "8px",
     borderRadiusSmall: "6px",
     cardColor: "#141418",
@@ -55,7 +58,7 @@ function onGlobalKey(e: KeyboardEvent) {
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === "j") {
     e.preventDefault();
-    window.dispatchEvent(new CustomEvent("oriera:copilot:open"));
+    goAgent();
   } else if ((e.ctrlKey || e.metaKey) && k === "b") {
     e.preventDefault();
     toggleSider();
@@ -65,8 +68,24 @@ onMounted(() => {
   petAutoStart();
   window.addEventListener("keydown", onGlobalKey);
   // 全局状态唯一初始化点：之后模型保存/清除经 store 即时传导各页
-  refreshStatus();
+  refreshStatus().finally(() => revealMainWindow());
 });
+
+/** 启动动画收尾：splash 至少完整播放一次描边动画，然后亮出主窗、关掉 splash */
+async function revealMainWindow() {
+  try {
+    const wait = Math.max(0, 1250 - (performance.now() - appStart));
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    const { getCurrentWindow, Window } = await import("@tauri-apps/api/window");
+    getCurrentWindow().show();
+    const splash = Window.getByLabel("splash");
+    if (splash) {
+      // 给 splash 自己的淡出 CSS 留 320ms
+      await new Promise(r => setTimeout(r, 320));
+      await splash.close();
+    }
+  } catch { /* 浏览器调试模式无窗口概念 */ }
+}
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKey));
 
 /* ---- 顶栏状态徽章（模型 / 引擎） ---- */
@@ -108,8 +127,9 @@ const navRender = computed(() =>
   NAV.map(g => ({ ...g, items: g.items.map(it => ({ ...it, active: !!it.activeNames?.includes(route.name as string) })) })),
 );
 
-function openCopilot() {
-  window.dispatchEvent(new CustomEvent("oriera:copilot:open"));
+/** Agent 工作台入口：全页三栏视图（Codex 式），Ctrl+J / 侧栏 / 悬浮球三处直达 */
+function goAgent() {
+  router.push("/agent");
 }
 </script>
 
@@ -139,7 +159,7 @@ function openCopilot() {
           世界引擎工作台 v{{ APP_VERSION }}
           <div class="btns">
             <button class="oe-mini-btn" title="命令面板 (Ctrl+K)" @click="palette?.show()">⌘K 命令面板</button>
-            <button class="oe-mini-btn" title="奥粒助手 (Ctrl+J)" @click="openCopilot">✦ 奥粒</button>
+            <button class="oe-mini-btn" title="奥粒 Agent 工作台 (Ctrl+J)" @click="openCopilot">✦ Agent 工作台</button>
           </div>
         </div>
         <div v-else class="oe-sider-foot" style="text-align:center">∞</div>
@@ -164,14 +184,48 @@ function openCopilot() {
         <div class="oe-content">
           <NMessageProvider>
             <NDialogProvider>
-              <RouterView />
+              <RouterView v-slot="{ Component }">
+                <Transition name="route-fade" mode="out-in">
+                  <component :is="Component" />
+                </Transition>
+              </RouterView>
             </NDialogProvider>
           </NMessageProvider>
         </div>
       </div>
     </div>
+    <!-- 悬浮吉祥物球 → Agent 工作台（Codex 全页三栏视图；工作台页内隐藏） -->
+    <div
+      v-if="!String(route.name ?? '').startsWith('agent')"
+      class="oe-agent-fab" role="button" tabindex="0"
+      aria-label="奥粒 Agent 工作台(Ctrl+J)" title="奥粒 Agent 工作台 (Ctrl+J)"
+      @click="goAgent" @keydown.enter.prevent="goAgent"
+    >
+      <svg viewBox="0 0 64 64" width="54" height="54" aria-hidden="true">
+        <defs>
+          <radialGradient id="oriBodyG" cx="35%" cy="28%" r="80%">
+            <stop offset="0%" stop-color="#9fd0ff" />
+            <stop offset="60%" stop-color="#4f8ae8" />
+            <stop offset="100%" stop-color="#2e5fd0" />
+          </radialGradient>
+        </defs>
+        <circle cx="32" cy="34" r="27" fill="none" stroke="rgba(110,168,254,.35)" stroke-width="1.5" stroke-dasharray="4 7" />
+        <circle cx="59" cy="34" r="2.4" fill="#6ea8fe" />
+        <circle cx="12" cy="22" r="1.7" fill="#3ec8b0" />
+        <line x1="32" y1="9" x2="32" y2="15" stroke="#7eb8ff" stroke-width="2" stroke-linecap="round" />
+        <circle cx="32" cy="7" r="3" fill="#ffd86b" />
+        <circle cx="32" cy="36" r="21" fill="url(#oriBodyG)" />
+        <ellipse cx="26" cy="28" rx="7" ry="4.5" fill="rgba(255,255,255,.28)" />
+        <circle cx="24.5" cy="34" r="4.6" fill="#f4f8ff" />
+        <circle cx="39.5" cy="34" r="4.6" fill="#f4f8ff" />
+        <circle cx="25.5" cy="35" r="2.1" fill="#12203c" />
+        <circle cx="40.5" cy="35" r="2.1" fill="#12203c" />
+        <path d="M26 44 Q32 49 38 44" stroke="#12203c" stroke-width="2.2" fill="none" stroke-linecap="round" />
+      </svg>
+      <span class="oe-agent-fab-dot" :class="store.status?.provider_configured ? 'on' : 'off'"></span>
+    </div>
+
     <CommandPalette ref="palette" />
-    <CopilotPanel />
   </NConfigProvider>
 </template>
 
@@ -179,4 +233,31 @@ function openCopilot() {
 .oe-root { display: flex; height: 100%; }
 .oe-main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; }
 .oe-content { flex: 1; overflow-y: auto; min-height: 0; }
+
+.oe-agent-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 90;
+  width: 58px;
+  height: 58px;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 14px rgba(78, 138, 232, 0.45));
+  transition: transform 0.15s ease;
+}
+.oe-agent-fab:focus-visible { outline: 2px solid #7eb8ff; outline-offset: 3px; border-radius: 50%; }
+.oe-agent-fab > svg { display: block; }
+.oe-agent-fab:hover { transform: scale(1.08); }
+.oe-agent-fab:active { transform: scale(0.96); }
+.oe-agent-fab-dot {
+  position: absolute; right: 5px; bottom: 7px; width: 9px; height: 9px;
+  border-radius: 50%; border: 2px solid #0b0b0e;
+}
+.oe-agent-fab-dot.on { background: var(--good); }
+.oe-agent-fab-dot.off { background: #71717c; }
+
+/* 页面切换过渡（Codex 式快速而克制） */
+.route-fade-enter-active, .route-fade-leave-active { transition: opacity .12s ease, transform .12s ease; }
+.route-fade-enter-from { opacity: 0; transform: translateY(4px); }
+.route-fade-leave-to { opacity: 0; }
 </style>

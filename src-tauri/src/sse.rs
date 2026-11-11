@@ -67,6 +67,89 @@ pub fn openai_delta(payload: &str) -> Option<String> {
     Some(content.to_string())
 }
 
+/// OpenAI 兼容流式工具调用分片：一次 delta 可携带 tool_calls 数组的若干元素，
+/// 按 `index` 对号入座——`id`/`function.name` 首帧出现，`function.arguments`
+/// 是增量字符串片段（调用方累积拼接）。v0.13.0 Agent 工作台。
+#[derive(Debug, Clone)]
+pub struct ToolCallDelta {
+    pub index: usize,
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub arguments_fragment: Option<String>,
+}
+
+/// OpenAI 兼容流式工具调用增量：choices[0].delta.tool_calls[*]。
+pub fn openai_tool_delta(payload: &str) -> Vec<ToolCallDelta> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return Vec::new();
+    };
+    if v.get("error").is_some() {
+        return Vec::new(); // 错误载荷交给 error_payload 处理
+    }
+    let Some(calls) = v["choices"][0]["delta"]["tool_calls"].as_array() else {
+        return Vec::new();
+    };
+    calls
+        .iter()
+        .filter_map(|c| {
+            Some(ToolCallDelta {
+                index: c.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize,
+                id: c.get("id").and_then(|x| x.as_str()).map(String::from),
+                name: c
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|x| x.as_str())
+                    .map(String::from),
+                arguments_fragment: c
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|x| x.as_str())
+                    .map(String::from),
+            })
+        })
+        .collect()
+}
+
+/// 该帧的 finish_reason 是否宣告工具调用收尾。
+pub fn openai_finished_tool_calls(payload: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(payload)
+        .ok()
+        .and_then(|v| {
+            v["choices"][0]["finish_reason"]
+                .as_str()
+                .map(|s| s == "tool_calls")
+        })
+        .unwrap_or(false)
+}
+
+/// OpenAI 兼容 usage 帧（stream_options.include_usage 的收尾帧：choices 空 + usage）。
+/// 返回 (prompt_tokens, completion_tokens)。
+pub fn openai_usage(payload: &str) -> Option<(u64, u64)> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let usage = v.get("usage")?;
+    let p = usage.get("prompt_tokens")?.as_u64()?;
+    let c = usage.get("completion_tokens")?.as_u64()?;
+    Some((p, c))
+}
+
+/// Anthropic message_start 帧的 input_tokens。
+pub fn anthropic_usage_in(payload: &str) -> Option<u64> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    if v.get("type")?.as_str()? != "message_start" {
+        return None;
+    }
+    v["message"]["usage"]["input_tokens"].as_u64()
+}
+
+/// Anthropic message_delta 帧的 output_tokens（累计值，直接取即可）。
+pub fn anthropic_usage_out(payload: &str) -> Option<u64> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    if v.get("type")?.as_str()? != "message_delta" {
+        return None;
+    }
+    v["usage"]["output_tokens"].as_u64()
+}
+
 /// Anthropic 流式增量：content_block_delta 事件的 delta.text。
 pub fn anthropic_delta(payload: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(payload).ok()?;
@@ -176,6 +259,74 @@ mod tests {
             anthropic_delta(r#"{"type":"message_start","delta":{}}"#),
             None
         );
+    }
+
+    #[test]
+    fn openai_tool_delta_merges_shards() {
+        // 首帧：id+name；次帧：arguments 增量片段（主流网关的真实形态）
+        let first = openai_tool_delta(
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"list_projects","arguments":""}}]}}]}"#,
+        );
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].index, 0);
+        assert_eq!(first[0].id.as_deref(), Some("call_1"));
+        assert_eq!(first[0].name.as_deref(), Some("list_projects"));
+        assert_eq!(first[0].arguments_fragment.as_deref(), Some(""));
+
+        let second = openai_tool_delta(
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"id\":"}}]}}]}"#,
+        );
+        assert_eq!(second[0].id, None);
+        assert_eq!(second[0].arguments_fragment.as_deref(), Some("{\"id\":"));
+    }
+
+    #[test]
+    fn openai_tool_delta_ignores_plain_frames() {
+        assert!(openai_tool_delta(r#"{"choices":[{"delta":{"content":"你好"}}]}"#).is_empty());
+        assert!(openai_tool_delta(r#"{"choices":[{"delta":{}}]}"#).is_empty());
+        assert!(openai_tool_delta("[DONE]").is_empty());
+        assert!(openai_tool_delta(r#"{"error":{"message":"x"}}"#).is_empty());
+    }
+
+    #[test]
+    fn openai_finish_reason_tool_calls() {
+        assert!(openai_finished_tool_calls(
+            r#"{"choices":[{"delta":{},"finish_reason":"tool_calls","index":0}]}"#
+        ));
+        assert!(!openai_finished_tool_calls(
+            r#"{"choices":[{"delta":{},"finish_reason":"stop","index":0}]}"#
+        ));
+        assert!(openai_tool_delta(
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"c2","function":{"name":"m","arguments":"{}"}}]},"finish_reason":null}]}"#
+        )[0]
+            .index
+            == 1);
+    }
+
+    #[test]
+    fn openai_usage_frame() {
+        assert_eq!(
+            openai_usage(r#"{"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":58}}"#),
+            Some((120, 58))
+        );
+        assert_eq!(openai_usage(r#"{"choices":[{"delta":{"content":"x"}}]}"#), None);
+    }
+
+    #[test]
+    fn anthropic_usage_frames() {
+        assert_eq!(
+            anthropic_usage_in(
+                r#"{"type":"message_start","message":{"usage":{"input_tokens":25,"output_tokens":1}}}"#
+            ),
+            Some(25)
+        );
+        assert_eq!(
+            anthropic_usage_out(
+                r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":142}}"#
+            ),
+            Some(142)
+        );
+        assert_eq!(anthropic_usage_in(r#"{"type":"content_block_delta"}"#), None);
     }
 
     #[test]
